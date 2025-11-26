@@ -1,0 +1,256 @@
+rules_version='2'
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to get user document and check verification
+    function isUserVerified() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isVerified == true;
+    }
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    // Users collection - users can read their own data, verified users can read others
+    match /users/{userId} {
+      allow get: if isAuthenticated();
+      allow list: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+    
+    // Items collection (for Borrow/Lend)
+    match /items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isUserVerified();
+      allow update: if isUserVerified();
+      allow delete: if isUserVerified();
+    }
+    
+    // Borrow requests collection
+    match /borrow_requests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if isUserVerified();
+      allow update: if isUserVerified();
+      allow delete: if isUserVerified();
+    }
+    
+    // Rental listings collection
+    match /rental_listings/{listingId} {
+      allow read: if isAuthenticated();
+      allow create: if isUserVerified();
+      allow update: if isUserVerified();
+      allow delete: if isUserVerified();
+    }
+    
+    // Rental requests collection
+    match /rental_requests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if isUserVerified();
+      allow update: if isUserVerified();
+      allow delete: if isUserVerified();
+    }
+    
+    // Rental payments collection
+    match /rental_payments/{paymentId} {
+      // Users can read payments for their rental requests (renter or owner)
+      allow read: if isAuthenticated() && (
+        resource.data.renterId == request.auth.uid ||
+        resource.data.ownerId == request.auth.uid
+      );
+      // Allow list queries for authenticated users (filtered by rentalRequestId in query)
+      allow list: if isAuthenticated();
+      // Verified users can create payment records
+      allow create: if isUserVerified();
+      // Only admins can update or delete payment records
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Rental audits collection (audit trail for rental transactions)
+    match /rental_audits/{auditId} {
+      // Only admins can read audit records
+      allow read: if isAdmin();
+      // System/admins can create audit records
+      allow create: if isUserVerified();
+      // Only admins can update or delete audit records
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Trade items collection
+    match /trade_items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isUserVerified();
+      allow update: if isUserVerified();
+      allow delete: if isUserVerified();
+    }
+    
+    // Trade offers collection
+    match /trade_offers/{offerId} {
+      allow read: if isAuthenticated();
+      allow create: if isUserVerified();
+      allow update: if isUserVerified();
+      allow delete: if isUserVerified();
+    }
+    
+    // Giveaway listings collection (legacy - keeping for backward compatibility)
+    match /giveaway_listings/{listingId} {
+      allow read: if isAuthenticated();
+      allow create: if isUserVerified();
+      allow update: if isUserVerified();
+      allow delete: if isUserVerified();
+    }
+    
+    // Giveaways collection (active donation listings)
+    match /giveaways/{giveawayId} {
+      allow read: if isAuthenticated();
+      allow create: if isUserVerified();
+      allow update: if isUserVerified();
+      allow delete: if isUserVerified();
+    }
+    
+    // Giveaway claims collection (claim requests for giveaways)
+    match /giveaway_claims/{claimId} {
+      // Users can read their own claims or claims for their giveaways
+      allow read: if isAuthenticated() && (
+        resource.data.claimantId == request.auth.uid ||
+        resource.data.donorId == request.auth.uid
+      );
+      // Allow list queries for authenticated users (filtered by claimantId or donorId in query)
+      allow list: if isAuthenticated();
+      // Verified users can create claims
+      allow create: if isUserVerified();
+      // Users can update their own claims or claims for their giveaways
+      allow update: if isAuthenticated() && (
+        resource.data.claimantId == request.auth.uid ||
+        resource.data.donorId == request.auth.uid
+      );
+      // Users can delete their own claims
+      allow delete: if isAuthenticated() && resource.data.claimantId == request.auth.uid;
+    }
+    
+    // Calamity events collection
+    match /calamity_events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Calamity donations collection
+    match /calamity_donations/{donationId} {
+      allow read: if isAuthenticated();
+      allow create: if isUserVerified();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Notifications collection
+    match /notifications/{notificationId} {
+      // Users can read their own notifications (where toUserId matches)
+      allow get: if isAuthenticated() && resource.data.toUserId == request.auth.uid;
+      // Allow list queries for authenticated users (filtered by toUserId in query)
+      allow list: if isAuthenticated();
+      // Authenticated users can create notifications (system creates for users)
+      allow create: if isAuthenticated();
+      // Users can update their own notifications (mark as read)
+      allow update: if isAuthenticated() && resource.data.toUserId == request.auth.uid;
+      // Users can delete their own notifications
+      allow delete: if isAuthenticated() && resource.data.toUserId == request.auth.uid;
+    }
+    
+    // Chats and messages - allow authenticated users
+    match /chats/{chatId} {
+      allow read, write: if isAuthenticated();
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+    
+    // Conversations and messages - allow authenticated users
+    match /conversations/{conversationId} {
+      allow read, write: if isAuthenticated();
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+    
+    // Email verifications - allow authenticated users to manage their own
+    match /email_verifications/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Analytics collection - admins only
+    match /analytics/{documentId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Reports collection - authenticated users can read, admins can write
+    match /reports/{reportId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Ratings collection (user reviews and ratings)
+    match /ratings/{ratingId} {
+      // All authenticated users can read ratings (public reviews)
+      allow read: if isAuthenticated();
+      // Allow list queries for authenticated users
+      allow list: if isAuthenticated();
+      // Verified users can create ratings
+      allow create: if isUserVerified();
+      // Users can update their own ratings
+      allow update: if isAuthenticated() && resource.data.raterUserId == request.auth.uid;
+      // Users can delete their own ratings, or admins can delete any
+      allow delete: if isAuthenticated() && (
+        resource.data.raterUserId == request.auth.uid || isAdmin()
+      );
+    }
+    
+    // Reminders collection (scheduled reminders for rentals, borrows, etc.)
+    match /reminders/{reminderId} {
+      // Users can read their own reminders
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Allow list queries for authenticated users (filtered by userId, itemId, or rentalRequestId in query)
+      allow list: if isAuthenticated();
+      // Authenticated users can create reminders (system creates reminders for users)
+      allow create: if isAuthenticated();
+      // Users can update their own reminders
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Users can delete their own reminders, or system can delete (for item/rental cancellation)
+      allow delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+    }
+    
+    // FCM tokens collection (for push notifications)
+    match /fcm_tokens/{userId} {
+      // Users can read their own FCM token
+      allow get: if isAuthenticated() && request.auth.uid == userId;
+      // Allow list queries for authenticated users (filtered by userId in query)
+      allow list: if isAuthenticated();
+      // Users can create/update their own FCM token (document ID must match their userId)
+      allow create, update: if isAuthenticated() && request.auth.uid == userId;
+      // Users can delete their own FCM token
+      allow delete: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Default: deny all other collections unless explicitly allowed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

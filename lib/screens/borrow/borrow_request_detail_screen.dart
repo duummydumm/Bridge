@@ -1,0 +1,564 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/chat_provider.dart';
+import '../../services/firestore_service.dart';
+import '../../services/local_notifications_service.dart';
+import '../chat_detail_screen.dart';
+
+class BorrowRequestDetailScreen extends StatefulWidget {
+  final String requestId;
+
+  const BorrowRequestDetailScreen({super.key, required this.requestId});
+
+  @override
+  State<BorrowRequestDetailScreen> createState() =>
+      _BorrowRequestDetailScreenState();
+}
+
+class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
+  final FirestoreService _firestoreService = FirestoreService();
+  Map<String, dynamic>? _requestData;
+  bool _isLoading = true;
+  bool _isProcessing = false;
+  DateTime? _selectedReturnDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRequest();
+  }
+
+  Future<void> _loadRequest() async {
+    try {
+      final data = await _firestoreService.getBorrowRequestById(
+        widget.requestId,
+      );
+      if (mounted) {
+        setState(() {
+          _requestData = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading request: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _acceptRequest() async {
+    if (_requestData == null) return;
+
+    // Show date picker for return date
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: now.add(const Duration(days: 7)),
+      firstDate: now.add(const Duration(days: 1)),
+      lastDate: now.add(const Duration(days: 365)),
+      helpText: 'Select Return Date',
+    );
+
+    if (pickedDate == null) return;
+
+    setState(() {
+      _selectedReturnDate = pickedDate;
+    });
+
+    // Confirm acceptance
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Accept Borrow Request?'),
+        content: Text(
+          'Are you sure you want to accept the borrow request from '
+          '${_requestData!['borrowerName']}? Return date: ${pickedDate.toString().split(' ')[0]}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00897B),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      setState(() {
+        _selectedReturnDate = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isProcessing = true;
+    });
+
+    try {
+      final requestId = widget.requestId;
+      final itemId = _requestData!['itemId'] as String;
+      final borrowerId = _requestData!['borrowerId'] as String;
+      final itemTitle = _requestData!['itemTitle'] as String? ?? 'Item';
+      final lenderName = _requestData!['lenderName'] as String?;
+
+      await _firestoreService.acceptBorrowRequest(
+        requestId: requestId,
+        itemId: itemId,
+        borrowerId: borrowerId,
+        returnDate: pickedDate,
+      );
+
+      // Send notification to borrower
+      await _firestoreService.sendDecisionNotification(
+        toUserId: borrowerId,
+        itemTitle: itemTitle,
+        decision: 'accepted',
+        requestId: requestId,
+        lenderName: lenderName,
+      );
+
+      // Schedule local notifications for return reminders (for lender)
+      try {
+        final borrowerName =
+            _requestData!['borrowerName'] as String? ?? 'Borrower';
+        await LocalNotificationsService().scheduleReturnReminders(
+          itemId: itemId,
+          itemTitle: itemTitle,
+          returnDateLocal: pickedDate,
+          borrowerName: borrowerName,
+        );
+      } catch (e) {
+        // Best-effort: don't fail acceptance if notification scheduling fails
+        print('Failed to schedule return reminders: $e');
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Borrow request accepted successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pop(true); // Return true to indicate success
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _selectedReturnDate = null; // Reset date picker
+        });
+
+        // Extract error message for better user experience
+        String errorMessage = 'Error accepting request: $e';
+        if (e.toString().contains('maximum limit')) {
+          errorMessage = e.toString().replaceFirst('Exception: ', '');
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _declineRequest() async {
+    if (_requestData == null) return;
+
+    // Confirm decline
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Decline Borrow Request?'),
+        content: Text(
+          'Are you sure you want to decline the borrow request from '
+          '${_requestData!['borrowerName']}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Decline'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isProcessing = true;
+    });
+
+    try {
+      final requestId = widget.requestId;
+      final borrowerId = _requestData!['borrowerId'] as String;
+      final itemTitle = _requestData!['itemTitle'] as String? ?? 'Item';
+      final lenderName = _requestData!['lenderName'] as String?;
+
+      await _firestoreService.declineBorrowRequest(requestId: requestId);
+
+      // Send notification to borrower
+      await _firestoreService.sendDecisionNotification(
+        toUserId: borrowerId,
+        itemTitle: itemTitle,
+        decision: 'declined',
+        requestId: requestId,
+        lenderName: lenderName,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Borrow request declined'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        Navigator.of(context).pop(true); // Return true to indicate success
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error declining request: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _messageBorrower() async {
+    if (_requestData == null) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    if (!authProvider.isAuthenticated || authProvider.user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please login to message'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final currentUser = userProvider.currentUser;
+    if (currentUser == null) return;
+
+    final borrowerId = _requestData!['borrowerId'] as String;
+    final borrowerName = _requestData!['borrowerName'] as String? ?? 'User';
+    final itemId = _requestData!['itemId'] as String;
+    final itemTitle = _requestData!['itemTitle'] as String? ?? 'Item';
+
+    // Show loading
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (dialogContext) =>
+          const Center(child: CircularProgressIndicator()),
+    );
+
+    // Create or get conversation
+    final conversationId = await chatProvider.createOrGetConversation(
+      userId1: authProvider.user!.uid,
+      userId1Name: currentUser.fullName,
+      userId2: borrowerId,
+      userId2Name: borrowerName,
+      itemId: itemId,
+      itemTitle: itemTitle,
+    );
+
+    // Close loading dialog
+    if (mounted) {
+      final rootNav = Navigator.of(context, rootNavigator: true);
+      if (rootNav.canPop()) rootNav.pop();
+    }
+
+    if (conversationId != null && mounted) {
+      // Navigate to chat detail screen
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatDetailScreen(
+            conversationId: conversationId,
+            otherParticipantName: borrowerName,
+            userId: authProvider.user!.uid,
+          ),
+        ),
+      );
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to create conversation'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Borrow Request')),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _requestData == null
+          ? const Center(child: Text('Request not found'))
+          : _buildRequestDetails(),
+    );
+  }
+
+  Widget _buildRequestDetails() {
+    final status = _requestData!['status'] as String? ?? 'pending';
+    final borrowerName = _requestData!['borrowerName'] as String? ?? 'Unknown';
+    final itemTitle = _requestData!['itemTitle'] as String? ?? 'Item';
+    final message = _requestData!['message'] as String? ?? '';
+    final createdAt = _requestData!['createdAt'] as Timestamp?;
+
+    // Check if request is still pending
+    final isPending = status == 'pending';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Status badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: status == 'pending'
+                  ? Colors.orange
+                  : status == 'accepted'
+                  ? Colors.green
+                  : Colors.red,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              status.toUpperCase(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Borrower info
+          const Text(
+            'Borrower',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.person, color: Color(0xFF00897B)),
+              const SizedBox(width: 8),
+              Text(borrowerName, style: const TextStyle(fontSize: 16)),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Item info
+          const Text(
+            'Item',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.inventory_2, color: Color(0xFF00897B)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(itemTitle, style: const TextStyle(fontSize: 16)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Message
+          if (message.isNotEmpty) ...[
+            const Text(
+              'Message',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(message, style: const TextStyle(fontSize: 14)),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // Request date
+          if (createdAt != null) ...[
+            const Text(
+              'Request Date',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              createdAt.toDate().toString().split(' ')[0],
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // Selected return date (if accepting)
+          if (_selectedReturnDate != null) ...[
+            const Text(
+              'Selected Return Date',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _selectedReturnDate!.toString().split(' ')[0],
+              style: const TextStyle(
+                fontSize: 16,
+                color: Color(0xFF00897B),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // Action buttons
+          if (isPending && !_isProcessing) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _messageBorrower,
+                    icon: const Icon(Icons.message),
+                    label: const Text('Message'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF00897B),
+                      side: const BorderSide(
+                        color: Color(0xFF00897B),
+                        width: 2,
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _declineRequest,
+                    icon: const Icon(Icons.close),
+                    label: const Text('Decline'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _acceptRequest,
+                    icon: const Icon(Icons.check),
+                    label: const Text('Accept'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00897B),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else if (_isProcessing) ...[
+            const SizedBox(height: 16),
+            const Center(child: CircularProgressIndicator()),
+          ] else ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: status == 'accepted' ? Colors.green[50] : Colors.red[50],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    status == 'accepted' ? Icons.check_circle : Icons.cancel,
+                    color: status == 'accepted' ? Colors.green : Colors.red,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    status == 'accepted'
+                        ? 'This request has been accepted'
+                        : 'This request has been declined',
+                    style: TextStyle(
+                      color: status == 'accepted'
+                          ? Colors.green[900]
+                          : Colors.red[900],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}

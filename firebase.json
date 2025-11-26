@@ -1,0 +1,38 @@
+{
+  "firestore": {
+    "database": "(default)",
+    "location": "asia-east1",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "functions": {
+    "source": "functions",
+    "predeploy": [
+      "npm --prefix \"$RESOURCE_DIR\" run lint"
+    ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "bridge-72b26",
+          "appId": "1:296102513753:android:4c051d7fec09853a39f548",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "bridge-72b26",
+          "configurations": {
+            "android": "1:296102513753:android:4c051d7fec09853a39f548",
+            "ios": "1:296102513753:ios:5a96312fa1b4bf9a39f548",
+            "web": "1:296102513753:web:d36b005013ba4b2339f548"
+          }
+        }
+      }
+    }
+  }
+}

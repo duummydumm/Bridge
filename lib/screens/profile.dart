@@ -1,0 +1,1912 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:share_plus/share_plus.dart';
+import '../providers/user_provider.dart';
+import '../providers/auth_provider.dart';
+import '../models/user_model.dart';
+import '../models/rating_model.dart';
+import '../services/rating_service.dart';
+import '../services/firestore_service.dart';
+import '../reusable_widgets/bottom_nav_bar_widget.dart';
+import 'all_reviews_screen.dart';
+import 'submit_rating_screen.dart';
+
+class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => ProfileScreenState();
+}
+
+class ProfileScreenState extends State<ProfileScreen> {
+  int _selectedIndex = 3; // Profile tab
+  final ImagePicker _picker = ImagePicker();
+  final RatingService _ratingService = RatingService();
+  final FirestoreService _firestoreService = FirestoreService();
+  List<RatingModel> _reviews = [];
+  double _averageRating = 0.0;
+  bool _loadingReviews = false;
+  Map<String, dynamic>? _activityStats;
+  bool _loadingStats = false;
+
+  Future<void> _onChangeProfilePhoto() async {
+    try {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final picked = await _picker.pickImage(source: ImageSource.gallery);
+      if (picked == null) return;
+      await userProvider.uploadProfilePhoto(file: picked);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Profile photo updated')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update photo: $e')));
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReviews();
+    _loadActivityStats();
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.year}';
+  }
+
+  Future<void> _loadActivityStats() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final currentUser = userProvider.currentUser;
+    if (currentUser == null) return;
+
+    setState(() {
+      _loadingStats = true;
+    });
+
+    try {
+      final stats = await _firestoreService.getUserActivityStats(
+        currentUser.uid,
+      );
+      if (mounted) {
+        setState(() {
+          _activityStats = stats;
+          _loadingStats = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading activity stats: $e');
+      if (mounted) {
+        setState(() {
+          _loadingStats = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadReviews() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final currentUser = userProvider.currentUser;
+    if (currentUser == null) return;
+
+    setState(() {
+      _loadingReviews = true;
+    });
+
+    try {
+      final reviews = await _ratingService.getRatingsForUser(currentUser.uid);
+      final avgRating = await _ratingService.getAverageRating(currentUser.uid);
+
+      if (mounted) {
+        setState(() {
+          _reviews = reviews;
+          _averageRating = avgRating;
+          _loadingReviews = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingReviews = false;
+        });
+        // Show error to help debug
+        debugPrint('Error loading reviews: $e');
+        // Check if it's an index error
+        if (e.toString().contains('index') || e.toString().contains('Index')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Firestore index required. Run: firebase deploy --only firestore:indexes',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userProvider = Provider.of<UserProvider>(context);
+    final currentUser = userProvider.currentUser;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA), // Soft light background
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Scrollable Content
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  await Future.wait([_loadReviews(), _loadActivityStats()]);
+                },
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Column(
+                    children: [
+                      // Profile Header
+                      _buildProfileHeader(currentUser),
+
+                      const SizedBox(height: 20),
+
+                      // Removed test barangay ID button
+
+                      // Action Buttons
+                      _buildActionButtons(),
+
+                      const SizedBox(height: 24),
+
+                      // Account Role Section
+                      _buildAccountRole(currentUser),
+
+                      const SizedBox(height: 24),
+
+                      // Activity Summary
+                      _buildActivitySummary(),
+
+                      const SizedBox(height: 24),
+
+                      // Quick Links
+                      _buildQuickLinks(currentUser),
+
+                      const SizedBox(height: 24),
+
+                      // Reputation Progress
+                      _buildReputationProgress(),
+
+                      const SizedBox(height: 24),
+
+                      // Reviews & Ratings
+                      _buildReviewsSection(),
+
+                      const SizedBox(height: 24),
+
+                      // Logout card moved from Settings
+                      _buildLogoutCard(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: BottomNavBarWidget(
+        selectedIndex: _selectedIndex,
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        navigationContext: context,
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader(UserModel? user) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF00897B), // Teal
+            Color(0xFF26A69A), // Light Teal
+            Color(0xFF4DD0E1), // Cyan
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00897B).withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 16),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          // Decorative circles in background
+          Positioned(
+            top: -30,
+            right: -30,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.1),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -40,
+            left: -40,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.08),
+              ),
+            ),
+          ),
+          // Content
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Profile Picture with edit
+              Stack(
+                alignment: Alignment.bottomRight,
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 4),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: CircleAvatar(
+                      radius: 60,
+                      backgroundColor: Colors.white,
+                      child: CircleAvatar(
+                        radius: 57,
+                        backgroundImage: () {
+                          final url = user?.profilePhotoUrl ?? '';
+                          if (url.isEmpty) return null;
+                          final parsed = Uri.tryParse(url);
+                          if (parsed == null || (!parsed.hasScheme)) {
+                            return null;
+                          }
+                          return NetworkImage(url);
+                        }(),
+                        child: user == null || user.profilePhotoUrl.isEmpty
+                            ? const Icon(
+                                Icons.person,
+                                size: 50,
+                                color: Colors.grey,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                  Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    elevation: 4,
+                    child: InkWell(
+                      onTap: _onChangeProfilePhoto,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          color: Color(0xFF00897B),
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Name
+              Text(
+                user?.fullName ?? 'User',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Location
+              Center(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.85,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.location_on_outlined,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                      // const SizedBox(width: 2),
+                      Flexible(
+                        child: Text(
+                          user?.fullAddress ?? 'Location',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          textAlign: TextAlign.center,
+                          softWrap: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Member Since
+              if (user?.createdAt != null)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.calendar_today,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Member since ${_formatDate(user!.createdAt)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 16),
+
+              // Elite Status
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.star_rounded,
+                        color: Colors.amber,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 8),
+                      FutureBuilder<double>(
+                        future: _ratingService.getAverageRating(
+                          Provider.of<UserProvider>(context).currentUser?.uid ??
+                              '',
+                        ),
+                        builder: (context, snapshot) {
+                          final rating = snapshot.data ?? _averageRating;
+                          final showBadge = rating > 0;
+
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                rating > 0 ? rating.toStringAsFixed(1) : '0.0',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (showBadge) ...[
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    gradient: rating >= 4.5
+                                        ? const LinearGradient(
+                                            colors: [
+                                              Colors.amber,
+                                              Color(0xFFFFB74D),
+                                            ],
+                                          )
+                                        : null,
+                                    color: rating >= 4.5
+                                        ? null
+                                        : Colors.white.withOpacity(0.3),
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: rating >= 4.5
+                                        ? [
+                                            BoxShadow(
+                                              color: Colors.amber.withOpacity(
+                                                0.4,
+                                              ),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ]
+                                        : null,
+                                  ),
+                                  child: Text(
+                                    _getShortBadgeText(rating),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildActionButton(
+            icon: Icons.chat_bubble_outline,
+            label: 'Leave Feedback',
+            onTap: () {
+              // Test rating feature - navigate to rating screen
+              // For testing: You'll need to enter a user ID
+              _showTestRatingDialog(context);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Test button removed
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool iconOnly = false,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            vertical: 16,
+            horizontal: iconOnly ? 12 : 16,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF00897B).withOpacity(0.1),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+                spreadRadius: 0,
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: iconOnly
+              ? Icon(icon, color: const Color(0xFF00897B), size: 24)
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: const Color(0xFF00897B), size: 22),
+                    if (label.isNotEmpty) ...[
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          label,
+                          style: const TextStyle(
+                            color: Color(0xFF00897B),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountRole(UserModel? user) {
+    // Get role display text based on user's actual role
+    String roleText = 'Member'; // Default
+    if (user != null) {
+      switch (user.role) {
+        case UserRole.both:
+          roleText = 'Borrower & Lender';
+          break;
+        case UserRole.lender:
+          roleText = 'Lender';
+          break;
+        case UserRole.borrower:
+          roleText = 'Borrower';
+          break;
+      }
+    }
+
+    final isVerified = user?.isVerified == true;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00897B).withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: 0,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color(0xFF00897B).withOpacity(0.2),
+                  const Color(0xFF26A69A).withOpacity(0.1),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFF00897B).withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: const Icon(
+              Icons.shield_outlined,
+              color: Color(0xFF00897B),
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Account Role',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  roleText,
+                  style: const TextStyle(
+                    color: Color(0xFF1A1A1A),
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Show verified/pending badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isVerified
+                    ? [const Color(0xFF66BB6A), const Color(0xFF4CAF50)]
+                    : [const Color(0xFFFFB74D), const Color(0xFFFFA726)],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color:
+                      (isVerified
+                              ? const Color(0xFF66BB6A)
+                              : const Color(0xFFFFB74D))
+                          .withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isVerified ? Icons.verified : Icons.pending_outlined,
+                  color: Colors.white,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  isVerified ? 'Verified' : 'Pending',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivitySummary() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00897B).withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: 0,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF26A69A), Color(0xFF00897B)],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.analytics_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Activity Summary',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (_loadingStats)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _buildActivityCard(
+                    '${_activityStats?['totalBorrowed'] ?? 0}',
+                    'Items Borrowed',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildActivityCard(
+                    '${_activityStats?['totalListings'] ?? 0}',
+                    'Items Listed',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildActivityCard(
+                    '${_activityStats?['tradeItems'] ?? 0}',
+                    'Trades Done',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildActivityCard(
+                    '${_activityStats?['giveaways'] ?? 0}',
+                    'Items Given',
+                  ),
+                ),
+              ],
+            ),
+            if ((_activityStats?['rentalListings'] ?? 0) > 0 ||
+                (_activityStats?['activeListings'] ?? 0) > 0) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildActivityCard(
+                      '${_activityStats?['activeListings'] ?? 0}',
+                      'Active Listings',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildActivityCard(
+                      '${_activityStats?['rentalListings'] ?? 0}',
+                      'Rentals',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickLinks(UserModel? user) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00897B).withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: 0,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF00897B), Color(0xFF26A69A)],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.link_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Quick Links',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildQuickLinkButton(
+                icon: Icons.inventory_2_outlined,
+                label: 'My Listings',
+                route: '/my-listings',
+                color: const Color(0xFF00897B),
+              ),
+              _buildQuickLinkButton(
+                icon: Icons.shopping_bag_outlined,
+                label: 'Borrow Items',
+                route: '/borrow',
+                color: const Color(0xFF42A5F5),
+              ),
+              _buildQuickLinkButton(
+                icon: Icons.home_work_outlined,
+                label: 'Rent Items',
+                route: '/rent',
+                color: const Color(0xFF26A69A),
+              ),
+              _buildQuickLinkButton(
+                icon: Icons.swap_horiz_outlined,
+                label: 'Trade Items',
+                route: '/trade',
+                color: const Color(0xFFFFB74D),
+              ),
+              _buildQuickLinkButton(
+                icon: Icons.card_giftcard_outlined,
+                label: 'Giveaways',
+                route: '/giveaway',
+                color: const Color(0xFF66BB6A),
+              ),
+              _buildQuickLinkButton(
+                icon: Icons.chat_bubble_outline,
+                label: 'Messages',
+                route: '/chat',
+                color: const Color(0xFF9C27B0),
+              ),
+              _buildQuickLinkButton(
+                icon: Icons.notifications_outlined,
+                label: 'Notifications',
+                route: '/notifications',
+                color: const Color(0xFFFF5722),
+              ),
+              _buildQuickLinkButton(
+                icon: Icons.share_outlined,
+                label: 'Share Profile',
+                onTap: () => _shareProfile(user),
+                color: const Color(0xFF607D8B),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickLinkButton({
+    required IconData icon,
+    required String label,
+    String? route,
+    VoidCallback? onTap,
+    required Color color,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          if (onTap != null) {
+            onTap();
+          } else if (route != null) {
+            Navigator.pushNamed(context, route);
+          }
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(0.3), width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _shareProfile(UserModel? user) async {
+    if (user == null) return;
+
+    try {
+      final profileText =
+          '''
+🌟 ${user.fullName}'s Profile on Bridge App
+
+📍 Location: ${user.fullAddress}
+⭐ Rating: ${_averageRating > 0 ? _averageRating.toStringAsFixed(1) : 'New Member'}
+👤 Role: ${user.role.name.toUpperCase()}
+
+Check out my profile on Bridge App!
+''';
+
+      await Share.share(
+        profileText,
+        subject: '${user.fullName}\'s Bridge App Profile',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to share profile: $e')));
+      }
+    }
+  }
+
+  Widget _buildActivityCard(String value, String label) {
+    // Assign colors based on label
+    Color cardColor;
+    if (label.contains('Borrowed')) {
+      cardColor = const Color(0xFF42A5F5); // Blue
+    } else if (label.contains('Listed') || label.contains('Lent')) {
+      cardColor = const Color(0xFF66BB6A); // Light Green
+    } else if (label.contains('Trades')) {
+      cardColor = const Color(0xFF26A69A); // Teal
+    } else if (label.contains('Rentals')) {
+      cardColor = const Color(0xFFFFB74D); // Orange
+    } else if (label.contains('Active')) {
+      cardColor = const Color(0xFF00897B); // Dark Teal
+    } else {
+      cardColor = const Color(0xFF00897B); // Dark Teal
+    }
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+      builder: (context, animValue, child) {
+        return Transform.scale(
+          scale: 0.9 + (animValue * 0.1),
+          child: Opacity(opacity: animValue, child: child),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [cardColor.withOpacity(0.15), cardColor.withOpacity(0.08)],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: cardColor.withOpacity(0.2), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: cardColor.withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                color: cardColor,
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.grey[700],
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReputationProgress() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00897B).withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: 0,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFB74D), Color(0xFFFFA726)],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.trending_up_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Reputation Progress',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _getReputationBadgeText(_averageRating),
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF1A1A1A),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  gradient: _averageRating > 0
+                      ? const LinearGradient(
+                          colors: [Color(0xFFFFB74D), Color(0xFFFFA726)],
+                        )
+                      : null,
+                  color: _averageRating == 0 ? Colors.grey[300] : null,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: _averageRating > 0
+                      ? [
+                          BoxShadow(
+                            color: Colors.amber.withOpacity(0.3),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  _averageRating > 0
+                      ? '${_averageRating.toStringAsFixed(1)} / 5'
+                      : 'No Rating',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: _averageRating > 0 ? Colors.white : Colors.grey[700],
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: _averageRating / 5),
+              duration: const Duration(milliseconds: 1000),
+              curve: Curves.easeOut,
+              builder: (context, progress, child) {
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final filledWidth = progress * constraints.maxWidth;
+                    return Container(
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: constraints.maxWidth,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          Container(
+                            width: filledWidth,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [
+                                  Color(0xFFFFB74D), // Amber
+                                  Color(0xFFFFA726), // Orange
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.amber.withOpacity(0.4),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getReputationBadgeText(double rating) {
+    if (rating == 0.0) {
+      return 'New Member';
+    } else if (rating >= 4.5) {
+      return 'Elite Member';
+    } else if (rating >= 4.0) {
+      return 'Trusted Member';
+    } else if (rating >= 3.0) {
+      return 'Member';
+    } else {
+      return 'Building Reputation';
+    }
+  }
+
+  String _getShortBadgeText(double rating) {
+    if (rating == 0.0) {
+      return 'New';
+    } else if (rating >= 4.5) {
+      return 'Elite';
+    } else if (rating >= 4.0) {
+      return 'Trusted';
+    } else if (rating >= 3.0) {
+      return 'Member';
+    } else {
+      return 'New';
+    }
+  }
+
+  Widget _buildReviewsSection() {
+    if (_loadingReviews) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final currentUser = Provider.of<UserProvider>(context).currentUser;
+    final userRating = currentUser?.reputationScore ?? _averageRating;
+    final displayRating = userRating > 0 ? userRating : _averageRating;
+
+    // Debug info (remove in production)
+    debugPrint(
+      'Profile Reviews - User ID: ${currentUser?.uid}, Reviews count: ${_reviews.length}, Avg Rating: $_averageRating',
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00897B).withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: 0,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFB74D), Color(0xFFFFA726)],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.star_outlined,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        'Reviews & Ratings',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.5,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00897B).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildStarRating(displayRating),
+                    const SizedBox(width: 6),
+                    Text(
+                      '(${_reviews.length})',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF00897B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Add refresh button for debugging
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 18),
+                color: const Color(0xFF00897B),
+                onPressed: () {
+                  _loadReviews();
+                },
+                tooltip: 'Refresh reviews',
+              ),
+            ],
+          ),
+          if (_reviews.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Column(
+                  children: [
+                    Text(
+                      'No reviews yet',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Reviews you receive will appear here',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ..._reviews
+                .take(2)
+                .map(
+                  (review) => Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _buildReviewItem(
+                      name: review.raterName,
+                      time: review.timeAgo,
+                      rating: review.rating,
+                      comment: review.feedback ?? 'No comment provided',
+                    ),
+                  ),
+                ),
+          if (_reviews.length > 2) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton(
+                onPressed: () {
+                  if (currentUser != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AllReviewsScreen(
+                          userId: currentUser.uid,
+                          userName: currentUser.fullName,
+                        ),
+                      ),
+                    ).then((_) {
+                      // Reload reviews when returning
+                      _loadReviews();
+                    });
+                  }
+                },
+                child: const Text(
+                  'View All Reviews',
+                  style: TextStyle(
+                    color: Color(0xFF00897B),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStarRating(double rating) {
+    final fullStars = rating.floor();
+    final hasHalfStar = (rating - fullStars) >= 0.5;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (index) {
+        if (index < fullStars) {
+          return const Icon(Icons.star, color: Colors.amber, size: 18);
+        } else if (index == fullStars && hasHalfStar) {
+          return const Icon(Icons.star_half, color: Colors.amber, size: 18);
+        } else {
+          return Icon(Icons.star, color: Colors.grey[300], size: 18);
+        }
+      }),
+    );
+  }
+
+  Widget _buildReviewItem({
+    required String name,
+    required String time,
+    required int rating,
+    required String comment,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!, width: 1),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF00897B).withOpacity(0.2),
+                  const Color(0xFF26A69A).withOpacity(0.1),
+                ],
+              ),
+            ),
+            child: CircleAvatar(
+              radius: 24,
+              backgroundColor: Colors.transparent,
+              child: Text(
+                name[0].toUpperCase(),
+                style: const TextStyle(
+                  color: Color(0xFF00897B),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    Row(
+                      children: List.generate(5, (index) {
+                        return Icon(
+                          Icons.star,
+                          size: 16,
+                          color: index < rating
+                              ? Colors.amber
+                              : Colors.grey[300],
+                        );
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  time,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  comment,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogoutCard() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          HapticFeedback.selectionClick();
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Text(
+                'Logout',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              content: const Text(
+                'Are you sure you want to logout?',
+                style: TextStyle(fontSize: 15),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Color(0xFF00897B), fontSize: 15),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text(
+                    'Logout',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+
+          if (confirm == true && context.mounted) {
+            final userProvider = Provider.of<UserProvider>(
+              context,
+              listen: false,
+            );
+            final authProvider = Provider.of<AuthProvider>(
+              context,
+              listen: false,
+            );
+            userProvider.clearUser();
+            await authProvider.logout();
+            if (context.mounted) {
+              Navigator.pushReplacementNamed(context, '/');
+            }
+          }
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withOpacity(0.1),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+                spreadRadius: 0,
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.logout_rounded,
+                  color: Colors.red,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Text(
+                  'Logout',
+                  style: TextStyle(
+                    fontSize: 17,
+                    color: Colors.red,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey[400], size: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Test/Demo function for rating feature
+  void _showTestRatingDialog(BuildContext context) {
+    final TextEditingController userIdController = TextEditingController();
+    final TextEditingController userNameController = TextEditingController();
+    RatingContext selectedContext = RatingContext.rental;
+    String selectedRole = 'renter';
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Test Rating Feature'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Enter details to test the rating feature:',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: userIdController,
+                  decoration: const InputDecoration(
+                    labelText: 'User ID to Rate',
+                    hintText: 'Enter Firestore user ID',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: userNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'User Name (Optional)',
+                    hintText: 'Enter user name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Select Context:',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                // Context Selection
+                DropdownButtonFormField<RatingContext>(
+                  value: selectedContext,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  items: RatingContext.values.map((context) {
+                    return DropdownMenuItem(
+                      value: context,
+                      child: Text(context.name.toUpperCase()),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() {
+                        selectedContext = value;
+                        // Update role based on context
+                        switch (value) {
+                          case RatingContext.rental:
+                            selectedRole = 'renter';
+                            break;
+                          case RatingContext.trade:
+                            selectedRole = 'trader';
+                            break;
+                          case RatingContext.borrow:
+                            selectedRole = 'borrower';
+                            break;
+                          case RatingContext.giveaway:
+                            selectedRole = 'claimant';
+                            break;
+                        }
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Tip: Get a user ID from Firestore users collection',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Supported: Rental ✅ | Trade ⚠️ | Borrow ⚠️ | Giveaway ⚠️',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const Text(
+                  '⚠️ = Manual testing only (not auto-integrated)',
+                  style: TextStyle(fontSize: 10, color: Colors.orange),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (userIdController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a user ID'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SubmitRatingScreen(
+                      ratedUserId: userIdController.text.trim(),
+                      ratedUserName: userNameController.text.trim().isEmpty
+                          ? null
+                          : userNameController.text.trim(),
+                      context: selectedContext,
+                      transactionId: null, // Optional for testing
+                      role: selectedRole,
+                    ),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00897B),
+              ),
+              child: const Text('Test Rating'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
