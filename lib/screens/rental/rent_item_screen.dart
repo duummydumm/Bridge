@@ -596,6 +596,116 @@ class _RentItemScreenState extends State<RentItemScreen> {
                             return const SizedBox.shrink();
                           },
                         ),
+                        // Additional details per rent type (apartments, boarding, commercial)
+                        if (_listing != null &&
+                            _listing!.rentType != RentalType.item)
+                          Column(
+                            children: [
+                              const SizedBox(height: 16),
+                              const Divider(),
+                              const SizedBox(height: 12),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Details',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              if (_listing!.rentType ==
+                                  RentalType.apartment) ...[
+                                if (_listing!.bedrooms != null)
+                                  _buildDetailRow(
+                                    icon: Icons.bed,
+                                    label: 'Bedrooms',
+                                    value: '${_listing!.bedrooms}',
+                                  ),
+                                if (_listing!.bathrooms != null)
+                                  _buildDetailRow(
+                                    icon: Icons.bathtub_outlined,
+                                    label: 'Bathrooms',
+                                    value: '${_listing!.bathrooms}',
+                                  ),
+                                if (_listing!.floorArea != null)
+                                  _buildDetailRow(
+                                    icon: Icons.square_foot,
+                                    label: 'Floor area',
+                                    value:
+                                        '${_listing!.floorArea!.toStringAsFixed(0)} sqm',
+                                  ),
+                                if (_listing!.utilitiesIncluded == true)
+                                  _buildDetailRow(
+                                    icon: Icons.electric_bolt,
+                                    label: 'Utilities',
+                                    value: 'Included',
+                                  ),
+                              ] else if (_listing!.rentType ==
+                                  RentalType.boardingHouse) ...[
+                                if (_listing!.maxOccupants != null)
+                                  _buildDetailRow(
+                                    icon: Icons.people_outline,
+                                    label: 'Max occupants',
+                                    value: '${_listing!.maxOccupants}',
+                                  ),
+                                if (_listing!.sharedCR == true)
+                                  _buildDetailRow(
+                                    icon: Icons.bathroom_outlined,
+                                    label: 'Comfort room',
+                                    value: 'Shared',
+                                  ),
+                                if (_listing!.bedSpaceAvailable == true)
+                                  _buildDetailRow(
+                                    icon: Icons.bed,
+                                    label: 'Bed space',
+                                    value: 'Available',
+                                  ),
+                                if (_listing!.utilitiesIncluded == true)
+                                  _buildDetailRow(
+                                    icon: Icons.electric_bolt,
+                                    label: 'Utilities',
+                                    value: 'Included',
+                                  ),
+                                if ((_listing!.curfewRules ?? '').isNotEmpty)
+                                  _buildDetailRow(
+                                    icon: Icons.schedule,
+                                    label: 'Curfew',
+                                    value: _listing!.curfewRules!,
+                                  ),
+                              ] else if (_listing!.rentType ==
+                                  RentalType.commercial) ...[
+                                if (_listing!.floorArea != null)
+                                  _buildDetailRow(
+                                    icon: Icons.square_foot,
+                                    label: 'Floor area',
+                                    value:
+                                        '${_listing!.floorArea!.toStringAsFixed(0)} sqm',
+                                  ),
+                                if ((_listing!.allowedBusiness ?? '')
+                                    .isNotEmpty)
+                                  _buildDetailRow(
+                                    icon: Icons.business_center,
+                                    label: 'Allowed business',
+                                    value: _listing!.allowedBusiness!,
+                                  ),
+                                if (_listing!.leaseTerm != null)
+                                  _buildDetailRow(
+                                    icon: Icons.event_note,
+                                    label: 'Lease term',
+                                    value: '${_listing!.leaseTerm} months',
+                                  ),
+                                if (_listing!.utilitiesIncluded == true)
+                                  _buildDetailRow(
+                                    icon: Icons.electric_bolt,
+                                    label: 'Utilities',
+                                    value: 'Included',
+                                  ),
+                              ],
+                            ],
+                          ),
                       ],
                     ),
                   ),
@@ -940,7 +1050,6 @@ class _RentItemScreenState extends State<RentItemScreen> {
                             _existingRequest != null ||
                                 reqProvider.isLoading ||
                                 _start == null ||
-                                _end == null ||
                                 _quote == null
                             ? null
                             : () async {
@@ -950,10 +1059,7 @@ class _RentItemScreenState extends State<RentItemScreen> {
                                         PricingMode.perMonth ||
                                     _listing?.allowMultipleRentals == true;
 
-                                if (_start == null ||
-                                    (!isLongTerm && _end == null) ||
-                                    _quote == null)
-                                  return;
+                                if (_start == null || _quote == null) return;
 
                                 // Double-check: prevent owner from renting their own item
                                 if (currentUserId != null &&
@@ -1223,6 +1329,41 @@ class _RentItemScreenState extends State<RentItemScreen> {
       'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  Widget _buildDetailRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.teal),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildQuoteRow(String label, String value) {

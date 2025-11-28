@@ -259,6 +259,7 @@ class CalamityProvider extends ChangeNotifier {
   Future<String?> createCalamityDonation({
     required String eventId,
     required String donorEmail,
+    String? donorName,
     required String itemType,
     required int quantity,
     String? notes,
@@ -269,6 +270,7 @@ class CalamityProvider extends ChangeNotifier {
       final payload = {
         'eventId': eventId,
         'donorEmail': donorEmail,
+        'donorName': donorName,
         'itemType': itemType,
         'quantity': quantity,
         'notes': notes,
@@ -283,6 +285,7 @@ class CalamityProvider extends ChangeNotifier {
           eventId: eventId,
           donationId: id,
           donorEmail: donorEmail,
+          donorName: donorName,
           itemType: itemType,
           quantity: quantity,
         );
@@ -372,6 +375,22 @@ class CalamityProvider extends ChangeNotifier {
   Future<int> getDonationCountByEvent(String eventId) async {
     try {
       return await _firestore.getDonationCountByEvent(eventId);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<int> getUniqueDonorsCountByEvent(String eventId) async {
+    try {
+      return await _firestore.getUniqueDonorsCountByEvent(eventId);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<int> getTotalUniqueDonorsCount() async {
+    try {
+      return await _firestore.getTotalUniqueDonorsCount();
     } catch (e) {
       return 0;
     }

@@ -103,6 +103,7 @@ class _CalamityEventDetailScreenState extends State<CalamityEventDetailScreen> {
       final donationId = await calamityProvider.createCalamityDonation(
         eventId: widget.eventId,
         donorEmail: authProvider.user!.email ?? currentUser.email,
+        donorName: currentUser.fullName,
         itemType: _selectedItemType ?? '',
         quantity: quantity,
         notes: _notesController.text.trim().isNotEmpty

@@ -180,9 +180,21 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
                 ],
               ),
             ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text(
+                'Borrower',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black54,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
             ListTile(
               leading: const Icon(Icons.pending_outlined),
-              title: const Text('Pending Borrow Requests'),
+              title: const Text('Pending Requests'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/borrow/pending-requests');
@@ -190,7 +202,7 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.check_circle_outline),
-              title: const Text('Approved Borrow'),
+              title: const Text('Approved Requests'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/borrow/approved');
@@ -205,27 +217,40 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.assignment_returned_outlined),
+              leading: const Icon(Icons.assignment_turned_in_outlined),
               title: const Text('Returned Items'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/borrow/returned-items');
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.pending_actions),
-              title: const Text('Pending Returns'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/borrow/pending-returns');
-              },
+            const Divider(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text(
+                'Lender',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black54,
+                  letterSpacing: 0.5,
+                ),
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.upload_outlined),
-              title: const Text('Items Currently Lent'),
+              title: const Text('Items Currently Lent Out'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/borrow/currently-lent');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.pending_actions),
+              title: const Text('Pending Return Confirmation'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/borrow/pending-returns');
               },
             ),
             ListTile(
@@ -236,9 +261,22 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
                 Navigator.pushNamed(context, '/borrow/disputed-returns');
               },
             ),
+            const Divider(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text(
+                'Listings',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black54,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
             ListTile(
               leading: const Icon(Icons.inventory_2_outlined),
-              title: const Text('My Listing'),
+              title: const Text('My Borrow Listings'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -250,8 +288,8 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.inventory_2_outlined),
-              title: const Text('My Lender'),
+              leading: const Icon(Icons.people_alt_outlined),
+              title: const Text('My Lenders'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/my-lenders-detail');

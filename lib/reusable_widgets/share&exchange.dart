@@ -272,7 +272,7 @@ class _ExchangeModalState extends State<ExchangeModal>
                                     _buildAnimatedExchangeOption(
                                       icon: Icons.shopping_bag_outlined,
                                       title: 'Rent',
-                                      subtitle: 'Rent items for a fee',
+                                      subtitle: 'Rent anything for a fee',
                                       color: const Color(0xFF66BB6A),
                                       onTap: widget.onRent,
                                       delay: 50,

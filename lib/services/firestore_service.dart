@@ -3799,17 +3799,66 @@ extension FirestoreServiceCalamity on FirestoreService {
   }
 
   Future<int> getDonationCountByEvent(String eventId) async {
-    final snap = await _db
-        .collection('calamity_donations')
-        .where('eventId', isEqualTo: eventId)
-        .get();
-    return snap.docs.length;
+    try {
+      final snap = await _db
+          .collection('calamity_donations')
+          .where('eventId', isEqualTo: eventId)
+          .where('status', isEqualTo: 'received')
+          .get();
+      return snap.docs.length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /// Get unique donors count for a specific event
+  Future<int> getUniqueDonorsCountByEvent(String eventId) async {
+    try {
+      final snap = await _db
+          .collection('calamity_donations')
+          .where('eventId', isEqualTo: eventId)
+          .get();
+      final uniqueDonors = <String>{};
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final donorEmail = data['donorEmail'];
+        if (donorEmail != null &&
+            donorEmail is String &&
+            donorEmail.isNotEmpty) {
+          uniqueDonors.add(donorEmail);
+        }
+      }
+      return uniqueDonors.length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /// Get unique donors count across all events
+  Future<int> getTotalUniqueDonorsCount() async {
+    try {
+      final snap = await _db.collection('calamity_donations').get();
+      final uniqueDonors = <String>{};
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final donorEmail = data['donorEmail'];
+        if (donorEmail != null &&
+            donorEmail is String &&
+            donorEmail.isNotEmpty) {
+          uniqueDonors.add(donorEmail);
+        }
+      }
+      return uniqueDonors.length;
+    } catch (e) {
+      return 0;
+    }
   }
 
   Future<void> sendCalamityDonationNotification({
     required String eventId,
     required String donationId,
     required String donorEmail,
+    String? donorName,
     required String itemType,
     required int quantity,
   }) async {
@@ -3836,6 +3885,7 @@ extension FirestoreServiceCalamity on FirestoreService {
           'eventTitle': eventTitle,
           'donationId': donationId,
           'donorEmail': donorEmail,
+          'donorName': donorName,
           'itemType': itemType,
           'quantity': quantity,
           'status': 'unread',
@@ -3875,6 +3925,210 @@ extension FirestoreServiceCalamity on FirestoreService {
       }
     } catch (_) {
       // Best-effort; don't fail if notification write fails
+    }
+  }
+
+  // ============================================================================
+  // Activity Logs Management
+  // ============================================================================
+
+  /// Create an activity log entry
+  Future<String?> createActivityLog({
+    required String category, // user, transaction, content, admin, system
+    required String action,
+    required String actorId,
+    required String actorName,
+    String? targetId,
+    String? targetType,
+    required String description,
+    Map<String, dynamic>? metadata,
+    String severity = 'info', // info, warning, critical
+  }) async {
+    try {
+      final logData = {
+        'timestamp': FieldValue.serverTimestamp(),
+        'category': category,
+        'action': action,
+        'actorId': actorId,
+        'actorName': actorName,
+        'targetId': targetId,
+        'targetType': targetType,
+        'description': description,
+        'metadata': metadata ?? {},
+        'severity': severity,
+      };
+
+      final docRef = await _db.collection('activity_logs').add(logData);
+      return docRef.id;
+    } catch (e) {
+      debugPrint('Error creating activity log: $e');
+      return null;
+    }
+  }
+
+  /// Get activity logs stream with optional filters
+  Stream<QuerySnapshot<Map<String, dynamic>>> getActivityLogsStream({
+    String? category,
+    String? severity,
+    DateTime? startDate,
+    DateTime? endDate,
+    int limit = 50,
+  }) {
+    Query<Map<String, dynamic>> query = _db.collection('activity_logs');
+
+    // Apply equality filters first (category, severity)
+    // Note: Firestore requires composite indexes for multiple where clauses with orderBy
+    if (category != null && category != 'all') {
+      query = query.where('category', isEqualTo: category);
+    }
+    if (severity != null && severity != 'all') {
+      query = query.where('severity', isEqualTo: severity);
+    }
+
+    // Handle date range: Firestore allows only one range query per query
+    // If both startDate and endDate are provided, we use a range query
+    if (startDate != null && endDate != null) {
+      query = query
+          .where(
+            'timestamp',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+          )
+          .where('timestamp', isLessThanOrEqualTo: Timestamp.fromDate(endDate));
+    } else if (startDate != null) {
+      query = query.where(
+        'timestamp',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+      );
+    } else if (endDate != null) {
+      query = query.where(
+        'timestamp',
+        isLessThanOrEqualTo: Timestamp.fromDate(endDate),
+      );
+    }
+
+    // Order by timestamp (must be last in composite index)
+    return query
+        .orderBy('timestamp', descending: true)
+        .limit(limit)
+        .snapshots();
+  }
+
+  /// Search activity logs by text (searches in description and action fields)
+  Future<List<Map<String, dynamic>>> searchActivityLogs({
+    required String searchText,
+    int limit = 50,
+  }) async {
+    try {
+      // Note: This is a simple implementation. For production,
+      // consider using Algolia or similar for full-text search
+      final snapshot = await _db
+          .collection('activity_logs')
+          .orderBy('timestamp', descending: true)
+          .limit(limit * 2)
+          .get();
+
+      final searchLower = searchText.toLowerCase();
+      final results = <Map<String, dynamic>>[];
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final description = (data['description'] ?? '')
+            .toString()
+            .toLowerCase();
+        final action = (data['action'] ?? '').toString().toLowerCase();
+        final actorName = (data['actorName'] ?? '').toString().toLowerCase();
+
+        if (description.contains(searchLower) ||
+            action.contains(searchLower) ||
+            actorName.contains(searchLower)) {
+          data['id'] = doc.id;
+          results.add(data);
+          if (results.length >= limit) break;
+        }
+      }
+
+      return results;
+    } catch (e) {
+      debugPrint('Error searching activity logs: $e');
+      return [];
+    }
+  }
+
+  /// Get activity log statistics for dashboard
+  Future<Map<String, int>> getActivityLogStats({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      Query<Map<String, dynamic>> query = _db.collection('activity_logs');
+
+      if (startDate != null) {
+        query = query.where(
+          'timestamp',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+        );
+      }
+      if (endDate != null) {
+        query = query.where(
+          'timestamp',
+          isLessThanOrEqualTo: Timestamp.fromDate(endDate),
+        );
+      }
+
+      final snapshot = await query.get();
+      final stats = <String, int>{
+        'total': snapshot.docs.length,
+        'user': 0,
+        'transaction': 0,
+        'content': 0,
+        'admin': 0,
+        'system': 0,
+        'info': 0,
+        'warning': 0,
+        'critical': 0,
+      };
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final category = (data['category'] ?? '').toString();
+        final severity = (data['severity'] ?? '').toString();
+
+        if (stats.containsKey(category)) {
+          stats[category] = (stats[category] ?? 0) + 1;
+        }
+        if (stats.containsKey(severity)) {
+          stats[severity] = (stats[severity] ?? 0) + 1;
+        }
+      }
+
+      return stats;
+    } catch (e) {
+      debugPrint('Error getting activity log stats: $e');
+      return {};
+    }
+  }
+
+  /// Delete old activity logs (cleanup utility)
+  /// Deletes logs older than the specified number of days
+  Future<int> deleteOldActivityLogs({int daysToKeep = 90}) async {
+    try {
+      final cutoffDate = DateTime.now().subtract(Duration(days: daysToKeep));
+      final snapshot = await _db
+          .collection('activity_logs')
+          .where('timestamp', isLessThan: Timestamp.fromDate(cutoffDate))
+          .limit(500)
+          .get();
+
+      final batch = _db.batch();
+      for (final doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+      return snapshot.docs.length;
+    } catch (e) {
+      debugPrint('Error deleting old activity logs: $e');
+      return 0;
     }
   }
 }

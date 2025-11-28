@@ -23,6 +23,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
   String _selectedSortBy = 'Date Created (Newest)';
   Map<String, int> _donationCounts = {}; // Cache donation counts per event
   bool _isFiltersExpanded = false; // Track filter expansion state
+  int _totalUniqueDonors = 0; // Cache total unique donors count
 
   @override
   void initState() {
@@ -31,6 +32,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
       final provider = Provider.of<CalamityProvider>(context, listen: false);
       provider.loadAllCalamityEvents().then((_) {
         _loadDonationCounts(provider);
+        _loadTotalUniqueDonors(provider);
       });
     });
     _searchController.addListener(() => setState(() {}));
@@ -59,31 +61,31 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
     }
   }
 
+  Future<void> _loadTotalUniqueDonors(CalamityProvider provider) async {
+    try {
+      final count = await provider.getTotalUniqueDonorsCount();
+      if (mounted) {
+        setState(() {
+          _totalUniqueDonors = count;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _totalUniqueDonors = 0;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Calamity Events Management'),
+        title: Center(child: const Text('Calamity Events Management')),
         backgroundColor: _primaryColor,
         foregroundColor: Colors.white,
         automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Create New Event',
-            onPressed: () {
-              CreateEditCalamityEventScreen.show(context).then((_) {
-                final provider = Provider.of<CalamityProvider>(
-                  context,
-                  listen: false,
-                );
-                provider.loadAllCalamityEvents().then((_) {
-                  _loadDonationCounts(provider);
-                });
-              });
-            },
-          ),
-        ],
       ),
       body: Consumer<CalamityProvider>(
         builder: (context, provider, _) {
@@ -173,6 +175,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
             );
             provider.loadAllCalamityEvents().then((_) {
               _loadDonationCounts(provider);
+              _loadTotalUniqueDonors(provider);
             });
           });
         },
@@ -203,7 +206,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
       0,
       (sum, count) => sum + count,
     );
-    final totalDonors = _donationCounts.length;
+    final totalDonors = _totalUniqueDonors;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -896,6 +899,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
                           ).then((_) {
                             provider.loadAllCalamityEvents().then((_) {
                               _loadDonationCounts(provider);
+                              _loadTotalUniqueDonors(provider);
                             });
                           });
                         },
@@ -996,6 +1000,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
                 );
                 if (success) {
                   _loadDonationCounts(provider);
+                  _loadTotalUniqueDonors(provider);
                 }
               }
             },
@@ -1045,6 +1050,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
                 if (success) {
                   provider.loadAllCalamityEvents().then((_) {
                     _loadDonationCounts(provider);
+                    _loadTotalUniqueDonors(provider);
                   });
                 }
               }

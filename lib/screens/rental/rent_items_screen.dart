@@ -8,6 +8,10 @@ import '../../reusable_widgets/bottom_nav_bar_widget.dart';
 import '../../reusable_widgets/verification_guard.dart';
 import '../../providers/user_provider.dart';
 import 'active_rentals_list_screen.dart';
+import 'rental_items.dart';
+import 'rental_apartments.dart';
+import 'rental_boardinghouse.dart';
+import 'rental_commercial_space.dart';
 import 'rental_history.dart';
 import 'monthly_rental_tracking.dart';
 import 'rental_overdue.dart';
@@ -257,9 +261,10 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                 ],
               ),
             ),
+            // Top-level status sections
             ListTile(
               leading: const Icon(Icons.pending_outlined),
-              title: const Text('Pending Rent Requests'),
+              title: const Text('Pending Requests'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/rental/pending-requests');
@@ -281,7 +286,7 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.business_outlined),
-              title: const Text('My Items Rented Out'),
+              title: const Text('Rented Out (As Owner)'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -292,6 +297,19 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                   ),
                 );
               },
+            ),
+            const Divider(),
+            // Item rentals section
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+              child: Text(
+                'Item Rentals',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.access_time_outlined),
@@ -319,6 +337,25 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                 );
               },
             ),
+            const Divider(),
+            // Monthly billing section
+            ListTile(
+              leading: const Icon(Icons.calendar_month_outlined),
+              title: const Text(
+                'Monthly Billing (Apartments/Rooms/Commercial)',
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MonthlyRentalTrackingScreen(),
+                  ),
+                );
+              },
+            ),
+            const Divider(),
+            // History / listings section
             ListTile(
               leading: const Icon(Icons.history_outlined),
               title: const Text('Rental History'),
@@ -334,21 +371,8 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.calendar_month_outlined),
-              title: const Text('Monthly Rental Tracking'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const MonthlyRentalTrackingScreen(),
-                  ),
-                );
-              },
-            ),
-            ListTile(
               leading: const Icon(Icons.category_outlined),
-              title: const Text('My Rental Listing'),
+              title: const Text('My Rental Listings'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -378,7 +402,7 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                         child: TextField(
                           controller: _searchController,
                           decoration: InputDecoration(
-                            hintText: 'Search items to rent...',
+                            hintText: 'Search antything to rent...',
                             prefixIcon: const Icon(
                               Icons.search,
                               color: Colors.grey,
@@ -832,10 +856,17 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                           _buildSectionHeader(
                             'Items',
                             groupedListings['item']!.length,
+                            onViewAll: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const RentalItemsScreen(),
+                                ),
+                              );
+                            },
                           ),
                         );
                         sections.add(
-                          _buildItemsGridView(
+                          _buildItemsHorizontalList(
                             groupedListings['item']!,
                             currentUserId,
                             requestedListingIds,
@@ -843,16 +874,24 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                         );
                       }
 
-                      // Apartments - Card List
+                      // Apartments - Horizontal list with View All
                       if (groupedListings['apartment']!.isNotEmpty) {
                         sections.add(
                           _buildSectionHeader(
                             'Apartments',
                             groupedListings['apartment']!.length,
+                            onViewAll: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const RentalApartmentsScreen(),
+                                ),
+                              );
+                            },
                           ),
                         );
                         sections.add(
-                          _buildApartmentsCardList(
+                          _buildApartmentsHorizontalList(
                             groupedListings['apartment']!,
                             currentUserId,
                             requestedListingIds,
@@ -860,16 +899,24 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                         );
                       }
 
-                      // Boarding Houses - Card List
+                      // Boarding Houses - Horizontal list with View All
                       if (groupedListings['boarding_house']!.isNotEmpty) {
                         sections.add(
                           _buildSectionHeader(
                             'Boarding Houses',
                             groupedListings['boarding_house']!.length,
+                            onViewAll: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const RentalBoardingHousesScreen(),
+                                ),
+                              );
+                            },
                           ),
                         );
                         sections.add(
-                          _buildBoardingHousesCardList(
+                          _buildBoardingHousesHorizontalList(
                             groupedListings['boarding_house']!,
                             currentUserId,
                             requestedListingIds,
@@ -877,16 +924,24 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                         );
                       }
 
-                      // Commercial Spaces - Business-style Cards
+                      // Commercial Spaces - Horizontal list with View All
                       if (groupedListings['commercial']!.isNotEmpty) {
                         sections.add(
                           _buildSectionHeader(
                             'Commercial Spaces',
                             groupedListings['commercial']!.length,
+                            onViewAll: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const RentalCommercialSpacesScreen(),
+                                ),
+                              );
+                            },
                           ),
                         );
                         sections.add(
-                          _buildCommercialBusinessCards(
+                          _buildCommercialHorizontalList(
                             groupedListings['commercial']!,
                             currentUserId,
                             requestedListingIds,
@@ -938,7 +993,11 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
     );
   }
 
-  Widget _buildSectionHeader(String title, int count) {
+  Widget _buildSectionHeader(
+    String title,
+    int count, {
+    VoidCallback? onViewAll,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
       child: Row(
@@ -967,202 +1026,212 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
               ),
             ),
           ),
+          const Spacer(),
+          if (onViewAll != null)
+            TextButton(
+              onPressed: onViewAll,
+              child: const Text(
+                'View all',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF00897B),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildItemsGridView(
+  Widget _buildItemsHorizontalList(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     String? currentUserId,
     Set<String> requestedListingIds,
   ) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 12),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisExtent: 320,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: docs.length,
-      itemBuilder: (context, index) {
-        final doc = docs[index];
-        final listing = doc.data();
-        final listingId = doc.id;
-        final itemId = (listing['itemId'] ?? '').toString();
-        final pricePerDay = (listing['pricePerDay'] as num?)?.toDouble();
-        final pricePerWeek = (listing['pricePerWeek'] as num?)?.toDouble();
-        final pricePerMonth = (listing['pricePerMonth'] as num?)?.toDouble();
-        final pricingMode = (listing['pricingMode'] ?? 'perDay').toString();
-        final isActive = (listing['isActive'] ?? true) == true;
+    return SizedBox(
+      // Unified height for all horizontal carousels
+      height: 290,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        itemCount: docs.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          final doc = docs[index];
+          final listing = doc.data();
+          final listingId = doc.id;
+          final itemId = (listing['itemId'] ?? '').toString();
+          final pricePerDay = (listing['pricePerDay'] as num?)?.toDouble();
+          final pricePerWeek = (listing['pricePerWeek'] as num?)?.toDouble();
+          final pricePerMonth = (listing['pricePerMonth'] as num?)?.toDouble();
+          final pricingMode = (listing['pricingMode'] ?? 'perDay').toString();
+          final isActive = (listing['isActive'] ?? true) == true;
 
-        final itemRef = FirebaseFirestore.instance
-            .collection('items')
-            .doc(itemId);
+          final itemRef = FirebaseFirestore.instance
+              .collection('items')
+              .doc(itemId);
 
-        return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          future: itemRef.get(),
-          builder: (context, itemSnap) {
-            final isLoading =
-                itemSnap.connectionState == ConnectionState.waiting;
-            final itemData = itemSnap.data?.data();
-            final denormTitle = (listing['title'] as String?)?.trim();
-            final denormCategory = (listing['category'] as String?)?.trim();
-            final denormImage = (listing['imageUrl'] as String?)?.trim();
-            final denormLocation = (listing['location'] as String?)?.trim();
+          return SizedBox(
+            width: 260,
+            child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              future: itemRef.get(),
+              builder: (context, itemSnap) {
+                final isLoading =
+                    itemSnap.connectionState == ConnectionState.waiting;
+                final itemData = itemSnap.data?.data();
+                final denormTitle = (listing['title'] as String?)?.trim();
+                final denormCategory = (listing['category'] as String?)?.trim();
+                final denormImage = (listing['imageUrl'] as String?)?.trim();
+                final denormLocation = (listing['location'] as String?)?.trim();
 
-            final title = denormTitle?.isNotEmpty == true
-                ? denormTitle!
-                : (itemData != null ? (itemData['title'] ?? 'Item') : 'Item');
-            final category = denormCategory?.isNotEmpty == true
-                ? denormCategory!
-                : (itemData != null
-                      ? (itemData['category'] ?? 'Category')
-                      : 'Category');
-            String? imageUrl;
-            if (denormImage != null && denormImage.isNotEmpty) {
-              imageUrl = denormImage;
-            } else if (itemData != null) {
-              final List images = (itemData['images'] as List? ?? const []);
-              imageUrl = images.isNotEmpty ? images.first.toString() : null;
-            }
-            final location = denormLocation?.isNotEmpty == true
-                ? denormLocation!
-                : (itemData != null ? (itemData['location'] ?? '') : '');
+                final title = denormTitle?.isNotEmpty == true
+                    ? denormTitle!
+                    : (itemData != null
+                          ? (itemData['title'] ?? 'Item')
+                          : 'Item');
+                final category = denormCategory?.isNotEmpty == true
+                    ? denormCategory!
+                    : (itemData != null
+                          ? (itemData['category'] ?? 'Category')
+                          : 'Category');
 
-            return InkWell(
-              onTap: isLoading
-                  ? null
-                  : () {
-                      Navigator.pushNamed(
-                        context,
-                        '/rental/rent-item',
-                        arguments: {'listingId': listingId},
-                      );
-                    },
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
+                String? imageUrl;
+                if (denormImage != null && denormImage.isNotEmpty) {
+                  imageUrl = denormImage;
+                } else if (itemData != null) {
+                  final List images = (itemData['images'] as List? ?? const []);
+                  imageUrl = images.isNotEmpty ? images.first.toString() : null;
+                }
+
+                final location = denormLocation?.isNotEmpty == true
+                    ? denormLocation!
+                    : (itemData != null ? (itemData['location'] ?? '') : '');
+
+                return InkWell(
+                  onTap: isLoading
+                      ? null
+                      : () {
+                          Navigator.pushNamed(
+                            context,
+                            '/rental/rent-item',
+                            arguments: {'listingId': listingId},
+                          );
+                        },
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Stack(
-                      children: [
-                        Container(
-                          height: 180,
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(16),
-                              topRight: Radius.circular(16),
-                            ),
-                            color: Colors.grey[200],
-                          ),
-                          child: imageUrl != null && imageUrl.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: const BorderRadius.only(
-                                    topLeft: Radius.circular(16),
-                                    topRight: Radius.circular(16),
-                                  ),
-                                  child: CachedNetworkImage(
-                                    imageUrl: imageUrl,
-                                    fit: BoxFit.cover,
-                                    width: double.infinity,
-                                    height: 180,
-                                    placeholder: (context, url) => Container(
-                                      color: Colors.grey[200],
-                                      child: const Center(
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      ),
-                                    ),
-                                    errorWidget: (context, url, error) =>
-                                        Container(
-                                          color: Colors.grey[200],
-                                          child: const Center(
-                                            child: Icon(
-                                              Icons
-                                                  .image_not_supported_outlined,
-                                              size: 48,
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                        ),
-                                  ),
-                                )
-                              : const Center(
-                                  child: Icon(
-                                    Icons.image_not_supported_outlined,
-                                    size: 48,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                        ),
-                        Positioned(
-                          right: 12,
-                          top: 12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? const Color(0xFF2ECC71)
-                                  : Colors.grey,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              isActive ? 'available' : 'inactive',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
                         ),
                       ],
                     ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Stack(
                           children: [
-                            // Title and Price Row
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Title
-                                Expanded(
-                                  child: Text(
-                                    title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.3,
+                            Container(
+                              height: 150,
+                              decoration: BoxDecoration(
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(16),
+                                  topRight: Radius.circular(16),
+                                ),
+                                color: Colors.grey[200],
+                              ),
+                              child: imageUrl != null && imageUrl.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(16),
+                                        topRight: Radius.circular(16),
+                                      ),
+                                      child: CachedNetworkImage(
+                                        imageUrl: imageUrl,
+                                        fit: BoxFit.cover,
+                                        width: double.infinity,
+                                        height: 150,
+                                        placeholder: (context, url) =>
+                                            Container(
+                                              color: Colors.grey[200],
+                                              child: const Center(
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              ),
+                                            ),
+                                        errorWidget: (context, url, error) =>
+                                            Container(
+                                              color: Colors.grey[200],
+                                              child: const Center(
+                                                child: Icon(
+                                                  Icons
+                                                      .image_not_supported_outlined,
+                                                  size: 40,
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
+                                            ),
+                                      ),
+                                    )
+                                  : const Center(
+                                      child: Icon(
+                                        Icons.image_not_supported_outlined,
+                                        size: 40,
+                                        color: Colors.grey,
+                                      ),
                                     ),
+                            ),
+                            Positioned(
+                              right: 10,
+                              top: 10,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isActive
+                                      ? const Color(0xFF2ECC71)
+                                      : Colors.grey,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  isActive ? 'available' : 'inactive',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                // Price
+                              ),
+                            ),
+                          ],
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
                                 Text(
                                   pricingMode == 'perMonth'
                                       ? '₱${(pricePerMonth ?? 0).toStringAsFixed(0)}/mo'
@@ -1171,186 +1240,212 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                                       : '₱${(pricePerDay ?? 0).toStringAsFixed(0)}/day',
                                   style: const TextStyle(
                                     color: Color(0xFF00A676),
-                                    fontSize: 16,
+                                    fontSize: 15,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            // Category and Location Row
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                // Category Badge
-                                Flexible(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFE8F5E9),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      category,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xFF1B5E20),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE8F5E9),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        category,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFF1B5E20),
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                                if (location.isNotEmpty) ...[
-                                  const SizedBox(width: 8),
-                                  // Location
-                                  Flexible(
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.location_on_outlined,
-                                          size: 13,
-                                          color: Colors.teal,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Flexible(
-                                          child: Text(
-                                            location,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: Colors.grey[700],
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w500,
+                                    if (location.isNotEmpty) ...[
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.location_on_outlined,
+                                              size: 13,
+                                              color: Colors.teal,
                                             ),
-                                          ),
+                                            const SizedBox(width: 3),
+                                            Flexible(
+                                              child: Text(
+                                                location,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Colors.grey[700],
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ],
                             ),
-                            const Spacer(),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildApartmentsCardList(
+  Widget _buildApartmentsHorizontalList(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     String? currentUserId,
     Set<String> requestedListingIds,
   ) {
-    return Column(
-      children: docs.map((doc) {
-        final listing = doc.data();
-        final listingId = doc.id;
-        final title = (listing['title'] ?? 'Apartment').toString();
-        final address = (listing['address'] ?? listing['location'] ?? '')
-            .toString();
-        final bedrooms = listing['bedrooms'] as int?;
-        final bathrooms = listing['bathrooms'] as int?;
-        final floorArea = (listing['floorArea'] as num?)?.toDouble();
-        final pricePerMonth = (listing['pricePerMonth'] as num?)?.toDouble();
-        final imageUrl = (listing['imageUrl'] as String?)?.trim();
-        final utilitiesIncluded =
-            listing['utilitiesIncluded'] as bool? ?? false;
+    return SizedBox(
+      // Same height as items carousel for consistent card size
+      height: 290,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        itemCount: docs.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          final listing = docs[index].data();
+          final listingId = docs[index].id;
+          final title = (listing['title'] ?? 'Apartment').toString();
+          final address = (listing['address'] ?? listing['location'] ?? '')
+              .toString();
+          final bedrooms = listing['bedrooms'] as int?;
+          final bathrooms = listing['bathrooms'] as int?;
+          final floorArea = (listing['floorArea'] as num?)?.toDouble();
+          final pricePerMonth = (listing['pricePerMonth'] as num?)?.toDouble();
+          final imageUrl = (listing['imageUrl'] as String?)?.trim();
+          final utilitiesIncluded =
+              listing['utilitiesIncluded'] as bool? ?? false;
 
-        return _buildApartmentCard(
-          listingId: listingId,
-          title: title,
-          address: address,
-          bedrooms: bedrooms,
-          bathrooms: bathrooms,
-          floorArea: floorArea,
-          pricePerMonth: pricePerMonth,
-          imageUrl: imageUrl,
-          utilitiesIncluded: utilitiesIncluded,
-        );
-      }).toList(),
+          return SizedBox(
+            width: 260,
+            child: _buildApartmentCard(
+              listingId: listingId,
+              title: title,
+              address: address,
+              bedrooms: bedrooms,
+              bathrooms: bathrooms,
+              floorArea: floorArea,
+              pricePerMonth: pricePerMonth,
+              imageUrl: imageUrl,
+              utilitiesIncluded: utilitiesIncluded,
+            ),
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildBoardingHousesCardList(
+  Widget _buildBoardingHousesHorizontalList(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     String? currentUserId,
     Set<String> requestedListingIds,
   ) {
-    return Column(
-      children: docs.map((doc) {
-        final listing = doc.data();
-        final listingId = doc.id;
-        final title = (listing['title'] ?? 'Boarding House').toString();
-        final address = (listing['address'] ?? listing['location'] ?? '')
-            .toString();
-        final maxOccupants = listing['maxOccupants'] as int?;
-        final sharedCR = listing['sharedCR'] as bool? ?? false;
-        final bedSpaceAvailable =
-            listing['bedSpaceAvailable'] as bool? ?? false;
-        final utilitiesIncluded =
-            listing['utilitiesIncluded'] as bool? ?? false;
-        final pricePerMonth = (listing['pricePerMonth'] as num?)?.toDouble();
-        final imageUrl = (listing['imageUrl'] as String?)?.trim();
+    return SizedBox(
+      // Same height as items carousel for consistent card size
+      height: 290,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        itemCount: docs.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          final listing = docs[index].data();
+          final listingId = docs[index].id;
+          final title = (listing['title'] ?? 'Boarding House').toString();
+          final address = (listing['address'] ?? listing['location'] ?? '')
+              .toString();
+          final maxOccupants = listing['maxOccupants'] as int?;
+          final sharedCR = listing['sharedCR'] as bool? ?? false;
+          final bedSpaceAvailable =
+              listing['bedSpaceAvailable'] as bool? ?? false;
+          final utilitiesIncluded =
+              listing['utilitiesIncluded'] as bool? ?? false;
+          final pricePerMonth = (listing['pricePerMonth'] as num?)?.toDouble();
+          final imageUrl = (listing['imageUrl'] as String?)?.trim();
 
-        return _buildBoardingHouseCard(
-          listingId: listingId,
-          title: title,
-          address: address,
-          maxOccupants: maxOccupants,
-          sharedCR: sharedCR,
-          bedSpaceAvailable: bedSpaceAvailable,
-          utilitiesIncluded: utilitiesIncluded,
-          pricePerMonth: pricePerMonth,
-          imageUrl: imageUrl,
-        );
-      }).toList(),
+          return SizedBox(
+            width: 260,
+            child: _buildBoardingHouseCard(
+              listingId: listingId,
+              title: title,
+              address: address,
+              maxOccupants: maxOccupants,
+              sharedCR: sharedCR,
+              bedSpaceAvailable: bedSpaceAvailable,
+              utilitiesIncluded: utilitiesIncluded,
+              pricePerMonth: pricePerMonth,
+              imageUrl: imageUrl,
+            ),
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildCommercialBusinessCards(
+  Widget _buildCommercialHorizontalList(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     String? currentUserId,
     Set<String> requestedListingIds,
   ) {
-    return Column(
-      children: docs.map((doc) {
-        final listing = doc.data();
-        final listingId = doc.id;
-        final title = (listing['title'] ?? 'Commercial Space').toString();
-        final address = (listing['address'] ?? listing['location'] ?? '')
-            .toString();
-        final floorArea = (listing['floorArea'] as num?)?.toDouble();
-        final allowedBusiness = (listing['allowedBusiness'] ?? '').toString();
-        final leaseTerm = listing['leaseTerm'] as int?;
-        final pricePerMonth = (listing['pricePerMonth'] as num?)?.toDouble();
-        final imageUrl = (listing['imageUrl'] as String?)?.trim();
+    return SizedBox(
+      // Same height as items carousel for consistent card size
+      height: 290,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        itemCount: docs.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          final listing = docs[index].data();
+          final listingId = docs[index].id;
+          final title = (listing['title'] ?? 'Commercial Space').toString();
+          final address = (listing['address'] ?? listing['location'] ?? '')
+              .toString();
+          final floorArea = (listing['floorArea'] as num?)?.toDouble();
+          final allowedBusiness = (listing['allowedBusiness'] ?? '').toString();
+          final leaseTerm = listing['leaseTerm'] as int?;
+          final pricePerMonth = (listing['pricePerMonth'] as num?)?.toDouble();
+          final imageUrl = (listing['imageUrl'] as String?)?.trim();
 
-        return _buildCommercialCard(
-          listingId: listingId,
-          title: title,
-          address: address,
-          floorArea: floorArea,
-          allowedBusiness: allowedBusiness,
-          leaseTerm: leaseTerm,
-          pricePerMonth: pricePerMonth,
-          imageUrl: imageUrl,
-        );
-      }).toList(),
+          return SizedBox(
+            width: 260,
+            child: _buildCommercialCard(
+              listingId: listingId,
+              title: title,
+              address: address,
+              floorArea: floorArea,
+              allowedBusiness: allowedBusiness,
+              leaseTerm: leaseTerm,
+              pricePerMonth: pricePerMonth,
+              imageUrl: imageUrl,
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -1381,7 +1476,7 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image
+            // Image (smaller for preview)
             if (imageUrl != null && imageUrl.isNotEmpty)
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(
@@ -1389,20 +1484,20 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                 ),
                 child: CachedNetworkImage(
                   imageUrl: imageUrl,
-                  height: 200,
+                  height: 140,
                   width: double.infinity,
                   fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
-                    height: 200,
+                    height: 140,
                     color: Colors.grey[200],
                     child: const Center(child: CircularProgressIndicator()),
                   ),
                   errorWidget: (context, url, error) => Container(
-                    height: 200,
+                    height: 140,
                     color: Colors.grey[200],
                     child: const Icon(
                       Icons.home_outlined,
-                      size: 48,
+                      size: 40,
                       color: Colors.grey,
                     ),
                   ),
@@ -1410,103 +1505,64 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
               )
             else
               Container(
-                height: 200,
+                height: 140,
                 color: Colors.grey[200],
                 child: const Center(
                   child: Icon(
                     Icons.home_outlined,
-                    size: 48,
+                    size: 40,
                     color: Colors.grey,
                   ),
                 ),
               ),
-            // Content
+            // Compact content: title, price, location only
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      if (pricePerMonth != null)
-                        Text(
-                          '₱${pricePerMonth.toStringAsFixed(0)}/mo',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF00A676),
-                          ),
-                        ),
-                    ],
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
+                  if (pricePerMonth != null)
+                    Text(
+                      '₱${pricePerMonth.toStringAsFixed(0)}/mo',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF00A676),
+                      ),
+                    ),
+                  const SizedBox(height: 4),
                   if (address.isNotEmpty)
                     Row(
                       children: [
                         const Icon(
                           Icons.location_on,
-                          size: 16,
+                          size: 14,
                           color: Colors.teal,
                         ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             address,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: Colors.grey[700],
-                              fontSize: 14,
+                              fontSize: 12,
                             ),
                           ),
                         ),
                       ],
                     ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      if (bedrooms != null) ...[
-                        _buildInfoChip('$bedrooms BR', Icons.bed),
-                        const SizedBox(width: 8),
-                      ],
-                      if (bathrooms != null) ...[
-                        _buildInfoChip('$bathrooms BA', Icons.bathtub_outlined),
-                        const SizedBox(width: 8),
-                      ],
-                      if (floorArea != null)
-                        _buildInfoChip(
-                          '${floorArea.toStringAsFixed(0)} sqm',
-                          Icons.square_foot,
-                        ),
-                    ],
-                  ),
-                  if (utilitiesIncluded) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle,
-                          size: 16,
-                          color: Colors.green[700],
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Utilities Included',
-                          style: TextStyle(
-                            color: Colors.green[700],
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -1543,7 +1599,7 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image
+            // Image (smaller for preview)
             if (imageUrl != null && imageUrl.isNotEmpty)
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(
@@ -1551,20 +1607,20 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                 ),
                 child: CachedNetworkImage(
                   imageUrl: imageUrl,
-                  height: 200,
+                  height: 140,
                   width: double.infinity,
                   fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
-                    height: 200,
+                    height: 140,
                     color: Colors.grey[200],
                     child: const Center(child: CircularProgressIndicator()),
                   ),
                   errorWidget: (context, url, error) => Container(
-                    height: 200,
+                    height: 140,
                     color: Colors.grey[200],
                     child: const Icon(
                       Icons.hotel_outlined,
-                      size: 48,
+                      size: 40,
                       color: Colors.grey,
                     ),
                   ),
@@ -1572,83 +1628,64 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
               )
             else
               Container(
-                height: 200,
+                height: 140,
                 color: Colors.grey[200],
                 child: const Center(
                   child: Icon(
                     Icons.hotel_outlined,
-                    size: 48,
+                    size: 40,
                     color: Colors.grey,
                   ),
                 ),
               ),
-            // Content
+            // Compact content: title, price, location only
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      if (pricePerMonth != null)
-                        Text(
-                          '₱${pricePerMonth.toStringAsFixed(0)}/mo',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF00A676),
-                          ),
-                        ),
-                    ],
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
+                  if (pricePerMonth != null)
+                    Text(
+                      '₱${pricePerMonth.toStringAsFixed(0)}/mo',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF00A676),
+                      ),
+                    ),
+                  const SizedBox(height: 4),
                   if (address.isNotEmpty)
                     Row(
                       children: [
                         const Icon(
                           Icons.location_on,
-                          size: 16,
+                          size: 14,
                           color: Colors.teal,
                         ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             address,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: Colors.grey[700],
-                              fontSize: 14,
+                              fontSize: 12,
                             ),
                           ),
                         ),
                       ],
                     ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (maxOccupants != null)
-                        _buildInfoChip(
-                          'Max $maxOccupants',
-                          Icons.people_outline,
-                        ),
-                      if (sharedCR)
-                        _buildInfoChip('Shared CR', Icons.bathroom_outlined),
-                      if (bedSpaceAvailable)
-                        _buildInfoChip('Bed Space', Icons.bed),
-                      if (utilitiesIncluded)
-                        _buildInfoChip('Utilities', Icons.power),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -1682,28 +1719,26 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
           );
         },
         borderRadius: BorderRadius.circular(12),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image
+            // Image (stacked layout like other rent types)
             if (imageUrl != null && imageUrl.isNotEmpty)
               ClipRRect(
-                borderRadius: const BorderRadius.horizontal(
-                  left: Radius.circular(12),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(12),
                 ),
                 child: CachedNetworkImage(
                   imageUrl: imageUrl,
-                  width: 140,
                   height: 140,
+                  width: double.infinity,
                   fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
-                    width: 140,
                     height: 140,
                     color: Colors.grey[200],
                     child: const Center(child: CircularProgressIndicator()),
                   ),
                   errorWidget: (context, url, error) => Container(
-                    width: 140,
                     height: 140,
                     color: Colors.grey[200],
                     child: const Icon(
@@ -1716,7 +1751,6 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
               )
             else
               Container(
-                width: 140,
                 height: 140,
                 color: Colors.grey[200],
                 child: const Center(
@@ -1727,101 +1761,55 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                   ),
                 ),
               ),
-            // Content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            // Compact content: title, price, location only
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (pricePerMonth != null)
+                    Text(
+                      '₱${pricePerMonth.toStringAsFixed(0)}/month',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF00A676),
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  if (address.isNotEmpty)
                     Row(
                       children: [
+                        const Icon(
+                          Icons.location_on,
+                          size: 14,
+                          color: Colors.teal,
+                        ),
+                        const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF00897B).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            'COMMERCIAL',
+                            address,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF00897B),
+                              color: Colors.grey[700],
+                              fontSize: 12,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    if (address.isNotEmpty)
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.location_on,
-                            size: 16,
-                            color: Colors.teal,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              address,
-                              style: TextStyle(
-                                color: Colors.grey[700],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        if (floorArea != null) ...[
-                          _buildInfoChip(
-                            '${floorArea.toStringAsFixed(0)} sqm',
-                            Icons.square_foot,
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        if (allowedBusiness.isNotEmpty)
-                          _buildInfoChip(
-                            allowedBusiness,
-                            Icons.business_center,
-                          ),
-                      ],
-                    ),
-                    if (leaseTerm != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Lease: $leaseTerm months',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    if (pricePerMonth != null)
-                      Text(
-                        '₱${pricePerMonth.toStringAsFixed(0)}/month',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF00A676),
-                        ),
-                      ),
-                  ],
-                ),
+                ],
               ),
             ),
           ],
@@ -1830,30 +1818,8 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
     );
   }
 
-  Widget _buildInfoChip(String label, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: Colors.grey[700]),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[700],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Note: full info chips are now only used on the dedicated "View all"
+  // screens; the horizontal previews show just title, price, and location.
 
   Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
     return InkWell(

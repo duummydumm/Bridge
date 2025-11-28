@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'dart:convert';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../services/firestore_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -265,6 +266,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (!profileSuccess) {
         throw Exception(userProvider.errorMessage ?? 'Profile creation failed');
+      }
+
+      // Create activity log for user registration
+      try {
+        final firestoreService = FirestoreService();
+        await firestoreService.createActivityLog(
+          category: 'user',
+          action: 'user_registered',
+          actorId: uid,
+          actorName:
+              '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'
+                  .trim(),
+          description: 'New user registered on the platform',
+          metadata: {
+            'email': _emailController.text.trim(),
+            'method': 'email',
+            'province': _provinceController.text.trim(),
+            'city': _cityController.text.trim(),
+            'barangay': _selectedBarangay ?? '',
+            'role': _role,
+          },
+          severity: 'info',
+        );
+      } catch (e) {
+        // Don't fail registration if logging fails
+        debugPrint('Error creating activity log for registration: $e');
       }
 
       // Send email verification and navigate to verification screen

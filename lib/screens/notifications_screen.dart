@@ -296,9 +296,13 @@ class _NotificationsTabView extends StatelessWidget {
           final eventTitle = data['eventTitle'] as String? ?? 'Calamity Event';
           final itemType = data['itemType'] as String? ?? 'item';
           final quantity = data['quantity'] as int? ?? 0;
+          final donorName = data['donorName'] as String?;
           final donorEmail = data['donorEmail'] as String? ?? 'a donor';
+          final donorLabel = (donorName != null && donorName.isNotEmpty)
+              ? donorName
+              : donorEmail;
           title =
-              'New donation: $quantity $itemType for "$eventTitle" from $donorEmail';
+              'New donation: $quantity $itemType for "$eventTitle" from $donorLabel';
         } else if (type == 'calamity_event_created') {
           final eventTitle =
               data['eventTitle'] as String? ?? 'New Calamity Event';

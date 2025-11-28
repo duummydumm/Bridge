@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../services/firestore_service.dart';
 import '../services/storage_service.dart';
 import '../models/item_model.dart';
@@ -135,8 +136,33 @@ class ItemProvider extends ChangeNotifier {
         'createdAt': DateTime.now(),
       };
 
-      await _firestoreService.createItem(itemData);
+      final itemId = await _firestoreService.createItem(itemData);
       // Do not reload here; My Listings listens via stream and will update.
+
+      // Create activity log for item listing
+      try {
+        await _firestoreService.createActivityLog(
+          category: 'content',
+          action: 'item_listed',
+          actorId: lenderId,
+          actorName: lenderName,
+          targetId: itemId,
+          targetType: 'item',
+          description: 'Listed new item: "$title"',
+          metadata: {
+            'itemId': itemId,
+            'itemTitle': title,
+            'category': category,
+            'type': type,
+            'pricePerDay': pricePerDay?.toString() ?? 'N/A',
+            'location': location ?? 'N/A',
+          },
+          severity: 'info',
+        );
+      } catch (e) {
+        // Don't fail item creation if logging fails
+        debugPrint('Error creating activity log for item listing: $e');
+      }
 
       _setLoading(false);
       notifyListeners();
@@ -195,6 +221,29 @@ class ItemProvider extends ChangeNotifier {
       // Reload items
       await loadMyItems(item.lenderId);
 
+      // Create activity log for item update
+      try {
+        await _firestoreService.createActivityLog(
+          category: 'content',
+          action: 'item_updated',
+          actorId: item.lenderId,
+          actorName: item.lenderName,
+          targetId: item.itemId,
+          targetType: 'item',
+          description: 'Updated item listing: "${item.title}"',
+          metadata: {
+            'itemId': item.itemId,
+            'itemTitle': item.title,
+            'category': item.category,
+            'type': item.type,
+          },
+          severity: 'info',
+        );
+      } catch (e) {
+        // Don't fail item update if logging fails
+        debugPrint('Error creating activity log for item update: $e');
+      }
+
       _setLoading(false);
       notifyListeners();
       return true;
@@ -212,10 +261,42 @@ class ItemProvider extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
+      // Get item info before deletion for logging
+      String? itemTitle;
+      String? lenderName;
+      try {
+        final itemData = await _firestoreService.getItem(itemId);
+        if (itemData != null) {
+          itemTitle = itemData['title']?.toString();
+          lenderName = itemData['lenderName']?.toString();
+        }
+      } catch (e) {
+        // If we can't get item info, continue with deletion
+        debugPrint('Error getting item info for logging: $e');
+      }
+
       await _firestoreService.deleteItem(itemId);
 
       // Reload items
       await loadMyItems(lenderId);
+
+      // Create activity log for item deletion
+      try {
+        await _firestoreService.createActivityLog(
+          category: 'content',
+          action: 'item_deleted',
+          actorId: lenderId,
+          actorName: lenderName ?? 'Unknown',
+          targetId: itemId,
+          targetType: 'item',
+          description: 'Deleted listing: "${itemTitle ?? 'Unknown Item'}"',
+          metadata: {'itemId': itemId, 'itemTitle': itemTitle ?? 'Unknown'},
+          severity: 'info',
+        );
+      } catch (e) {
+        // Don't fail item deletion if logging fails
+        debugPrint('Error creating activity log for item deletion: $e');
+      }
 
       _setLoading(false);
       notifyListeners();

@@ -236,6 +236,16 @@ service cloud.firestore {
       );
     }
     
+    // Activity Logs collection (admin monitoring and audit trail)
+    match /activity_logs/{logId} {
+      // Only admins can read activity logs
+      allow read: if isAdmin();
+      // Authenticated users and system can create logs
+      allow create: if isAuthenticated();
+      // Only admins can update or delete logs
+      allow update, delete: if isAdmin();
+    }
+    
     // FCM tokens collection (for push notifications)
     match /fcm_tokens/{userId} {
       // Users can read their own FCM token

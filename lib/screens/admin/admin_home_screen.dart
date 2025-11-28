@@ -8,6 +8,8 @@ import 'widgets/activity_monitoring.dart';
 import 'widgets/reports_tab.dart';
 import 'widgets/analytics.dart';
 import 'widgets/account_management.dart';
+import 'widgets/logs.dart';
+import 'admin_notifications_screen.dart';
 import 'calamity_events_admin_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
@@ -131,7 +133,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       body: SafeArea(child: _buildPage(_selected)),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selected > 5 ? 0 : _selected,
+        selectedIndex: _selected > 7 ? 0 : _selected,
         onDestinationSelected: (i) => setState(() => _selected = i),
         destinations: const [
           NavigationDestination(
@@ -155,8 +157,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             label: 'Users',
           ),
           NavigationDestination(
+            icon: Icon(Icons.notifications_outlined),
+            label: 'Notifications',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.emergency_outlined),
             label: 'Calamity',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.article_outlined),
+            label: 'Logs',
           ),
         ],
       ),
@@ -176,9 +186,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       case 4:
         return const AccountManagementTab();
       case 5:
-        return const CalamityEventsAdminScreen();
+        return const AdminNotificationsScreen();
       case 6:
-        return const _ActivityLogsPlaceholder();
+        return const CalamityEventsAdminScreen();
+      case 7:
+        return const ActivityLogsTab();
       default:
         return const SizedBox.shrink();
     }
@@ -204,11 +216,3 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 // Analytics tab moved to widgets/analytics.dart
 
 // Account Management moved to widgets/account_management.dart
-
-class _ActivityLogsPlaceholder extends StatelessWidget {
-  const _ActivityLogsPlaceholder();
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('Activity Logs coming soon'));
-  }
-}

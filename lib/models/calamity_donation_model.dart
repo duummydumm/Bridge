@@ -6,6 +6,7 @@ class CalamityDonationModel {
   final String donationId;
   final String eventId;
   final String donorEmail;
+  final String? donorName;
   final String itemType;
   final int quantity;
   final String? notes;
@@ -17,6 +18,7 @@ class CalamityDonationModel {
     required this.donationId,
     required this.eventId,
     required this.donorEmail,
+    this.donorName,
     required this.itemType,
     required this.quantity,
     this.notes,
@@ -42,6 +44,7 @@ class CalamityDonationModel {
       donationId: id,
       eventId: data['eventId'] ?? '',
       donorEmail: data['donorEmail'] ?? '',
+      donorName: data['donorName'],
       itemType: data['itemType'] ?? '',
       quantity: (data['quantity'] ?? 0) is int
           ? (data['quantity'] ?? 0)
@@ -57,6 +60,7 @@ class CalamityDonationModel {
     return {
       'eventId': eventId,
       'donorEmail': donorEmail,
+      'donorName': donorName,
       'itemType': itemType,
       'quantity': quantity,
       'notes': notes,

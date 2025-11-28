@@ -20,6 +20,7 @@ class AdminSidebar extends StatelessWidget {
       (Icons.report_gmailerrorred_outlined, 'Reports & Violations'),
       (Icons.analytics_outlined, 'Analytics'),
       (Icons.manage_accounts_outlined, 'Account Management'),
+      (Icons.notifications_outlined, 'Notifications'),
       (Icons.emergency_outlined, 'Calamity Events'),
       (Icons.article_outlined, 'Activity Logs'),
     ];

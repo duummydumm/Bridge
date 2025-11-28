@@ -251,6 +251,37 @@ class UserProvider extends ChangeNotifier {
       // Reload user profile to reflect changes
       await loadUserProfile(_currentUser!.uid);
 
+      // Create activity log for profile update
+      try {
+        final fieldsUpdated = <String>[];
+        if (firstName != null) fieldsUpdated.add('firstName');
+        if (lastName != null) fieldsUpdated.add('lastName');
+        if (middleInitial != null) fieldsUpdated.add('middleInitial');
+        if (province != null) fieldsUpdated.add('province');
+        if (city != null) fieldsUpdated.add('city');
+        if (barangay != null) fieldsUpdated.add('barangay');
+        if (street != null) fieldsUpdated.add('street');
+        if (barangayIdType != null) fieldsUpdated.add('barangayIdType');
+        if (barangayIdUrl != null) fieldsUpdated.add('barangayIdUrl');
+
+        await _firestoreService.createActivityLog(
+          category: 'user',
+          action: 'profile_updated',
+          actorId: _currentUser!.uid,
+          actorName: '${_currentUser!.firstName} ${_currentUser!.lastName}'
+              .trim(),
+          description: 'User updated their profile information',
+          metadata: {
+            'fieldsUpdated': fieldsUpdated.join(', '),
+            'userId': _currentUser!.uid,
+          },
+          severity: 'info',
+        );
+      } catch (e) {
+        // Don't fail profile update if logging fails
+        debugPrint('Error creating activity log for profile update: $e');
+      }
+
       _setLoading(false);
       notifyListeners();
       return true;

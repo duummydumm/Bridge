@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/calamity_provider.dart';
 import '../../models/calamity_event_model.dart';
 import '../../models/calamity_donation_model.dart';
@@ -34,6 +35,7 @@ class _CalamityEventDetailAdminScreenState
   CalamityEventModel? _event;
   bool _isLoading = true;
   int _totalDonorsCount = 0;
+  int _totalDonationsCount = 0;
 
   static const Color _primaryColor = Color(0xFF2A7A9E);
 
@@ -48,17 +50,33 @@ class _CalamityEventDetailAdminScreenState
       _isLoading = true;
     });
 
-    final provider = Provider.of<CalamityProvider>(context, listen: false);
-    final event = await provider.getCalamityEvent(widget.eventId);
-    final count = await _firestore.getDonationCountByEvent(widget.eventId);
-    await provider.loadDonationsByEvent(widget.eventId);
+    try {
+      final provider = Provider.of<CalamityProvider>(context, listen: false);
+      final event = await provider.getCalamityEvent(widget.eventId);
+      final uniqueDonorsCount = await provider.getUniqueDonorsCountByEvent(
+        widget.eventId,
+      );
+      final donationsCount = await _firestore.getDonationCountByEvent(
+        widget.eventId,
+      );
+      await provider.loadDonationsByEvent(widget.eventId);
 
-    if (mounted) {
-      setState(() {
-        _event = event;
-        _totalDonorsCount = count;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _event = event;
+          _totalDonorsCount = uniqueDonorsCount;
+          _totalDonationsCount = donationsCount;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _totalDonorsCount = 0;
+          _totalDonationsCount = 0;
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -134,6 +152,20 @@ class _CalamityEventDetailAdminScreenState
     final minute = date.minute.toString().padLeft(2, '0');
     final amPm = date.hour < 12 ? 'AM' : 'PM';
     return '$hour:$minute $amPm';
+  }
+
+  // Live stream of donations for this event
+  Stream<List<CalamityDonationModel>> _donationsStream() {
+    return FirebaseFirestore.instance
+        .collection('calamity_donations')
+        .where('eventId', isEqualTo: widget.eventId)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snap) => snap.docs
+              .map((d) => CalamityDonationModel.fromMap(d.data(), d.id))
+              .toList(),
+        );
   }
 
   @override
@@ -302,14 +334,6 @@ class _CalamityEventDetailAdminScreenState
             Flexible(
               child: Consumer<CalamityProvider>(
                 builder: (context, provider, _) {
-                  final donations = provider.calamityDonations;
-                  final pendingDonations = donations
-                      .where((d) => d.isPending)
-                      .toList();
-                  final receivedDonations = donations
-                      .where((d) => d.isReceived)
-                      .toList();
-
                   return ListView(
                     padding: const EdgeInsets.all(20),
                     shrinkWrap: true,
@@ -420,37 +444,6 @@ class _CalamityEventDetailAdminScreenState
                         ),
                       ),
                       const SizedBox(height: 24),
-                      // Statistics Card
-                      Card(
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _buildStatItem(
-                                'Total Donors',
-                                _totalDonorsCount.toString(),
-                                Colors.blue,
-                              ),
-                              _buildStatItem(
-                                'Pending',
-                                pendingDonations.length.toString(),
-                                Colors.orange,
-                              ),
-                              _buildStatItem(
-                                'Received',
-                                receivedDonations.length.toString(),
-                                Colors.green,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
                       // Needed Items
                       Card(
                         elevation: 1,
@@ -590,86 +583,190 @@ class _CalamityEventDetailAdminScreenState
                         ),
                       ),
                       const SizedBox(height: 24),
-                      // Donations Section
-                      Text(
-                        'Donations (${donations.length})',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (donations.isEmpty)
-                        Card(
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Center(
-                              child: Column(
-                                children: [
-                                  Icon(
-                                    Icons.inbox_outlined,
-                                    size: 64,
-                                    color: Colors.grey[400],
+                      // Donations Section (live stream from Firestore)
+                      StreamBuilder<List<CalamityDonationModel>>(
+                        stream: _donationsStream(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          }
+
+                          final donations = snapshot.data ?? [];
+                          final pendingDonations = donations
+                              .where((d) => d.isPending)
+                              .toList();
+                          final receivedDonations = donations
+                              .where((d) => d.isReceived)
+                              .toList();
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Statistics Card (live counts)
+                              Card(
+                                elevation: 2,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      // Use Wrap for smaller screens, Row for larger
+                                      if (constraints.maxWidth < 600) {
+                                        return Wrap(
+                                          alignment: WrapAlignment.spaceAround,
+                                          spacing: 16,
+                                          runSpacing: 16,
+                                          children: [
+                                            _buildStatItem(
+                                              'Total Donors',
+                                              _totalDonorsCount.toString(),
+                                              Colors.blue,
+                                            ),
+                                            _buildStatItem(
+                                              'Total Donations',
+                                              _totalDonationsCount.toString(),
+                                              Colors.purple,
+                                            ),
+                                            _buildStatItem(
+                                              'Pending',
+                                              pendingDonations.length
+                                                  .toString(),
+                                              Colors.orange,
+                                            ),
+                                            _buildStatItem(
+                                              'Received',
+                                              receivedDonations.length
+                                                  .toString(),
+                                              Colors.green,
+                                            ),
+                                          ],
+                                        );
+                                      } else {
+                                        return Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceAround,
+                                          children: [
+                                            _buildStatItem(
+                                              'Total Donors',
+                                              _totalDonorsCount.toString(),
+                                              Colors.blue,
+                                            ),
+                                            _buildStatItem(
+                                              'Total Donations',
+                                              _totalDonationsCount.toString(),
+                                              Colors.purple,
+                                            ),
+                                            _buildStatItem(
+                                              'Pending',
+                                              pendingDonations.length
+                                                  .toString(),
+                                              Colors.orange,
+                                            ),
+                                            _buildStatItem(
+                                              'Received',
+                                              receivedDonations.length
+                                                  .toString(),
+                                              Colors.green,
+                                            ),
+                                          ],
+                                        );
+                                      }
+                                    },
                                   ),
-                                  const SizedBox(height: 16),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Donations (${donations.length})',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              if (donations.isEmpty)
+                                Card(
+                                  elevation: 1,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(32),
+                                    child: Center(
+                                      child: Column(
+                                        children: [
+                                          Icon(
+                                            Icons.inbox_outlined,
+                                            size: 64,
+                                            color: Colors.grey[400],
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            'No donations yet',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              color: Colors.grey[600],
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else ...[
+                                // Pending Donations
+                                if (pendingDonations.isNotEmpty) ...[
                                   Text(
-                                    'No donations yet',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.grey[600],
-                                      fontWeight: FontWeight.w600,
+                                    'Pending Donations (${pendingDonations.length})',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ...pendingDonations.map(
+                                    (donation) => _buildDonationCard(
+                                      context,
+                                      donation,
+                                      provider,
+                                      true,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                ],
+                                // Received Donations
+                                if (receivedDonations.isNotEmpty) ...[
+                                  Text(
+                                    'Received Donations (${receivedDonations.length})',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ...receivedDonations.map(
+                                    (donation) => _buildDonationCard(
+                                      context,
+                                      donation,
+                                      provider,
+                                      false,
                                     ),
                                   ),
                                 ],
-                              ),
-                            ),
-                          ),
-                        )
-                      else ...[
-                        // Pending Donations
-                        if (pendingDonations.isNotEmpty) ...[
-                          Text(
-                            'Pending Donations (${pendingDonations.length})',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          ...pendingDonations.map(
-                            (donation) => _buildDonationCard(
-                              context,
-                              donation,
-                              provider,
-                              true,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
-                        // Received Donations
-                        if (receivedDonations.isNotEmpty) ...[
-                          Text(
-                            'Received Donations (${receivedDonations.length})',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          ...receivedDonations.map(
-                            (donation) => _buildDonationCard(
-                              context,
-                              donation,
-                              provider,
-                              false,
-                            ),
-                          ),
-                        ],
-                      ],
+                              ],
+                            ],
+                          );
+                        },
+                      ),
                       const SizedBox(height: 24),
                       // Close Event Button
                       if (canClose)
