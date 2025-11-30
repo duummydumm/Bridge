@@ -160,7 +160,8 @@ class _AccountManagementTabState extends State<AccountManagementTab> {
                   .collection('users')
                   .snapshots(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    snapshot.data == null) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final currentUid =
@@ -277,12 +278,18 @@ class _AccountManagementTabState extends State<AccountManagementTab> {
                         final uid = docs[index].id;
                         final cached = _userStatsCache[uid];
                         return _UserCard(
+                          key: ValueKey(
+                            uid,
+                          ), // Use key to preserve widget identity
                           userData: data,
                           uid: uid,
                           cachedStats: cached,
                           onStatsLoaded: (stats) {
                             if (!_userStatsCache.containsKey(uid)) {
-                              setState(() => _userStatsCache[uid] = stats);
+                              // Use setState only if widget is still mounted
+                              if (mounted) {
+                                setState(() => _userStatsCache[uid] = stats);
+                              }
                             }
                           },
                         );
@@ -318,6 +325,7 @@ class _UserCard extends StatefulWidget {
   final Function(UserStats) onStatsLoaded;
 
   const _UserCard({
+    super.key,
     required this.userData,
     required this.uid,
     this.cachedStats,
@@ -336,11 +344,27 @@ class _UserCardState extends State<_UserCard> {
   @override
   void initState() {
     super.initState();
+    _initializeStats();
+  }
+
+  @override
+  void didUpdateWidget(_UserCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only update if the cached stats changed and we don't have stats loaded yet
+    if (widget.cachedStats != null &&
+        widget.cachedStats != oldWidget.cachedStats &&
+        !_hasLoadedStats) {
+      _initializeStats();
+    }
+  }
+
+  void _initializeStats() {
     if (widget.cachedStats != null) {
       _stats = widget.cachedStats;
       _isLoadingStats = false;
       _hasLoadedStats = true;
-    } else {
+    } else if (!_hasLoadedStats) {
+      // Only load if we haven't loaded before
       Future.microtask(() => _loadStats());
     }
   }
@@ -1020,6 +1044,31 @@ class AccountUserDetailDialog extends StatelessWidget {
                 children: [
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.orange,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                    onPressed: () {
+                      final admin = Provider.of<AdminProvider>(
+                        context,
+                        listen: false,
+                      );
+                      Navigator.of(context).pop();
+                      showFileViolationDialog(
+                        context,
+                        uid,
+                        fullName.isEmpty ? email : fullName,
+                        admin,
+                      );
+                    },
+                    icon: const Icon(Icons.warning),
+                    label: const Text('File Violation'),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
                       foregroundColor: isSuspended ? Colors.green : Colors.red,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 24,
@@ -1195,4 +1244,78 @@ class _InfoRow extends StatelessWidget {
       ],
     );
   }
+}
+
+void showFileViolationDialog(
+  BuildContext context,
+  String userId,
+  String userName,
+  AdminProvider admin,
+) {
+  final noteController = TextEditingController();
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('File Violation'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('File a violation against: $userName'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: noteController,
+            decoration: const InputDecoration(
+              labelText: 'Violation Note (Optional)',
+              hintText: 'Enter details about the violation...',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 3,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () async {
+            try {
+              await admin.fileViolation(
+                userId,
+                note: noteController.text.trim().isEmpty
+                    ? null
+                    : noteController.text.trim(),
+              );
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Violation filed successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            } catch (e) {
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error filing violation: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+          },
+          child: const Text(
+            'File Violation',
+            style: TextStyle(color: Colors.orange),
+          ),
+        ),
+      ],
+    ),
+  );
 }

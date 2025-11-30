@@ -4,8 +4,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../providers/admin_provider.dart';
 import 'user_verification_detail_dialog.dart';
 
-class UserVerificationBoard extends StatelessWidget {
+class UserVerificationBoard extends StatefulWidget {
   const UserVerificationBoard({super.key});
+
+  @override
+  State<UserVerificationBoard> createState() => _UserVerificationBoardState();
+}
+
+class _UserVerificationBoardState extends State<UserVerificationBoard> {
+  final Set<String> _selectedUserIds = {};
+  bool _isSelectionMode = false;
 
   void _showRejectDialog(
     BuildContext context,
@@ -235,6 +243,147 @@ class UserVerificationBoard extends StatelessWidget {
     );
   }
 
+  void _toggleSelectionMode() {
+    setState(() {
+      _isSelectionMode = !_isSelectionMode;
+      if (!_isSelectionMode) {
+        _selectedUserIds.clear();
+      }
+    });
+  }
+
+  void _toggleUserSelection(String uid) {
+    setState(() {
+      if (_selectedUserIds.contains(uid)) {
+        _selectedUserIds.remove(uid);
+      } else {
+        _selectedUserIds.add(uid);
+      }
+    });
+  }
+
+  Future<void> _handleBulkApprove() async {
+    if (_selectedUserIds.isEmpty) return;
+
+    final admin = Provider.of<AdminProvider>(context, listen: false);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Bulk Approve Users'),
+        content: Text(
+          'Are you sure you want to approve ${_selectedUserIds.length} user(s)?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Approve'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final result = await admin.bulkApproveUsers(_selectedUserIds.toList());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Approved ${result.successCount} user(s)${result.hasFailures ? '. ${result.failureCount} failed.' : ''}',
+            ),
+            backgroundColor: result.hasFailures ? Colors.orange : Colors.green,
+          ),
+        );
+        setState(() {
+          _selectedUserIds.clear();
+          _isSelectionMode = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleBulkReject() async {
+    if (_selectedUserIds.isEmpty) return;
+
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Bulk Reject Users'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Reject ${_selectedUserIds.length} user(s)?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonController,
+              decoration: const InputDecoration(
+                hintText: 'Rejection reason (optional)',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final admin = Provider.of<AdminProvider>(context, listen: false);
+    try {
+      final reason = reasonController.text.trim().isEmpty
+          ? null
+          : reasonController.text.trim();
+      final result = await admin.bulkRejectUsers(
+        _selectedUserIds.toList(),
+        reason: reason,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Rejected ${result.successCount} user(s)${result.hasFailures ? '. ${result.failureCount} failed.' : ''}',
+            ),
+            backgroundColor: result.hasFailures ? Colors.orange : Colors.red,
+          ),
+        );
+        setState(() {
+          _selectedUserIds.clear();
+          _isSelectionMode = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final admin = Provider.of<AdminProvider>(context, listen: false);
@@ -286,9 +435,58 @@ class UserVerificationBoard extends StatelessWidget {
                     ),
                   ),
                 ),
+                IconButton(
+                  icon: Icon(
+                    _isSelectionMode ? Icons.close : Icons.checklist,
+                    color: Colors.white,
+                  ),
+                  onPressed: _toggleSelectionMode,
+                  tooltip: _isSelectionMode
+                      ? 'Exit selection mode'
+                      : 'Enable bulk selection',
+                ),
               ],
             ),
           ),
+          if (_isSelectionMode && _selectedUserIds.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    '${_selectedUserIds.length} selected',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: _handleBulkApprove,
+                    icon: const Icon(Icons.check),
+                    label: const Text('Approve All'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.green[700],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: _handleBulkReject,
+                    icon: const Icon(Icons.close),
+                    label: const Text('Reject All'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 12),
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -333,6 +531,7 @@ class UserVerificationBoard extends StatelessWidget {
                           final d = createdAtTs.toDate();
                           joined = '${d.month}/${d.day}/${d.year}';
                         }
+                        final isSelected = _selectedUserIds.contains(uid);
                         return Card(
                           elevation: 4,
                           shape: RoundedRectangleBorder(
@@ -343,26 +542,32 @@ class UserVerificationBoard extends StatelessWidget {
                               gradient: LinearGradient(
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
-                                colors: [Colors.white, const Color(0xFFF5F7FA)],
+                                colors: isSelected
+                                    ? [Colors.blue[50]!, Colors.blue[100]!]
+                                    : [Colors.white, const Color(0xFFF5F7FA)],
                               ),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: Colors.grey[200]!,
-                                width: 1,
+                                color: isSelected
+                                    ? Colors.blue[300]!
+                                    : Colors.grey[200]!,
+                                width: isSelected ? 2 : 1,
                               ),
                             ),
                             child: InkWell(
-                              onTap: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) =>
-                                      UserVerificationDetailDialog(
-                                        uid: uid,
-                                        userData: data,
-                                        admin: admin,
-                                      ),
-                                );
-                              },
+                              onTap: _isSelectionMode
+                                  ? () => _toggleUserSelection(uid)
+                                  : () {
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) =>
+                                            UserVerificationDetailDialog(
+                                              uid: uid,
+                                              userData: data,
+                                              admin: admin,
+                                            ),
+                                      );
+                                    },
                               borderRadius: BorderRadius.circular(16),
                               child: Padding(
                                 padding: const EdgeInsets.all(16.0),
@@ -371,6 +576,12 @@ class UserVerificationBoard extends StatelessWidget {
                                   children: [
                                     Row(
                                       children: [
+                                        if (_isSelectionMode)
+                                          Checkbox(
+                                            value: isSelected,
+                                            onChanged: (_) =>
+                                                _toggleUserSelection(uid),
+                                          ),
                                         CircleAvatar(
                                           radius: 24,
                                           backgroundColor: Colors.grey[300],

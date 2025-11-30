@@ -15,6 +15,7 @@ class AdminSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = const [
+      (Icons.dashboard_outlined, 'Dashboard'),
       (Icons.verified_user_outlined, 'User Verification'),
       (Icons.monitor_heart_outlined, 'Activity Monitoring'),
       (Icons.report_gmailerrorred_outlined, 'Reports & Violations'),

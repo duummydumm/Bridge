@@ -2,7 +2,7 @@ import 'package:bridge_app/screens/home.dart';
 import 'package:bridge_app/screens/auth/login.dart';
 import 'package:bridge_app/screens/auth/register.dart';
 import 'package:bridge_app/screens/profile.dart';
-import 'package:bridge_app/screens/settings.dart';
+import 'package:bridge_app/screens/settings/settings.dart';
 import 'package:bridge_app/screens/list_item_screen.dart';
 import 'package:bridge_app/screens/onboardingscreen/onboarding_screen.dart';
 import 'package:bridge_app/screens/borrow/borrow_items_screen.dart';
@@ -27,6 +27,9 @@ import 'providers/rental_listing_provider.dart';
 import 'providers/rental_request_provider.dart';
 import 'providers/rental_payment_provider.dart';
 import 'providers/trade_item_provider.dart';
+import 'providers/theme_provider.dart';
+import 'providers/notification_preferences_provider.dart';
+import 'providers/chat_theme_provider.dart';
 import 'screens/admin/admin_home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/local_notifications_service.dart';
@@ -64,6 +67,7 @@ import 'screens/borrow/pending_returns_screen.dart';
 import 'screens/borrow/currently_lent_screen.dart';
 import 'screens/borrow/disputed_returns_screen.dart';
 import 'screens/rental/rental_pending_request.dart';
+import 'screens/rental/disputed_rentals_screen.dart';
 import 'screens/trade/trade_pending_request.dart';
 import 'screens/borrow/borrowed_items_detail_screen.dart';
 import 'screens/due_soon_items_detail_screen.dart';
@@ -108,9 +112,12 @@ void main() async {
   // Backend API URL configuration
   // For local development: Use localhost or emulator IP
   // For production: Use your deployed backend URL (e.g., https://your-app.herokuapp.com)
-  const String backendApiUrl = kDebugMode
-      ? 'http://192.168.1.11:3000' // Local development (use your computer's IP address)
-      : 'https://your-backend-url.herokuapp.com'; // TODO: Replace with your deployed backend URL
+  // Temporarily using Render for testing in debug mode
+  const String backendApiUrl =
+      'https://bridge-emailjs-backend.onrender.com'; // Render backend URL
+  // const String backendApiUrl = kDebugMode
+  //     ? 'http://192.168.1.11:3000' // Local development (use your computer's IP address)
+  //     : 'https://bridge-emailjs-backend.onrender.com'; // Render backend URL
 
   await EmailService().configure(
     serviceId: 'service_hql50hi', // Replace with your EmailJS Service ID
@@ -149,140 +156,161 @@ class BridgeApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TradeItemProvider()),
         ChangeNotifierProvider(create: (_) => GiveawayProvider()),
         ChangeNotifierProvider(create: (_) => CalamityProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(
+          create: (_) => NotificationPreferencesProvider(),
+        ),
+        ChangeNotifierProvider(create: (_) => ChatThemeProvider()),
       ],
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        initialRoute: '/',
-        routes: {
-          '/': (context) => SplashScreen(
-            duration: const Duration(seconds: 2),
-            child: _AuthWrapper(),
-          ),
-          '/onboarding': (context) => const OnboardingScreen(),
-          '/login': (context) => const LoginScreen(),
-          '/register': (context) => const RegisterScreen(),
-          '/verify-email': (context) => const VerifyEmailScreen(),
-          '/home': (context) {
-            return ProtectedRoute(
-              child: Builder(
-                builder: (context) {
-                  final userProvider = Provider.of<UserProvider>(
-                    context,
-                    listen: true,
-                  );
-                  if (userProvider.currentUser?.isAdmin == true) {
-                    return const AdminHomeScreen();
-                  }
-                  return const HomePage();
-                },
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: ThemeProvider.lightTheme,
+            darkTheme: ThemeProvider.darkTheme,
+            themeMode: themeProvider.themeModeForMaterial,
+            initialRoute: '/',
+            routes: {
+              '/': (context) => SplashScreen(
+                duration: const Duration(seconds: 2),
+                child: _AuthWrapper(),
               ),
-            );
-          },
-          '/profile': (context) => ProtectedRoute(child: const ProfileScreen()),
-          '/settings': (context) =>
-              ProtectedRoute(child: const SettingsScreen()),
-          '/list-item': (context) =>
-              ProtectedRoute(child: const ListItemScreen()),
-          '/my-listings': (context) =>
-              ProtectedRoute(child: const MyListingsScreen()),
-          '/borrow': (context) =>
-              ProtectedRoute(child: const BorrowItemsScreen()),
-          '/rent': (context) => ProtectedRoute(child: const RentItemsScreen()),
-          '/chat': (context) => ProtectedRoute(child: const ChatListScreen()),
-          '/notifications': (context) =>
-              ProtectedRoute(child: const NotificationsScreen()),
-          '/pending-requests': (context) =>
-              ProtectedRoute(child: const PendingRequestsScreen()),
-          '/borrow/pending-requests': (context) =>
-              ProtectedRoute(child: const BorrowPendingRequestScreen()),
-          '/borrow/approved': (context) =>
-              ProtectedRoute(child: const ApprovedBorrowScreen()),
-          '/borrow/currently-borrowed': (context) =>
-              ProtectedRoute(child: const CurrentlyBorrowedScreen()),
-          '/borrow/returned-items': (context) =>
-              ProtectedRoute(child: const ReturnedItemsScreen()),
-          '/borrow/pending-returns': (context) =>
-              ProtectedRoute(child: const PendingReturnsScreen()),
-          '/borrow/currently-lent': (context) =>
-              ProtectedRoute(child: const CurrentlyLentScreen()),
-          '/borrow/disputed-returns': (context) =>
-              ProtectedRoute(child: const DisputedReturnsScreen()),
-          '/rental/pending-requests': (context) =>
-              ProtectedRoute(child: const RentalPendingRequestScreen()),
-          '/trade/pending-requests': (context) =>
-              ProtectedRoute(child: const TradePendingRequestScreen()),
-          '/borrowed-items-detail': (context) =>
-              ProtectedRoute(child: const BorrowedItemsDetailScreen()),
-          '/due-soon-items-detail': (context) =>
-              ProtectedRoute(child: const DueSoonItemsDetailScreen()),
-          '/my-lenders-detail': (context) =>
-              ProtectedRoute(child: const MyLendersDetailScreen()),
-          '/upcoming-reminders': (context) =>
-              ProtectedRoute(child: const UpcomingRemindersCalendarScreen()),
-          '/admin': (context) =>
-              ProtectedRoute(allowAdmins: true, child: const AdminHomeScreen()),
-          // Rental screens (MVP)
-          '/rental/listing-editor': (context) =>
-              const RentalListingEditorScreen(),
-          '/rental/detail': (context) => const RentalDetailScreen(),
-          '/rental/rent-item': (context) => const RentItemScreen(),
-          // Trade screens
-          '/trade': (context) => const TradeItemsScreen(),
-          '/trade/add-item': (context) => const AddTradeItemScreen(),
-          '/trade/make-offer': (context) => const MakeTradeOfferScreen(),
-          '/trade/incoming-offers': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments;
-            final tradeItemId = args is Map
-                ? args['tradeItemId'] as String?
-                : null;
-            return ProtectedRoute(
-              child: IncomingTradeOffersScreen(tradeItemId: tradeItemId),
-            );
-          },
-          '/trade/offer-detail': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments as Map?;
-            return ProtectedRoute(
-              child: TradeOfferDetailScreen(
-                offerId: args?['offerId'] as String? ?? '',
-                canAcceptDecline: args?['canAcceptDecline'] as bool? ?? false,
+              '/onboarding': (context) => const OnboardingScreen(),
+              '/login': (context) => const LoginScreen(),
+              '/register': (context) => const RegisterScreen(),
+              '/verify-email': (context) => const VerifyEmailScreen(),
+              '/home': (context) {
+                return ProtectedRoute(
+                  child: Builder(
+                    builder: (context) {
+                      final userProvider = Provider.of<UserProvider>(
+                        context,
+                        listen: true,
+                      );
+                      if (userProvider.currentUser?.isAdmin == true) {
+                        return const AdminHomeScreen();
+                      }
+                      return const HomePage();
+                    },
+                  ),
+                );
+              },
+              '/profile': (context) =>
+                  ProtectedRoute(child: const ProfileScreen()),
+              '/settings': (context) =>
+                  ProtectedRoute(child: const SettingsScreen()),
+              '/list-item': (context) =>
+                  ProtectedRoute(child: const ListItemScreen()),
+              '/my-listings': (context) =>
+                  ProtectedRoute(child: const MyListingsScreen()),
+              '/borrow': (context) =>
+                  ProtectedRoute(child: const BorrowItemsScreen()),
+              '/rent': (context) =>
+                  ProtectedRoute(child: const RentItemsScreen()),
+              '/chat': (context) =>
+                  ProtectedRoute(child: const ChatListScreen()),
+              '/notifications': (context) =>
+                  ProtectedRoute(child: const NotificationsScreen()),
+              '/pending-requests': (context) =>
+                  ProtectedRoute(child: const PendingRequestsScreen()),
+              '/borrow/pending-requests': (context) =>
+                  ProtectedRoute(child: const BorrowPendingRequestScreen()),
+              '/borrow/approved': (context) =>
+                  ProtectedRoute(child: const ApprovedBorrowScreen()),
+              '/borrow/currently-borrowed': (context) =>
+                  ProtectedRoute(child: const CurrentlyBorrowedScreen()),
+              '/borrow/returned-items': (context) =>
+                  ProtectedRoute(child: const ReturnedItemsScreen()),
+              '/borrow/pending-returns': (context) =>
+                  ProtectedRoute(child: const PendingReturnsScreen()),
+              '/borrow/currently-lent': (context) =>
+                  ProtectedRoute(child: const CurrentlyLentScreen()),
+              '/borrow/disputed-returns': (context) =>
+                  ProtectedRoute(child: const DisputedReturnsScreen()),
+              '/rental/disputed-rentals': (context) =>
+                  ProtectedRoute(child: const DisputedRentalsScreen()),
+              '/rental/pending-requests': (context) =>
+                  ProtectedRoute(child: const RentalPendingRequestScreen()),
+              '/trade/pending-requests': (context) =>
+                  ProtectedRoute(child: const TradePendingRequestScreen()),
+              '/borrowed-items-detail': (context) =>
+                  ProtectedRoute(child: const BorrowedItemsDetailScreen()),
+              '/due-soon-items-detail': (context) =>
+                  ProtectedRoute(child: const DueSoonItemsDetailScreen()),
+              '/my-lenders-detail': (context) =>
+                  ProtectedRoute(child: const MyLendersDetailScreen()),
+              '/upcoming-reminders': (context) => ProtectedRoute(
+                child: const UpcomingRemindersCalendarScreen(),
               ),
-            );
-          },
-          '/trade/accepted-trades': (context) =>
-              ProtectedRoute(child: const AcceptedTradesScreen()),
-          '/trade/history': (context) =>
-              ProtectedRoute(child: const TradeHistoryScreen()),
-          // Giveaway screens
-          '/giveaway': (context) => const GiveawaysScreen(),
-          '/giveaway/add': (context) => const AddGiveawayScreen(),
-          '/giveaway/detail': (context) => const GiveawayDetailScreen(),
-          // Calamity Donation screens
-          '/calamity': (context) => const CalamityEventsScreen(),
-          '/calamity/detail': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments as Map?;
-            return ProtectedRoute(
-              child: CalamityEventDetailScreen(
-                eventId: args?['eventId'] as String? ?? '',
+              '/admin': (context) => ProtectedRoute(
+                allowAdmins: true,
+                child: const AdminHomeScreen(),
               ),
-            );
-          },
-          '/calamity/my-donations': (context) =>
-              ProtectedRoute(child: const MyCalamityDonationsScreen()),
-          // Admin Calamity screens
-          '/admin/calamity': (context) => ProtectedRoute(
-            allowAdmins: true,
-            child: const CalamityEventsAdminScreen(),
-          ),
-          '/admin/calamity/event-detail': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments as Map?;
-            return ProtectedRoute(
-              allowAdmins: true,
-              child: CalamityEventDetailAdminScreen(
-                eventId: args?['eventId'] as String? ?? '',
+              // Rental screens (MVP)
+              '/rental/listing-editor': (context) =>
+                  const RentalListingEditorScreen(),
+              '/rental/detail': (context) => const RentalDetailScreen(),
+              '/rental/rent-item': (context) => const RentItemScreen(),
+              // Trade screens
+              '/trade': (context) => const TradeItemsScreen(),
+              '/trade/add-item': (context) => const AddTradeItemScreen(),
+              '/trade/make-offer': (context) => const MakeTradeOfferScreen(),
+              '/trade/incoming-offers': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+                final tradeItemId = args is Map
+                    ? args['tradeItemId'] as String?
+                    : null;
+                return ProtectedRoute(
+                  child: IncomingTradeOffersScreen(tradeItemId: tradeItemId),
+                );
+              },
+              '/trade/offer-detail': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments as Map?;
+                return ProtectedRoute(
+                  child: TradeOfferDetailScreen(
+                    offerId: args?['offerId'] as String? ?? '',
+                    canAcceptDecline:
+                        args?['canAcceptDecline'] as bool? ?? false,
+                  ),
+                );
+              },
+              '/trade/accepted-trades': (context) =>
+                  ProtectedRoute(child: const AcceptedTradesScreen()),
+              '/trade/history': (context) =>
+                  ProtectedRoute(child: const TradeHistoryScreen()),
+              // Giveaway screens
+              '/giveaway': (context) => const GiveawaysScreen(),
+              '/giveaway/add': (context) => const AddGiveawayScreen(),
+              '/giveaway/detail': (context) => const GiveawayDetailScreen(),
+              // Calamity Donation screens
+              '/calamity': (context) => const CalamityEventsScreen(),
+              '/calamity/detail': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments as Map?;
+                return ProtectedRoute(
+                  child: CalamityEventDetailScreen(
+                    eventId: args?['eventId'] as String? ?? '',
+                  ),
+                );
+              },
+              '/calamity/my-donations': (context) =>
+                  ProtectedRoute(child: const MyCalamityDonationsScreen()),
+              // Admin Calamity screens
+              '/admin/calamity': (context) => ProtectedRoute(
+                allowAdmins: true,
+                child: const CalamityEventsAdminScreen(),
               ),
-            );
-          },
-          // Removed test barangay id route
+              '/admin/calamity/event-detail': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments as Map?;
+                return ProtectedRoute(
+                  allowAdmins: true,
+                  child: CalamityEventDetailAdminScreen(
+                    eventId: args?['eventId'] as String? ?? '',
+                  ),
+                );
+              },
+              // Removed test barangay id route
+            },
+          );
         },
       ),
     );

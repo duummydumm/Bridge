@@ -22,6 +22,8 @@ service cloud.firestore {
     // Users collection - users can read their own data, verified users can read others
     match /users/{userId} {
       allow get: if isAuthenticated();
+      // Allow list queries for authenticated users (including email queries)
+      // This allows queries like: where('email', isEqualTo: '...')
       allow list: if isAuthenticated();
       allow create: if isAuthenticated() && request.auth.uid == userId;
       allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());

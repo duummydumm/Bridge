@@ -64,7 +64,11 @@ class RentalListingProvider extends ChangeNotifier {
     bool? sharedCR,
     bool? bedSpaceAvailable,
     int? maxOccupants,
+    int? numberOfRooms,
+    int? occupantsPerRoom,
+    String? genderPreference,
     String? curfewRules,
+    int? initialOccupants,
   }) async {
     try {
       _setLoading(true);
@@ -107,7 +111,11 @@ class RentalListingProvider extends ChangeNotifier {
         'sharedCR': sharedCR,
         'bedSpaceAvailable': bedSpaceAvailable,
         'maxOccupants': maxOccupants,
+        'numberOfRooms': numberOfRooms,
+        'occupantsPerRoom': occupantsPerRoom,
+        'genderPreference': genderPreference,
         'curfewRules': curfewRules,
+        'initialOccupants': initialOccupants,
       };
       final id = await _firestore.createRentalListing(payload);
       _setLoading(false);
@@ -194,7 +202,11 @@ class RentalListingProvider extends ChangeNotifier {
     bool? sharedCR,
     bool? bedSpaceAvailable,
     int? maxOccupants,
+    int? numberOfRooms,
+    int? occupantsPerRoom,
+    String? genderPreference,
     String? curfewRules,
+    int? initialOccupants,
   }) async {
     try {
       _setLoading(true);
@@ -228,7 +240,10 @@ class RentalListingProvider extends ChangeNotifier {
         'sharedCR': sharedCR,
         'bedSpaceAvailable': bedSpaceAvailable,
         'maxOccupants': maxOccupants,
+        'numberOfRooms': numberOfRooms,
+        'occupantsPerRoom': occupantsPerRoom,
         'curfewRules': curfewRules,
+        'initialOccupants': initialOccupants,
       };
       if (imageUrl != null) {
         payload['imageUrl'] = imageUrl;

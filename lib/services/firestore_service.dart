@@ -1595,8 +1595,14 @@ extension FirestoreServiceRentals on FirestoreService {
     // Check for date conflicts with other renters (if listing doesn't allow multiple rentals)
     if (listingId != null && startDate != null) {
       final listing = await getRentalListing(listingId);
-      final allowMultiple = listing?['allowMultipleRentals'] as bool? ?? false;
-      final quantity = listing?['quantity'] as int?;
+      if (listing == null) {
+        throw Exception('Listing not found');
+      }
+      final allowMultiple = listing['allowMultipleRentals'] as bool? ?? false;
+      final quantity = listing['quantity'] as int?;
+      final rentType = (listing['rentType'] ?? 'item').toString().toLowerCase();
+      final isBoardingHouse =
+          rentType == 'boardinghouse' || rentType == 'boarding_house';
       final isLongTerm = payload['isLongTerm'] as bool? ?? false;
       final requestEndDate = payload['endDate'] as DateTime?;
 
@@ -1644,6 +1650,15 @@ extension FirestoreServiceRentals on FirestoreService {
             }
           }
         }
+      } else if (isBoardingHouse) {
+        // For boarding houses, check capacity based on available rooms and max occupants
+        await _checkBoardingHouseCapacity(
+          listingId: listingId,
+          listing: listing,
+          startDate: startDate,
+          endDate: requestEndDate,
+          requestedOccupants: payload['numberOfOccupants'] as int? ?? 1,
+        );
       } else if (quantity != null && quantity > 1) {
         // For quantity-based rentals (e.g., clothes), check if enough units available
         final activeRequests = await _db
@@ -1814,7 +1829,8 @@ extension FirestoreServiceRentals on FirestoreService {
         }
         ownerName ??= 'The owner';
 
-        if (newStatus.toLowerCase() == 'ownerapproved') {
+        if (newStatus.toLowerCase() == 'ownerapproved' ||
+            newStatus.toLowerCase() == 'active') {
           // Deactivate listing if it doesn't allow multiple rentals or isn't quantity-based
           try {
             final listingId = currentRequest['listingId'] as String?;
@@ -1824,9 +1840,27 @@ extension FirestoreServiceRentals on FirestoreService {
                 final allowMultiple =
                     listing['allowMultipleRentals'] as bool? ?? false;
                 final quantity = listing['quantity'] as int?;
+                final rentType = (listing['rentType'] ?? 'item')
+                    .toString()
+                    .toLowerCase();
+                final isBoardingHouse =
+                    rentType == 'boardinghouse' || rentType == 'boarding_house';
 
-                // Only deactivate if it's a single-item listing (not multi-rental, not quantity-based)
-                if (!allowMultiple && (quantity == null || quantity <= 1)) {
+                // For boarding houses, check if capacity is full
+                if (isBoardingHouse) {
+                  final occupancy = await getBoardingHouseOccupancy(listingId);
+                  final availableSlots =
+                      occupancy['availableSlots'] as int? ?? 0;
+                  if (availableSlots <= 0) {
+                    // Capacity is full, deactivate listing
+                    await updateRentalListing(listingId, {
+                      'isActive': false,
+                      'updatedAt': DateTime.now(),
+                    });
+                  }
+                } else if (!allowMultiple &&
+                    (quantity == null || quantity <= 1)) {
+                  // Only deactivate if it's a single-item listing (not multi-rental, not quantity-based)
                   await updateRentalListing(listingId, {
                     'isActive': false,
                     'updatedAt': DateTime.now(),
@@ -1864,7 +1898,7 @@ extension FirestoreServiceRentals on FirestoreService {
               'itemTitle': itemTitle,
               'requestId': id,
               'message':
-                  'Please pay base price (₱${priceQuote.toStringAsFixed(2)})${depositAmount != null && depositAmount > 0 ? ' + deposit (₱${depositAmount.toStringAsFixed(2)})' : ''} to owner and service fee (₱${fees.toStringAsFixed(2)}) to platform',
+                  'Please pay $ownerName base price (₱${priceQuote.toStringAsFixed(2)})${depositAmount != null && depositAmount > 0 ? ' + deposit (₱${depositAmount.toStringAsFixed(2)})' : ''}',
               'status': 'unread',
               'createdAt': FieldValue.serverTimestamp(),
             });
@@ -1923,10 +1957,94 @@ extension FirestoreServiceRentals on FirestoreService {
               }
               ownerName ??= 'Owner';
 
-              // Import and schedule reminders
-              // Note: This will be called from the client side to avoid circular dependencies
-              // The client should call LocalNotificationsService().scheduleRentalEndReminders()
-              // when rental becomes active
+              // Schedule rental end reminders for both renter and owner
+              final itemId = currentRequest['itemId'] as String?;
+              if (itemId != null && renterId != null && ownerId != null) {
+                try {
+                  final localNotificationsService = LocalNotificationsService();
+                  await localNotificationsService.scheduleRentalEndReminders(
+                    rentalRequestId: id,
+                    itemId: itemId,
+                    itemTitle: itemTitle,
+                    endDateLocal: endDate,
+                    renterId: renterId,
+                    ownerId: ownerId,
+                    renterName: renterName,
+                    ownerName: ownerName,
+                  );
+
+                  // Also schedule overdue reminders if rental is already overdue
+                  final now = DateTime.now();
+                  if (endDate.isBefore(now)) {
+                    // Schedule overdue reminders for renter
+                    await localNotificationsService
+                        .scheduleRentalOverdueReminders(
+                          rentalRequestId: id,
+                          itemId: itemId,
+                          itemTitle: itemTitle,
+                          endDateLocal: endDate,
+                          renterId: renterId,
+                          ownerId: ownerId,
+                          renterName: renterName,
+                          ownerName: ownerName,
+                          isRenter: true,
+                          targetUserId: renterId,
+                        );
+
+                    // Schedule overdue reminders for owner
+                    await localNotificationsService
+                        .scheduleRentalOverdueReminders(
+                          rentalRequestId: id,
+                          itemId: itemId,
+                          itemTitle: itemTitle,
+                          endDateLocal: endDate,
+                          renterId: renterId,
+                          ownerId: ownerId,
+                          renterName: renterName,
+                          ownerName: ownerName,
+                          isRenter: false,
+                          targetUserId: ownerId,
+                        );
+                  }
+                } catch (e) {
+                  debugPrint('Error scheduling rental end reminders: $e');
+                  // Don't fail the update if reminder scheduling fails
+                }
+              }
+
+              // For long-term rentals, also schedule monthly payment reminders
+              final isLongTerm = currentRequest['isLongTerm'] as bool? ?? false;
+              if (isLongTerm) {
+                final nextPaymentDueDate =
+                    (currentRequest['nextPaymentDueDate'] as Timestamp?)
+                        ?.toDate();
+                final monthlyAmount =
+                    (currentRequest['monthlyPaymentAmount'] as num?)
+                        ?.toDouble();
+
+                if (nextPaymentDueDate != null &&
+                    monthlyAmount != null &&
+                    itemId != null) {
+                  try {
+                    await scheduleMonthlyPaymentReminders(
+                      rentalRequestId: id,
+                      itemId: itemId,
+                      itemTitle: itemTitle,
+                      nextPaymentDueDate: nextPaymentDueDate,
+                      renterId: renterId!,
+                      ownerId: ownerId!,
+                      renterName: renterName,
+                      ownerName: ownerName,
+                      monthlyAmount: monthlyAmount,
+                    );
+                  } catch (e) {
+                    debugPrint(
+                      'Error scheduling monthly payment reminders: $e',
+                    );
+                    // Don't fail the update if reminder scheduling fails
+                  }
+                }
+              }
             }
           } catch (e) {
             debugPrint('Error preparing rental reminders: $e');
@@ -1976,7 +2094,7 @@ extension FirestoreServiceRentals on FirestoreService {
             });
           }
         } else if (newStatus == 'returned' && oldStatus == 'returninitiated') {
-          // Reactivate listing when rental is returned (if it's a single-item listing)
+          // Reactivate listing when rental is returned
           try {
             final listingId = currentRequest['listingId'] as String?;
             if (listingId != null) {
@@ -1985,10 +2103,28 @@ extension FirestoreServiceRentals on FirestoreService {
                 final allowMultiple =
                     listing['allowMultipleRentals'] as bool? ?? false;
                 final quantity = listing['quantity'] as int?;
+                final rentType = (listing['rentType'] ?? 'item')
+                    .toString()
+                    .toLowerCase();
+                final isBoardingHouse =
+                    rentType == 'boardinghouse' || rentType == 'boarding_house';
 
-                // Only reactivate if it's a single-item listing (not multi-rental, not quantity-based)
-                // Also check if there are no other active rentals
-                if (!allowMultiple && (quantity == null || quantity <= 1)) {
+                if (isBoardingHouse) {
+                  // For boarding houses, check if capacity is now available
+                  final occupancy = await getBoardingHouseOccupancy(listingId);
+                  final availableSlots =
+                      occupancy['availableSlots'] as int? ?? 0;
+                  if (availableSlots > 0) {
+                    // Capacity is available, reactivate listing
+                    await updateRentalListing(listingId, {
+                      'isActive': true,
+                      'updatedAt': DateTime.now(),
+                    });
+                  }
+                } else if (!allowMultiple &&
+                    (quantity == null || quantity <= 1)) {
+                  // Only reactivate if it's a single-item listing (not multi-rental, not quantity-based)
+                  // Also check if there are no other active rentals
                   final hasOtherActive = await hasActiveRentalRequests(
                     listingId,
                   );
@@ -2197,6 +2333,166 @@ extension FirestoreServiceRentals on FirestoreService {
         s2.isBefore(e1.add(const Duration(days: 1)));
   }
 
+  /// Check boarding house capacity before creating a rental request
+  Future<void> _checkBoardingHouseCapacity({
+    required String listingId,
+    required Map<String, dynamic> listing,
+    required DateTime startDate,
+    DateTime? endDate,
+    int requestedOccupants = 1,
+  }) async {
+    final maxOccupants = (listing['maxOccupants'] as num?)?.toInt();
+    final occupantsPerRoom = (listing['occupantsPerRoom'] as num?)?.toInt();
+    final numberOfRooms = (listing['numberOfRooms'] as num?)?.toInt();
+
+    // Get all active/approved requests for this boarding house
+    final activeRequests = await _db
+        .collection('rental_requests')
+        .where('listingId', isEqualTo: listingId)
+        .where('status', whereIn: ['requested', 'ownerapproved', 'active'])
+        .get();
+
+    // Calculate current occupancy - start with initial/pre-existing occupants
+    final initialOccupants =
+        (listing['initialOccupants'] as num?)?.toInt() ?? 0;
+
+    int currentOccupants = initialOccupants;
+    final Set<int> occupiedRooms = {};
+
+    for (final doc in activeRequests.docs) {
+      final reqData = doc.data();
+      final reqStart = (reqData['startDate'] as Timestamp?)?.toDate();
+      final reqEnd = (reqData['endDate'] as Timestamp?)?.toDate();
+      final reqIsLongTerm = reqData['isLongTerm'] as bool? ?? false;
+
+      // For long-term rentals without end date, always count them
+      bool isOverlapping = false;
+      if (reqIsLongTerm && reqEnd == null) {
+        // Month-to-month rental - always active
+        isOverlapping = true;
+      } else if (reqStart != null && reqEnd != null && endDate != null) {
+        // Check if dates overlap
+        isOverlapping = _datesOverlap(startDate, endDate, reqStart, reqEnd);
+      } else if (reqStart != null && endDate == null) {
+        // New request is month-to-month, check if existing request overlaps
+        isOverlapping = reqStart.isBefore(
+          DateTime.now().add(const Duration(days: 365)),
+        );
+      }
+
+      if (isOverlapping) {
+        // Count occupants from this request
+        final reqOccupants =
+            (reqData['numberOfOccupants'] as num?)?.toInt() ?? 1;
+        currentOccupants += reqOccupants;
+
+        // Track occupied rooms
+        final assignedRooms = reqData['assignedRoomNumbers'] as List<dynamic>?;
+        if (assignedRooms != null) {
+          for (final room in assignedRooms) {
+            if (room is int) {
+              occupiedRooms.add(room);
+            } else if (room is num) {
+              occupiedRooms.add(room.toInt());
+            }
+          }
+        }
+      }
+    }
+
+    // Check max occupants limit
+    if (maxOccupants != null) {
+      if (currentOccupants + requestedOccupants > maxOccupants) {
+        throw Exception(
+          'Boarding house capacity exceeded. Current occupancy: $currentOccupants/$maxOccupants. '
+          'Requested: $requestedOccupants. Available slots: ${maxOccupants - currentOccupants}.',
+        );
+      }
+    }
+
+    // Check capacity based on total rooms and occupants per room
+    if (numberOfRooms != null && occupantsPerRoom != null) {
+      // Fallback: calculate from total rooms and occupants per room
+      final totalCapacity = numberOfRooms * occupantsPerRoom;
+      if (currentOccupants + requestedOccupants > totalCapacity) {
+        throw Exception(
+          'Boarding house capacity exceeded. Current occupancy: $currentOccupants/$totalCapacity. '
+          'Requested: $requestedOccupants. Available slots: ${totalCapacity - currentOccupants}.',
+        );
+      }
+    }
+  }
+
+  /// Get current occupancy for a boarding house
+  Future<Map<String, dynamic>> getBoardingHouseOccupancy(
+    String listingId,
+  ) async {
+    final listing = await getRentalListing(listingId);
+    if (listing == null) {
+      return {
+        'currentOccupants': 0,
+        'maxOccupants': 0,
+        'availableSlots': 0,
+        'occupiedRooms': [],
+        'availableRooms': [],
+      };
+    }
+
+    final maxOccupants = (listing['maxOccupants'] as num?)?.toInt();
+    final occupantsPerRoom = (listing['occupantsPerRoom'] as num?)?.toInt();
+    final numberOfRooms = (listing['numberOfRooms'] as num?)?.toInt();
+
+    // Get all active requests
+    final activeRequests = await _db
+        .collection('rental_requests')
+        .where('listingId', isEqualTo: listingId)
+        .where('status', whereIn: ['ownerapproved', 'active'])
+        .get();
+
+    // Start with initial/pre-existing occupants
+    final initialOccupants =
+        (listing['initialOccupants'] as num?)?.toInt() ?? 0;
+
+    int currentOccupants = initialOccupants;
+    final Set<int> occupiedRooms = {};
+
+    for (final doc in activeRequests.docs) {
+      final reqData = doc.data();
+      final reqOccupants = (reqData['numberOfOccupants'] as num?)?.toInt() ?? 1;
+      currentOccupants += reqOccupants;
+
+      final assignedRooms = reqData['assignedRoomNumbers'] as List<dynamic>?;
+      if (assignedRooms != null) {
+        for (final room in assignedRooms) {
+          if (room is int) {
+            occupiedRooms.add(room);
+          } else if (room is num) {
+            occupiedRooms.add(room.toInt());
+          }
+        }
+      }
+    }
+
+    // Calculate available slots
+    final availableSlots = maxOccupants != null
+        ? maxOccupants - currentOccupants
+        : (numberOfRooms != null && occupantsPerRoom != null
+              ? (numberOfRooms * occupantsPerRoom) - currentOccupants
+              : 0);
+
+    return {
+      'currentOccupants': currentOccupants,
+      'maxOccupants': maxOccupants ?? 0,
+      'availableSlots': availableSlots,
+      'occupiedRooms': occupiedRooms.toList()..sort(),
+      'totalRooms': numberOfRooms ?? 0,
+      'availableRoomCount': numberOfRooms != null
+          ? numberOfRooms - occupiedRooms.length
+          : 0,
+      'occupiedRoomCount': occupiedRooms.length,
+    };
+  }
+
   /// Check availability for a listing on specific dates
   Future<Map<String, dynamic>> checkListingAvailability(
     String listingId,
@@ -2286,6 +2582,9 @@ extension FirestoreServiceRentals on FirestoreService {
   Future<bool> initiateRentalReturn({
     required String requestId,
     required String renterId,
+    String? condition, // 'same', 'better', 'worse', 'damaged'
+    String? conditionNotes,
+    List<String>? conditionPhotos, // URLs of uploaded photos
   }) async {
     try {
       final request = await getRentalRequest(requestId);
@@ -2303,12 +2602,48 @@ extension FirestoreServiceRentals on FirestoreService {
         throw Exception('Only the renter can initiate return');
       }
 
-      await updateRentalRequest(requestId, {
+      final updateData = <String, dynamic>{
         'status': 'returninitiated',
         'returnInitiatedBy': renterId,
         'returnInitiatedAt': DateTime.now(),
         'updatedAt': DateTime.now(),
-      });
+      };
+
+      // Add condition verification data if provided
+      if (condition != null) {
+        updateData['renterCondition'] = condition;
+      }
+      if (conditionNotes != null && conditionNotes.isNotEmpty) {
+        updateData['renterConditionNotes'] = conditionNotes;
+      }
+      if (conditionPhotos != null && conditionPhotos.isNotEmpty) {
+        updateData['renterConditionPhotos'] = conditionPhotos;
+      }
+
+      await updateRentalRequest(requestId, updateData);
+
+      // Send notification to owner
+      final ownerId = request['ownerId'] as String?;
+      final itemTitle = request['itemTitle'] as String? ?? 'Rental Item';
+      final renterName = request['renterName'] as String? ?? 'Renter';
+
+      if (ownerId != null && ownerId.isNotEmpty && ownerId != renterId) {
+        try {
+          await _db.collection('notifications').add({
+            'toUserId': ownerId,
+            'type': 'rent_return_initiated',
+            'itemId': request['itemId'],
+            'itemTitle': itemTitle,
+            'fromUserId': renterId,
+            'fromUserName': renterName,
+            'requestId': requestId,
+            'status': 'unread',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error creating return notification: $e');
+        }
+      }
 
       return true;
     } catch (e) {
@@ -2317,10 +2652,16 @@ extension FirestoreServiceRentals on FirestoreService {
     }
   }
 
-  /// Owner verifies return - sets status to returned
+  /// Owner verifies return - sets status to returned or disputed
+  /// If conditionAccepted is false, status becomes 'disputed' for damage reporting
   Future<bool> verifyRentalReturn({
     required String requestId,
     required String ownerId,
+    bool conditionAccepted = true,
+    String? ownerConditionNotes,
+    List<String>? ownerConditionPhotos,
+    Map<String, dynamic>?
+    damageReport, // {type, description, estimatedCost, photos}
   }) async {
     try {
       final request = await getRentalRequest(requestId);
@@ -2338,17 +2679,213 @@ extension FirestoreServiceRentals on FirestoreService {
         throw Exception('Only the owner can verify return');
       }
 
-      await updateRentalRequest(requestId, {
-        'status': 'returned',
+      final renterId = request['renterId'] as String?;
+      final itemTitle = request['itemTitle'] as String? ?? 'Rental Item';
+      final ownerName = request['ownerName'] as String? ?? 'Owner';
+
+      final updateData = <String, dynamic>{
         'returnVerifiedBy': ownerId,
+        'returnVerifiedAt': DateTime.now(),
         'actualReturnDate': DateTime.now(),
         'updatedAt': DateTime.now(),
-      });
+      };
+
+      if (conditionAccepted) {
+        // Condition accepted - mark as returned
+        updateData['status'] = 'returned';
+        updateData['ownerConditionDecision'] = 'accepted';
+      } else {
+        // Condition disputed - requires damage reporting
+        updateData['status'] = 'disputed';
+        updateData['ownerConditionDecision'] = 'disputed';
+
+        if (ownerConditionNotes != null && ownerConditionNotes.isNotEmpty) {
+          updateData['ownerConditionNotes'] = ownerConditionNotes;
+        }
+        if (ownerConditionPhotos != null && ownerConditionPhotos.isNotEmpty) {
+          updateData['ownerConditionPhotos'] = ownerConditionPhotos;
+        }
+        if (damageReport != null) {
+          updateData['damageReport'] = damageReport;
+        }
+      }
+
+      await updateRentalRequest(requestId, updateData);
+
+      // Cancel rental reminders
+      try {
+        final localNotificationsService = LocalNotificationsService();
+        final itemId = request['itemId'] as String?;
+        if (itemId != null) {
+          await localNotificationsService.cancelRentalReminders(requestId);
+          await localNotificationsService.cancelRentalOverdueReminders(
+            requestId,
+          );
+        }
+      } catch (e) {
+        debugPrint('Error cancelling rental reminders: $e');
+      }
+
+      // Send notification to renter
+      if (renterId != null && renterId.isNotEmpty && renterId != ownerId) {
+        try {
+          final notificationType = conditionAccepted
+              ? 'rent_return_verified'
+              : 'rent_return_disputed';
+
+          await _db.collection('notifications').add({
+            'toUserId': renterId,
+            'type': notificationType,
+            'itemId': request['itemId'],
+            'itemTitle': itemTitle,
+            'fromUserId': ownerId,
+            'fromUserName': ownerName,
+            'requestId': requestId,
+            'status': 'unread',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error creating return verification notification: $e');
+        }
+      }
 
       return true;
     } catch (e) {
       debugPrint('Error verifying return: $e');
       rethrow;
+    }
+  }
+
+  /// Get disputed rentals for a renter (rentals that were disputed by owner)
+  Future<List<Map<String, dynamic>>> getDisputedRentalsForRenter(
+    String renterId,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('rental_requests')
+          .where('renterId', isEqualTo: renterId)
+          .where('status', isEqualTo: 'disputed')
+          .get();
+
+      final disputedRentals = <Map<String, dynamic>>[];
+
+      for (final doc in snap.docs) {
+        final requestData = doc.data();
+        final itemId = requestData['itemId'] as String?;
+        final listingId = requestData['listingId'] as String?;
+
+        // Get item details
+        try {
+          if (itemId != null) {
+            final itemDoc = await _db.collection('items').doc(itemId).get();
+            if (itemDoc.exists) {
+              final itemData = itemDoc.data() as Map<String, dynamic>;
+              final combined = Map<String, dynamic>.from(requestData);
+              combined['id'] = doc.id;
+              combined.addAll(itemData);
+              combined['itemId'] = itemId;
+              disputedRentals.add(combined);
+            } else {
+              // If item doesn't exist, still include request data
+              final combined = Map<String, dynamic>.from(requestData);
+              combined['id'] = doc.id;
+              disputedRentals.add(combined);
+            }
+          } else if (listingId != null) {
+            // Try to get listing data
+            final listing = await getRentalListing(listingId);
+            if (listing != null) {
+              final combined = Map<String, dynamic>.from(requestData);
+              combined['id'] = doc.id;
+              combined.addAll(listing);
+              disputedRentals.add(combined);
+            } else {
+              final combined = Map<String, dynamic>.from(requestData);
+              combined['id'] = doc.id;
+              disputedRentals.add(combined);
+            }
+          } else {
+            final combined = Map<String, dynamic>.from(requestData);
+            combined['id'] = doc.id;
+            disputedRentals.add(combined);
+          }
+        } catch (e) {
+          debugPrint('Error fetching item/listing for disputed rental: $e');
+          // Still add request data even if item/listing fetch fails
+          final combined = Map<String, dynamic>.from(requestData);
+          combined['id'] = doc.id;
+          disputedRentals.add(combined);
+        }
+      }
+
+      return disputedRentals;
+    } catch (e) {
+      throw Exception('Error getting disputed rentals for renter: $e');
+    }
+  }
+
+  /// Get disputed rentals for an owner (rentals that owner disputed)
+  Future<List<Map<String, dynamic>>> getDisputedRentalsForOwner(
+    String ownerId,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('rental_requests')
+          .where('ownerId', isEqualTo: ownerId)
+          .where('status', isEqualTo: 'disputed')
+          .get();
+
+      final disputedRentals = <Map<String, dynamic>>[];
+
+      for (final doc in snap.docs) {
+        final requestData = doc.data();
+        final itemId = requestData['itemId'] as String?;
+        final listingId = requestData['listingId'] as String?;
+
+        // Get item details
+        try {
+          if (itemId != null) {
+            final itemDoc = await _db.collection('items').doc(itemId).get();
+            if (itemDoc.exists) {
+              final itemData = itemDoc.data() as Map<String, dynamic>;
+              final combined = Map<String, dynamic>.from(requestData);
+              combined['id'] = doc.id;
+              combined.addAll(itemData);
+              combined['itemId'] = itemId;
+              disputedRentals.add(combined);
+            } else {
+              final combined = Map<String, dynamic>.from(requestData);
+              combined['id'] = doc.id;
+              disputedRentals.add(combined);
+            }
+          } else if (listingId != null) {
+            final listing = await getRentalListing(listingId);
+            if (listing != null) {
+              final combined = Map<String, dynamic>.from(requestData);
+              combined['id'] = doc.id;
+              combined.addAll(listing);
+              disputedRentals.add(combined);
+            } else {
+              final combined = Map<String, dynamic>.from(requestData);
+              combined['id'] = doc.id;
+              disputedRentals.add(combined);
+            }
+          } else {
+            final combined = Map<String, dynamic>.from(requestData);
+            combined['id'] = doc.id;
+            disputedRentals.add(combined);
+          }
+        } catch (e) {
+          debugPrint('Error fetching item/listing for disputed rental: $e');
+          final combined = Map<String, dynamic>.from(requestData);
+          combined['id'] = doc.id;
+          disputedRentals.add(combined);
+        }
+      }
+
+      return disputedRentals;
+    } catch (e) {
+      throw Exception('Error getting disputed rentals for owner: $e');
     }
   }
 
@@ -2402,6 +2939,63 @@ extension FirestoreServiceRentals on FirestoreService {
         'nextPaymentDueDate': newNextPaymentDue,
         'updatedAt': DateTime.now(),
       });
+
+      // Schedule monthly payment reminders for the next payment
+      if (newNextPaymentDue != null) {
+        try {
+          final itemId = request['itemId'] as String?;
+          final itemTitle =
+              request['itemTitle'] as String? ??
+              (await getRentalListing(
+                    request['listingId'] as String? ?? '',
+                  ))?['title']
+                  as String? ??
+              'Rental Item';
+          final renterId = request['renterId'] as String?;
+          final ownerId = request['ownerId'] as String?;
+          final monthlyAmount = request['monthlyPaymentAmount'] as num?;
+
+          if (itemId != null &&
+              renterId != null &&
+              ownerId != null &&
+              monthlyAmount != null) {
+            // Get user names for reminders
+            String? renterName;
+            String? ownerName;
+
+            final renterData = await getUser(renterId);
+            if (renterData != null) {
+              final firstName = renterData['firstName'] ?? '';
+              final lastName = renterData['lastName'] ?? '';
+              renterName = '$firstName $lastName'.trim();
+            }
+            renterName ??= 'Renter';
+
+            final ownerData = await getUser(ownerId);
+            if (ownerData != null) {
+              final firstName = ownerData['firstName'] ?? '';
+              final lastName = ownerData['lastName'] ?? '';
+              ownerName = '$firstName $lastName'.trim();
+            }
+            ownerName ??= 'Owner';
+
+            await scheduleMonthlyPaymentReminders(
+              rentalRequestId: rentalRequestId,
+              itemId: itemId,
+              itemTitle: itemTitle,
+              nextPaymentDueDate: newNextPaymentDue,
+              renterId: renterId,
+              ownerId: ownerId,
+              renterName: renterName,
+              ownerName: ownerName,
+              monthlyAmount: monthlyAmount.toDouble(),
+            );
+          }
+        } catch (e) {
+          debugPrint('Error scheduling monthly payment reminders: $e');
+          // Don't fail the payment recording if reminder scheduling fails
+        }
+      }
 
       return paymentId;
     } catch (e) {
@@ -2692,6 +3286,31 @@ extension FirestoreServiceTrading on FirestoreService {
   // Trade Offer operations
   Future<String> createTradeOffer(Map<String, dynamic> data) async {
     final payload = Map<String, dynamic>.from(data);
+
+    // Prevent duplicate offers: Check if user already has a pending/approved offer for this trade item
+    final tradeItemId = payload['tradeItemId'] as String?;
+    final fromUserId = payload['fromUserId'] as String?;
+
+    if (tradeItemId != null && fromUserId != null) {
+      // Check for existing offers with status: pending or approved (not declined)
+      final existing = await _db
+          .collection('trade_offers')
+          .where('tradeItemId', isEqualTo: tradeItemId)
+          .where('fromUserId', isEqualTo: fromUserId)
+          .where('status', whereIn: ['pending', 'approved'])
+          .limit(1)
+          .get();
+
+      if (existing.docs.isNotEmpty) {
+        final existingStatus =
+            existing.docs.first.data()['status'] as String? ?? 'pending';
+        throw Exception(
+          'You already have a ${existingStatus} trade offer for this item. '
+          'Please wait for the owner to respond or cancel your existing offer first.',
+        );
+      }
+    }
+
     // createdAt can be FieldValue.serverTimestamp() or DateTime
     if (payload['createdAt'] is DateTime) {
       payload['createdAt'] = Timestamp.fromDate(payload['createdAt']);
@@ -2864,6 +3483,26 @@ extension FirestoreServiceTrading on FirestoreService {
       data['id'] = d.id;
       return data;
     }).toList();
+  }
+
+  // Check if user has a pending or approved offer for a trade item
+  Future<bool> hasPendingOrApprovedTradeOffer({
+    required String tradeItemId,
+    required String userId,
+  }) async {
+    try {
+      final snapshot = await _db
+          .collection('trade_offers')
+          .where('tradeItemId', isEqualTo: tradeItemId)
+          .where('fromUserId', isEqualTo: userId)
+          .where('status', whereIn: ['pending', 'approved'])
+          .limit(1)
+          .get();
+      return snapshot.docs.isNotEmpty;
+    } catch (e) {
+      // Return false on error to allow the button to be enabled
+      return false;
+    }
   }
 
   Future<List<Map<String, dynamic>>> getIncomingTradeOffers(

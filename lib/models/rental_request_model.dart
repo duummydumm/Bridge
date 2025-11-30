@@ -14,6 +14,8 @@ enum RentalRequestStatus {
 
 enum PaymentStatus { unpaid, authorized, captured, refunded, partial }
 
+enum PaymentMethod { online, meetup }
+
 class RentalRequestModel {
   final String id;
   final String listingId;
@@ -29,8 +31,6 @@ class RentalRequestModel {
   final double? depositAmount;
   final RentalRequestStatus status;
   final PaymentStatus paymentStatus;
-  final bool serviceFeePaid;
-  final DateTime? serviceFeePaidAt;
   final DateTime returnDueDate;
   final DateTime? actualReturnDate;
   final String? returnInitiatedBy; // User ID who initiated return
@@ -40,6 +40,11 @@ class RentalRequestModel {
   final DateTime? nextPaymentDueDate; // For monthly rentals
   final DateTime? lastPaymentDate; // For monthly rentals
   final double? monthlyPaymentAmount; // For monthly rentals
+  final PaymentMethod paymentMethod; // Payment method: online or meetup
+  final List<int>?
+  assignedRoomNumbers; // For boarding houses: which rooms are assigned to this rental
+  final int?
+  numberOfOccupants; // For boarding houses: number of people in this rental
   final String? notes;
   final DateTime createdAt;
   final DateTime? updatedAt;
@@ -59,8 +64,6 @@ class RentalRequestModel {
     this.depositAmount,
     required this.status,
     required this.paymentStatus,
-    this.serviceFeePaid = false,
-    this.serviceFeePaidAt,
     required this.returnDueDate,
     this.actualReturnDate,
     this.returnInitiatedBy,
@@ -70,6 +73,10 @@ class RentalRequestModel {
     this.nextPaymentDueDate,
     this.lastPaymentDate,
     this.monthlyPaymentAmount,
+    this.paymentMethod =
+        PaymentMethod.meetup, // Default to meetup for backward compatibility
+    this.assignedRoomNumbers,
+    this.numberOfOccupants,
     this.notes,
     required this.createdAt,
     this.updatedAt,
@@ -118,6 +125,17 @@ class RentalRequestModel {
       }
     }
 
+    PaymentMethod parsePaymentMethod(String? s) {
+      switch ((s ?? 'meetup').toLowerCase()) {
+        case 'online':
+          return PaymentMethod.online;
+        case 'meetup':
+          return PaymentMethod.meetup;
+        default:
+          return PaymentMethod.meetup;
+      }
+    }
+
     return RentalRequestModel(
       id: id,
       listingId: data['listingId'] ?? '',
@@ -143,8 +161,6 @@ class RentalRequestModel {
           : null,
       status: parseStatus(data['status']?.toString()),
       paymentStatus: parsePayment(data['paymentStatus']?.toString()),
-      serviceFeePaid: data['serviceFeePaid'] ?? false,
-      serviceFeePaidAt: (data['serviceFeePaidAt'] as Timestamp?)?.toDate(),
       returnDueDate:
           (data['returnDueDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       actualReturnDate: (data['actualReturnDate'] as Timestamp?)?.toDate(),
@@ -157,6 +173,16 @@ class RentalRequestModel {
       monthlyPaymentAmount: (data['monthlyPaymentAmount'] is num)
           ? (data['monthlyPaymentAmount'] as num).toDouble()
           : null,
+      paymentMethod: parsePaymentMethod(data['paymentMethod']?.toString()),
+      assignedRoomNumbers: data['assignedRoomNumbers'] != null
+          ? (data['assignedRoomNumbers'] as List)
+                .map((e) => e is int ? e : int.tryParse('$e'))
+                .whereType<int>()
+                .toList()
+          : null,
+      numberOfOccupants: (data['numberOfOccupants'] is int)
+          ? data['numberOfOccupants'] as int
+          : int.tryParse('${data['numberOfOccupants']}'),
       notes: data['notes'],
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
@@ -178,10 +204,6 @@ class RentalRequestModel {
       'depositAmount': depositAmount,
       'status': status.name,
       'paymentStatus': paymentStatus.name,
-      'serviceFeePaid': serviceFeePaid,
-      'serviceFeePaidAt': serviceFeePaidAt != null
-          ? Timestamp.fromDate(serviceFeePaidAt!)
-          : null,
       'returnDueDate': Timestamp.fromDate(returnDueDate),
       'actualReturnDate': actualReturnDate != null
           ? Timestamp.fromDate(actualReturnDate!)
@@ -199,6 +221,9 @@ class RentalRequestModel {
           ? Timestamp.fromDate(lastPaymentDate!)
           : null,
       'monthlyPaymentAmount': monthlyPaymentAmount,
+      'paymentMethod': paymentMethod.name,
+      'assignedRoomNumbers': assignedRoomNumbers,
+      'numberOfOccupants': numberOfOccupants,
       'notes': notes,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,

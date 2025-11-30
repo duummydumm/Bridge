@@ -42,9 +42,15 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
   final _leaseTermCtrl = TextEditingController();
   final _curfewRulesCtrl = TextEditingController();
   final _maxOccupantsCtrl = TextEditingController();
+  final _numberOfRoomsCtrl = TextEditingController();
+  final _occupantsPerRoomCtrl = TextEditingController();
+  final _initialOccupantsCtrl =
+      TextEditingController(); // Pre-existing occupants
 
   String? _selectedCategory;
   String? _selectedCondition;
+  String?
+  _selectedGenderPreference; // For boarding houses: "Male", "Female", "Mixed", "Any"
   RentalType _rentType = RentalType.item;
   bool _sharedCR = false;
   bool _bedSpaceAvailable = false;
@@ -97,6 +103,9 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
     _leaseTermCtrl.dispose();
     _curfewRulesCtrl.dispose();
     _maxOccupantsCtrl.dispose();
+    _numberOfRoomsCtrl.dispose();
+    _occupantsPerRoomCtrl.dispose();
+    _initialOccupantsCtrl.dispose();
     super.dispose();
   }
 
@@ -148,8 +157,16 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
           _pricePerDayCtrl.text = listing.pricePerDay?.toString() ?? '';
           _pricePerWeekCtrl.text = listing.pricePerWeek?.toString() ?? '';
           _pricePerMonthCtrl.text = listing.pricePerMonth?.toString() ?? '';
-          _minDaysCtrl.text = listing.minDays?.toString() ?? '';
-          _maxDaysCtrl.text = listing.maxDays?.toString() ?? '';
+          // Clear min/max days for property rentals (apartment, boarding house, commercial)
+          if (listing.rentType == RentalType.apartment ||
+              listing.rentType == RentalType.boardingHouse ||
+              listing.rentType == RentalType.commercial) {
+            _minDaysCtrl.text = '';
+            _maxDaysCtrl.text = '';
+          } else {
+            _minDaysCtrl.text = listing.minDays?.toString() ?? '';
+            _maxDaysCtrl.text = listing.maxDays?.toString() ?? '';
+          }
           _depositCtrl.text = listing.securityDeposit?.toString() ?? '';
           _isActive = listing.isActive;
           _allowMultipleRentals = listing.allowMultipleRentals;
@@ -165,6 +182,12 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
           _sharedCR = listing.sharedCR ?? false;
           _bedSpaceAvailable = listing.bedSpaceAvailable ?? false;
           _maxOccupantsCtrl.text = listing.maxOccupants?.toString() ?? '';
+          _numberOfRoomsCtrl.text = listing.numberOfRooms?.toString() ?? '';
+          _occupantsPerRoomCtrl.text =
+              listing.occupantsPerRoom?.toString() ?? '';
+          _initialOccupantsCtrl.text =
+              listing.initialOccupants?.toString() ?? '';
+          _selectedGenderPreference = listing.genderPreference;
           _curfewRulesCtrl.text = listing.curfewRules ?? '';
           // Load existing images - support both single imageUrl and multiple images
           if (data['images'] is List) {
@@ -752,8 +775,25 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                 ],
                 validator: (v) =>
                     v == null ? 'Please select rental type' : null,
-                onChanged: (v) =>
-                    setState(() => _rentType = v ?? RentalType.item),
+                onChanged: (v) {
+                  final newType = v ?? RentalType.item;
+                  setState(() {
+                    _rentType = newType;
+                    // Clear min/max days when switching to property rentals
+                    if (newType == RentalType.apartment ||
+                        newType == RentalType.boardingHouse ||
+                        newType == RentalType.commercial) {
+                      _minDaysCtrl.clear();
+                      _maxDaysCtrl.clear();
+                    }
+                    // Clear boarding house specific fields when switching away from boarding house
+                    if (newType != RentalType.boardingHouse) {
+                      _selectedGenderPreference = null;
+                      _occupantsPerRoomCtrl.clear();
+                      _initialOccupantsCtrl.clear();
+                    }
+                  });
+                },
               ),
               const SizedBox(height: 16),
 
@@ -997,62 +1037,64 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                 ),
               const SizedBox(height: 16),
 
-              // Min/Max Days
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _minDaysCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Min Days',
-                        hintText: '1',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (v) {
-                        if (v != null && v.trim().isNotEmpty) {
-                          final days = int.tryParse(v.trim());
-                          if (days != null && days < 1) {
-                            return 'Must be at least 1';
-                          }
-                        }
-                        return null;
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _maxDaysCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Max Days',
-                        hintText: '30',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (v) {
-                        if (v != null && v.trim().isNotEmpty) {
-                          final days = int.tryParse(v.trim());
-                          if (days != null) {
-                            if (days < 1) {
+              // Min/Max Days (only for items, not for property rentals)
+              if (_rentType == RentalType.item) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _minDaysCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Min Days',
+                          hintText: '1',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: (v) {
+                          if (v != null && v.trim().isNotEmpty) {
+                            final days = int.tryParse(v.trim());
+                            if (days != null && days < 1) {
                               return 'Must be at least 1';
                             }
-                            // Validate max >= min if both are provided
-                            final minDays = int.tryParse(
-                              _minDaysCtrl.text.trim(),
-                            );
-                            if (minDays != null && days < minDays) {
-                              return 'Must be >= min days';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _maxDaysCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Max Days',
+                          hintText: '30',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: (v) {
+                          if (v != null && v.trim().isNotEmpty) {
+                            final days = int.tryParse(v.trim());
+                            if (days != null) {
+                              if (days < 1) {
+                                return 'Must be at least 1';
+                              }
+                              // Validate max >= min if both are provided
+                              final minDays = int.tryParse(
+                                _minDaysCtrl.text.trim(),
+                              );
+                              if (minDays != null && days < minDays) {
+                                return 'Must be >= min days';
+                              }
                             }
                           }
-                        }
-                        return null;
-                      },
+                          return null;
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
 
               // Security Deposit
               TextFormField(
@@ -1200,6 +1242,27 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
 
               // Fields for Boarding Houses
               if (_rentType == RentalType.boardingHouse) ...[
+                // Basic Capacity Information
+                TextFormField(
+                  controller: _numberOfRoomsCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Number of Rooms *',
+                    hintText: 'e.g., 5',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Number of rooms required';
+                    }
+                    final rooms = int.tryParse(v.trim());
+                    if (rooms == null || rooms < 1) {
+                      return 'Must be at least 1';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: _maxOccupantsCtrl,
                   decoration: const InputDecoration(
@@ -1220,6 +1283,74 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
+                TextFormField(
+                  controller: _occupantsPerRoomCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Occupants per Room (optional)',
+                    hintText: 'e.g., 2',
+                    border: OutlineInputBorder(),
+                    helperText: 'Standard number of occupants per room',
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (v) {
+                    if (v != null && v.trim().isNotEmpty) {
+                      final occupants = int.tryParse(v.trim());
+                      if (occupants == null || occupants < 1) {
+                        return 'Must be at least 1';
+                      }
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                // Pre-existing Occupancy
+                TextFormField(
+                  controller: _initialOccupantsCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Pre-existing Occupants (optional)',
+                    hintText: 'e.g., 5',
+                    border: OutlineInputBorder(),
+                    helperText:
+                        'Number of occupants already in the boarding house before listing',
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (v) {
+                    if (v != null && v.trim().isNotEmpty) {
+                      final occupants = int.tryParse(v.trim());
+                      if (occupants == null || occupants < 0) {
+                        return 'Must be 0 or greater';
+                      }
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                // Preferences
+                DropdownButtonFormField<String>(
+                  value: _selectedGenderPreference,
+                  decoration: const InputDecoration(
+                    labelText: 'Gender Preference *',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'Any', child: Text('Any')),
+                    DropdownMenuItem(value: 'Male', child: Text('Male Only')),
+                    DropdownMenuItem(
+                      value: 'Female',
+                      child: Text('Female Only'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Mixed',
+                      child: Text('Mixed (Male & Female)'),
+                    ),
+                  ],
+                  validator: (v) =>
+                      v == null ? 'Please select gender preference' : null,
+                  onChanged: (v) =>
+                      setState(() => _selectedGenderPreference = v),
+                ),
+                const SizedBox(height: 16),
+                // Features
                 SwitchListTile(
                   title: const Text('Shared Comfort Room'),
                   subtitle: const Text('Bathroom is shared among occupants'),
@@ -1243,6 +1374,7 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                   onChanged: (v) => setState(() => _utilitiesIncluded = v),
                 ),
                 const SizedBox(height: 16),
+                // Rules
                 TextFormField(
                   controller: _curfewRulesCtrl,
                   decoration: const InputDecoration(
@@ -1402,12 +1534,22 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                                     _pricePerMonthCtrl.text.trim(),
                                   )
                                 : null,
-                            minDays: _minDaysCtrl.text.trim().isEmpty
+                            minDays:
+                                (_rentType == RentalType.apartment ||
+                                    _rentType == RentalType.boardingHouse ||
+                                    _rentType == RentalType.commercial)
                                 ? null
-                                : int.tryParse(_minDaysCtrl.text.trim()),
-                            maxDays: _maxDaysCtrl.text.trim().isEmpty
+                                : (_minDaysCtrl.text.trim().isEmpty
+                                      ? null
+                                      : int.tryParse(_minDaysCtrl.text.trim())),
+                            maxDays:
+                                (_rentType == RentalType.apartment ||
+                                    _rentType == RentalType.boardingHouse ||
+                                    _rentType == RentalType.commercial)
                                 ? null
-                                : int.tryParse(_maxDaysCtrl.text.trim()),
+                                : (_maxDaysCtrl.text.trim().isEmpty
+                                      ? null
+                                      : int.tryParse(_maxDaysCtrl.text.trim())),
                             securityDeposit: _depositCtrl.text.trim().isEmpty
                                 ? null
                                 : double.tryParse(_depositCtrl.text.trim()),
@@ -1453,10 +1595,33 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                                     _maxOccupantsCtrl.text.trim().isNotEmpty
                                 ? int.tryParse(_maxOccupantsCtrl.text.trim())
                                 : null,
+                            numberOfRooms:
+                                _rentType == RentalType.boardingHouse &&
+                                    _numberOfRoomsCtrl.text.trim().isNotEmpty
+                                ? int.tryParse(_numberOfRoomsCtrl.text.trim())
+                                : null,
+                            occupantsPerRoom:
+                                _rentType == RentalType.boardingHouse &&
+                                    _occupantsPerRoomCtrl.text.trim().isNotEmpty
+                                ? int.tryParse(
+                                    _occupantsPerRoomCtrl.text.trim(),
+                                  )
+                                : null,
+                            genderPreference:
+                                _rentType == RentalType.boardingHouse
+                                ? _selectedGenderPreference
+                                : null,
                             curfewRules:
                                 _rentType == RentalType.boardingHouse &&
                                     _curfewRulesCtrl.text.trim().isNotEmpty
                                 ? _curfewRulesCtrl.text.trim()
+                                : null,
+                            initialOccupants:
+                                _rentType == RentalType.boardingHouse &&
+                                    _initialOccupantsCtrl.text.trim().isNotEmpty
+                                ? int.tryParse(
+                                    _initialOccupantsCtrl.text.trim(),
+                                  )
                                 : null,
                           );
 
@@ -1540,12 +1705,22 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                                     _pricePerMonthCtrl.text.trim(),
                                   )
                                 : null,
-                            minDays: _minDaysCtrl.text.trim().isEmpty
+                            minDays:
+                                (_rentType == RentalType.apartment ||
+                                    _rentType == RentalType.boardingHouse ||
+                                    _rentType == RentalType.commercial)
                                 ? null
-                                : int.tryParse(_minDaysCtrl.text.trim()),
-                            maxDays: _maxDaysCtrl.text.trim().isEmpty
+                                : (_minDaysCtrl.text.trim().isEmpty
+                                      ? null
+                                      : int.tryParse(_minDaysCtrl.text.trim())),
+                            maxDays:
+                                (_rentType == RentalType.apartment ||
+                                    _rentType == RentalType.boardingHouse ||
+                                    _rentType == RentalType.commercial)
                                 ? null
-                                : int.tryParse(_maxDaysCtrl.text.trim()),
+                                : (_maxDaysCtrl.text.trim().isEmpty
+                                      ? null
+                                      : int.tryParse(_maxDaysCtrl.text.trim())),
                             securityDeposit: _depositCtrl.text.trim().isEmpty
                                 ? null
                                 : double.tryParse(_depositCtrl.text.trim()),
@@ -1591,10 +1766,33 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                                     _maxOccupantsCtrl.text.trim().isNotEmpty
                                 ? int.tryParse(_maxOccupantsCtrl.text.trim())
                                 : null,
+                            numberOfRooms:
+                                _rentType == RentalType.boardingHouse &&
+                                    _numberOfRoomsCtrl.text.trim().isNotEmpty
+                                ? int.tryParse(_numberOfRoomsCtrl.text.trim())
+                                : null,
+                            occupantsPerRoom:
+                                _rentType == RentalType.boardingHouse &&
+                                    _occupantsPerRoomCtrl.text.trim().isNotEmpty
+                                ? int.tryParse(
+                                    _occupantsPerRoomCtrl.text.trim(),
+                                  )
+                                : null,
+                            genderPreference:
+                                _rentType == RentalType.boardingHouse
+                                ? _selectedGenderPreference
+                                : null,
                             curfewRules:
                                 _rentType == RentalType.boardingHouse &&
                                     _curfewRulesCtrl.text.trim().isNotEmpty
                                 ? _curfewRulesCtrl.text.trim()
+                                : null,
+                            initialOccupants:
+                                _rentType == RentalType.boardingHouse &&
+                                    _initialOccupantsCtrl.text.trim().isNotEmpty
+                                ? int.tryParse(
+                                    _initialOccupantsCtrl.text.trim(),
+                                  )
                                 : null,
                           );
 

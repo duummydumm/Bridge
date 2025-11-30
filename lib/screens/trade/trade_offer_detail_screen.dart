@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../services/firestore_service.dart';
+import '../../services/report_block_service.dart';
 import '../../models/trade_offer_model.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/user_provider.dart';
 
 class TradeOfferDetailScreen extends StatefulWidget {
   final String offerId;
@@ -19,6 +23,7 @@ class TradeOfferDetailScreen extends StatefulWidget {
 
 class _TradeOfferDetailScreenState extends State<TradeOfferDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final ReportBlockService _reportBlockService = ReportBlockService();
   bool _isLoading = true;
   Map<String, dynamic>? _offer;
   String? _error;
@@ -280,6 +285,13 @@ class _TradeOfferDetailScreenState extends State<TradeOfferDetailScreen> {
           'Trade Offer Details',
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.flag_outlined, color: Colors.white),
+            onPressed: _offer != null ? () => _showReportOptions() : null,
+            tooltip: 'Report',
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -620,6 +632,364 @@ class _TradeOfferDetailScreenState extends State<TradeOfferDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showReportOptions() {
+    if (_offer == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.orange),
+              title: const Text('Report Trade Offer'),
+              onTap: () {
+                Navigator.pop(context);
+                _reportTradeOffer();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_off, color: Colors.red),
+              title: const Text('Report User'),
+              onTap: () {
+                Navigator.pop(context);
+                _reportUser();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _reportTradeOffer() {
+    if (_offer == null) return;
+
+    String selectedReason = 'spam';
+    final TextEditingController descriptionController = TextEditingController();
+    final offer = TradeOfferModel.fromMap(_offer!, widget.offerId);
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report Trade Offer'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason for reporting:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  title: const Text('Spam'),
+                  value: 'spam',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Inappropriate Content'),
+                  value: 'inappropriate_content',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Fraud'),
+                  value: 'fraud',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Other'),
+                  value: 'other',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional details (optional)',
+                    hintText: 'Please provide more information...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
+
+                final authProvider = Provider.of<AuthProvider>(
+                  parentContext,
+                  listen: false,
+                );
+                final userProvider = Provider.of<UserProvider>(
+                  parentContext,
+                  listen: false,
+                );
+
+                if (authProvider.user == null) return;
+
+                final reporterName =
+                    userProvider.currentUser?.fullName ??
+                    authProvider.user!.email ??
+                    'Unknown';
+
+                try {
+                  await _reportBlockService.reportContent(
+                    reporterId: authProvider.user!.uid,
+                    reporterName: reporterName,
+                    contentType: 'trade',
+                    contentId: widget.offerId,
+                    contentTitle: 'Trade Offer: ${offer.offeredItemName}',
+                    ownerId: offer.fromUserId,
+                    ownerName: offer.fromUserName,
+                    reason: selectedReason,
+                    description: descriptionController.text.trim().isNotEmpty
+                        ? descriptionController.text.trim()
+                        : null,
+                  );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Trade offer has been reported successfully. Thank you for keeping the community safe.',
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Error reporting trade offer: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Report',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _reportUser() {
+    if (_offer == null) return;
+
+    String selectedReason = 'spam';
+    final TextEditingController descriptionController = TextEditingController();
+    final offer = TradeOfferModel.fromMap(_offer!, widget.offerId);
+
+    // Determine which user to report (the other party)
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.user?.uid;
+
+    if (currentUserId == null) return;
+
+    String reportedUserId;
+    String reportedUserName;
+
+    if (currentUserId == offer.fromUserId) {
+      // Current user is the offer creator, report the recipient
+      reportedUserId = offer.toUserId;
+      reportedUserName = offer.toUserName;
+    } else {
+      // Current user is the recipient, report the offer creator
+      reportedUserId = offer.fromUserId;
+      reportedUserName = offer.fromUserName;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report User'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason for reporting:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  title: const Text('Spam'),
+                  value: 'spam',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Harassment'),
+                  value: 'harassment',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Inappropriate Content'),
+                  value: 'inappropriate_content',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Fraud'),
+                  value: 'fraud',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Other'),
+                  value: 'other',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional details (optional)',
+                    hintText: 'Please provide more information...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
+
+                final userProvider = Provider.of<UserProvider>(
+                  parentContext,
+                  listen: false,
+                );
+
+                if (authProvider.user == null) return;
+
+                final reporterName =
+                    userProvider.currentUser?.fullName ??
+                    authProvider.user!.email ??
+                    'Unknown';
+
+                try {
+                  await _reportBlockService.reportUser(
+                    reporterId: authProvider.user!.uid,
+                    reporterName: reporterName,
+                    reportedUserId: reportedUserId,
+                    reportedUserName: reportedUserName,
+                    reason: selectedReason,
+                    description: descriptionController.text.trim().isNotEmpty
+                        ? descriptionController.text.trim()
+                        : null,
+                    contextType: 'trade',
+                    contextId: widget.offerId,
+                  );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'User has been reported successfully. Thank you for keeping the community safe.',
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Error reporting user: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Report',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

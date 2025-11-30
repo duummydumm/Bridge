@@ -870,7 +870,9 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
             ),
             TextButton(
               onPressed: () async {
-                Navigator.pop(context);
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
 
                 final reporterName =
                     userProvider.currentUser?.fullName ??
@@ -893,21 +895,23 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
                   );
 
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
                       const SnackBar(
                         content: Text(
-                          'Giveaway has been reported. Thank you for keeping the community safe.',
+                          'Giveaway has been reported successfully. Thank you for keeping the community safe.',
                         ),
                         backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
                       ),
                     );
                   }
                 } catch (e) {
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
                       SnackBar(
                         content: Text('Error reporting giveaway: $e'),
                         backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
                       ),
                     );
                   }

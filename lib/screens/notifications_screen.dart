@@ -312,8 +312,39 @@ class _NotificationsTabView extends StatelessWidget {
           } else {
             title = '🚨 New Calamity Relief Event: "$eventTitle"';
           }
+        } else if (type == 'violation_issued') {
+          // Use the title from the notification data, or fallback to a default message
+          final notificationTitle = data['title'] as String?;
+          if (notificationTitle != null && notificationTitle.isNotEmpty) {
+            title = notificationTitle;
+          } else {
+            final violationCount = data['violationCount'] as int? ?? 0;
+            title = 'Violation Issued (Count: $violationCount)';
+          }
+        } else if (type == 'report_resolved') {
+          // Use the title from the notification data, or fallback to a default message
+          final notificationTitle = data['title'] as String?;
+          if (notificationTitle != null && notificationTitle.isNotEmpty) {
+            title = notificationTitle;
+          } else {
+            title = 'Report Resolved';
+          }
+        } else if (type == 'account_suspended') {
+          // Use the title from the notification data, or fallback to a default message
+          final notificationTitle = data['title'] as String?;
+          if (notificationTitle != null && notificationTitle.isNotEmpty) {
+            title = notificationTitle;
+          } else {
+            title = 'Account Suspended';
+          }
         } else {
-          title = 'Notification';
+          // For any other notification type, try to use the title field if available
+          final notificationTitle = data['title'] as String?;
+          if (notificationTitle != null && notificationTitle.isNotEmpty) {
+            title = notificationTitle;
+          } else {
+            title = 'Notification';
+          }
         }
 
         final bgColor = isUnread
@@ -435,6 +466,26 @@ class _NotificationsTabView extends StatelessWidget {
                           fontWeight: FontWeight.w500,
                         ),
                         maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (type == 'violation_issued' ||
+                      type == 'report_resolved' ||
+                      type == 'account_suspended')
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        data['message'] as String? ?? '',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color:
+                              type == 'violation_issued' ||
+                                  type == 'account_suspended'
+                              ? Colors.orange[700]
+                              : Colors.blue[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -708,6 +759,9 @@ IconData _iconForType(String type) {
   if (type == 'calamity_donation') return Icons.emergency_outlined;
   if (type == 'calamity_event_created') return Icons.crisis_alert;
   if (type == 'verification_rejected') return Icons.warning_amber_rounded;
+  if (type == 'violation_issued') return Icons.warning_amber_rounded;
+  if (type == 'report_resolved') return Icons.verified_user;
+  if (type == 'account_suspended') return Icons.block;
   if (type == 'item_overdue' || type == 'item_overdue_lender')
     return Icons.warning_amber_rounded;
   if (type.startsWith('trade')) return Icons.swap_horiz;

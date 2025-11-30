@@ -11,6 +11,7 @@ import '../../models/item_model.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
 import '../../reusable_widgets/verification_guard.dart';
 import '../../services/firestore_service.dart';
+import '../../services/report_block_service.dart';
 import '../chat_detail_screen.dart';
 import '../user_public_profile_screen.dart';
 import '../my_listings_screen.dart';
@@ -30,6 +31,7 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
   int _viewMode = 0; // 0: Grid, 1: List
   final Set<String> _requestedItemIds = <String>{};
   final FirestoreService _firestoreService = FirestoreService();
+  final ReportBlockService _reportBlockService = ReportBlockService();
   List<String> _barangays = [];
   bool _isFilterExpanded = false;
 
@@ -1557,6 +1559,29 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
                         ],
                       ),
                       const SizedBox(height: 24),
+                      // Report Button
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _showReportOptions(item);
+                        },
+                        icon: const Icon(
+                          Icons.flag_outlined,
+                          color: Colors.orange,
+                        ),
+                        label: const Text(
+                          'Report',
+                          style: TextStyle(color: Colors.orange),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.orange),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       // Action Buttons
                       Row(
                         children: [
@@ -1633,5 +1658,340 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
   /// Gets display location (full address)
   String _getDisplayLocation(ItemModel item) {
     return item.location ?? 'Location not specified';
+  }
+
+  void _showReportOptions(ItemModel item) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.orange),
+              title: const Text('Report Item'),
+              onTap: () {
+                Navigator.pop(context);
+                _reportItem(item);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_off, color: Colors.red),
+              title: const Text('Report Lender'),
+              onTap: () {
+                Navigator.pop(context);
+                _reportLender(item);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _reportItem(ItemModel item) {
+    String selectedReason = 'spam';
+    final TextEditingController descriptionController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report Item'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason for reporting:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  title: const Text('Spam'),
+                  value: 'spam',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Inappropriate Content'),
+                  value: 'inappropriate_content',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Fraud'),
+                  value: 'fraud',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Other'),
+                  value: 'other',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional details (optional)',
+                    hintText: 'Please provide more information...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
+
+                final authProvider = Provider.of<AuthProvider>(
+                  parentContext,
+                  listen: false,
+                );
+                final userProvider = Provider.of<UserProvider>(
+                  parentContext,
+                  listen: false,
+                );
+
+                if (authProvider.user == null) return;
+
+                final reporterName =
+                    userProvider.currentUser?.fullName ??
+                    authProvider.user!.email ??
+                    'Unknown';
+
+                try {
+                  await _reportBlockService.reportContent(
+                    reporterId: authProvider.user!.uid,
+                    reporterName: reporterName,
+                    contentType: 'item',
+                    contentId: item.itemId,
+                    contentTitle: item.title,
+                    ownerId: item.lenderId,
+                    ownerName: item.lenderName,
+                    reason: selectedReason,
+                    description: descriptionController.text.trim().isNotEmpty
+                        ? descriptionController.text.trim()
+                        : null,
+                  );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Item has been reported successfully. Thank you for keeping the community safe.',
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Error reporting item: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Report',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _reportLender(ItemModel item) {
+    String selectedReason = 'spam';
+    final TextEditingController descriptionController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report Lender'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason for reporting:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  title: const Text('Spam'),
+                  value: 'spam',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Harassment'),
+                  value: 'harassment',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Inappropriate Content'),
+                  value: 'inappropriate_content',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Fraud'),
+                  value: 'fraud',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Other'),
+                  value: 'other',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional details (optional)',
+                    hintText: 'Please provide more information...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
+
+                final authProvider = Provider.of<AuthProvider>(
+                  parentContext,
+                  listen: false,
+                );
+                final userProvider = Provider.of<UserProvider>(
+                  parentContext,
+                  listen: false,
+                );
+
+                if (authProvider.user == null) return;
+
+                final reporterName =
+                    userProvider.currentUser?.fullName ??
+                    authProvider.user!.email ??
+                    'Unknown';
+
+                try {
+                  await _reportBlockService.reportUser(
+                    reporterId: authProvider.user!.uid,
+                    reporterName: reporterName,
+                    reportedUserId: item.lenderId,
+                    reportedUserName: item.lenderName,
+                    reason: selectedReason,
+                    description: descriptionController.text.trim().isNotEmpty
+                        ? descriptionController.text.trim()
+                        : null,
+                    contextType: 'borrow',
+                    contextId: item.itemId,
+                  );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Lender has been reported successfully. Thank you for keeping the community safe.',
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Error reporting lender: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Report',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

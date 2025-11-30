@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
 import '../../../services/firestore_service.dart';
+import '../../../services/export_service.dart';
 import '../../../models/activity_log_model.dart';
 import 'package:intl/intl.dart';
 
@@ -69,6 +71,35 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
     setState(() => _searchResults = results);
   }
 
+  Future<void> _exportLogs(BuildContext context) async {
+    try {
+      final exportService = ExportService();
+      final csv = await exportService.exportActivityLogsToCSV(
+        logs: _searchResults,
+      );
+
+      // Copy to clipboard
+      await Clipboard.setData(ClipboardData(text: csv));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Logs exported to CSV and copied to clipboard!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -129,6 +160,11 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
                       ),
                     ],
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.download, color: Colors.white),
+                  onPressed: () => _exportLogs(context),
+                  tooltip: 'Export logs to CSV',
                 ),
               ],
             ),

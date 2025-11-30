@@ -72,6 +72,8 @@ class RentalRequestProvider extends ChangeNotifier {
     bool isLongTerm = false,
     double? monthlyPaymentAmount,
     DateTime? nextPaymentDueDate,
+    // Payment method
+    PaymentMethod paymentMethod = PaymentMethod.meetup,
   }) async {
     try {
       _setLoading(true);
@@ -90,7 +92,6 @@ class RentalRequestProvider extends ChangeNotifier {
         'depositAmount': depositAmount,
         'status': RentalRequestStatus.requested.name.toLowerCase(),
         'paymentStatus': PaymentStatus.unpaid.name,
-        'serviceFeePaid': false,
         'returnDueDate':
             endDate ??
             startDate.add(
@@ -101,6 +102,8 @@ class RentalRequestProvider extends ChangeNotifier {
         'isLongTerm': isLongTerm,
         'monthlyPaymentAmount': monthlyPaymentAmount,
         'nextPaymentDueDate': nextPaymentDueDate,
+        // Payment method
+        'paymentMethod': paymentMethod.name,
         'createdAt': DateTime.now(),
         'updatedAt': DateTime.now(),
       };
@@ -162,42 +165,6 @@ class RentalRequestProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> markServiceFeePaid(String requestId) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      // Get current request to check if we should auto-transition to active
-      final currentRequest = await _firestore.getRentalRequest(requestId);
-      final paymentStatus = currentRequest?['paymentStatus'] as String?;
-      final status = currentRequest?['status'] as String?;
-
-      await _firestore.updateRentalRequest(requestId, {
-        'serviceFeePaid': true,
-        'serviceFeePaidAt': DateTime.now(),
-        'updatedAt': DateTime.now(),
-      });
-
-      // Auto-transition to active if owner has also marked payment as received
-      if (paymentStatus == 'captured' &&
-          (status?.toLowerCase() ?? '') == 'ownerapproved') {
-        await _firestore.updateRentalRequest(requestId, {
-          'status': RentalRequestStatus.active.name.toLowerCase(),
-          'updatedAt': DateTime.now(),
-        });
-      }
-
-      _setLoading(false);
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _setError(e.toString());
-      _setLoading(false);
-      notifyListeners();
-      return false;
-    }
-  }
-
   /// Mark payment as received by owner (base price + deposit)
   Future<bool> markPaymentReceived(String requestId) async {
     try {
@@ -206,8 +173,6 @@ class RentalRequestProvider extends ChangeNotifier {
 
       // Get current request to check if we should auto-transition to active
       final currentRequest = await _firestore.getRentalRequest(requestId);
-      final serviceFeePaid =
-          currentRequest?['serviceFeePaid'] as bool? ?? false;
       final status = currentRequest?['status'] as String?;
 
       await _firestore.updateRentalRequest(requestId, {
@@ -215,8 +180,8 @@ class RentalRequestProvider extends ChangeNotifier {
         'updatedAt': DateTime.now(),
       });
 
-      // Auto-transition to active if service fee is also paid
-      if (serviceFeePaid && (status?.toLowerCase() ?? '') == 'ownerapproved') {
+      // Auto-transition to active when payment is received
+      if ((status?.toLowerCase() ?? '') == 'ownerapproved') {
         await _firestore.updateRentalRequest(requestId, {
           'status': RentalRequestStatus.active.name.toLowerCase(),
           'updatedAt': DateTime.now(),
@@ -235,13 +200,22 @@ class RentalRequestProvider extends ChangeNotifier {
   }
 
   /// Renter initiates return
-  Future<bool> initiateReturn(String requestId, String renterId) async {
+  Future<bool> initiateReturn(
+    String requestId,
+    String renterId, {
+    String? condition,
+    String? conditionNotes,
+    List<String>? conditionPhotos,
+  }) async {
     try {
       _setLoading(true);
       _clearError();
       await _firestore.initiateRentalReturn(
         requestId: requestId,
         renterId: renterId,
+        condition: condition,
+        conditionNotes: conditionNotes,
+        conditionPhotos: conditionPhotos,
       );
       _setLoading(false);
       notifyListeners();
@@ -255,13 +229,24 @@ class RentalRequestProvider extends ChangeNotifier {
   }
 
   /// Owner verifies return
-  Future<bool> verifyReturn(String requestId, String ownerId) async {
+  Future<bool> verifyReturn(
+    String requestId,
+    String ownerId, {
+    bool conditionAccepted = true,
+    String? ownerConditionNotes,
+    List<String>? ownerConditionPhotos,
+    Map<String, dynamic>? damageReport,
+  }) async {
     try {
       _setLoading(true);
       _clearError();
       await _firestore.verifyRentalReturn(
         requestId: requestId,
         ownerId: ownerId,
+        conditionAccepted: conditionAccepted,
+        ownerConditionNotes: ownerConditionNotes,
+        ownerConditionPhotos: ownerConditionPhotos,
+        damageReport: damageReport,
       );
       _setLoading(false);
       notifyListeners();

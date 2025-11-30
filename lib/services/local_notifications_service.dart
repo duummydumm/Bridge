@@ -615,6 +615,293 @@ class LocalNotificationsService {
     }
   }
 
+  /// Schedule overdue reminders for rental (daily recurring when end date passes)
+  Future<void> scheduleRentalOverdueReminders({
+    required String rentalRequestId,
+    required String itemId,
+    required String itemTitle,
+    required DateTime endDateLocal,
+    required String renterId,
+    required String ownerId,
+    required String renterName,
+    required String ownerName,
+    required bool
+    isRenter, // true if notification is for renter, false for owner
+    String? targetUserId, // ID of the user who should receive the notification
+  }) async {
+    if (kIsWeb) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      debugPrint('No user logged in, cannot schedule overdue reminders');
+      return;
+    }
+
+    // Determine the target user ID - use provided targetUserId or default to current user
+    final String recipientUserId = targetUserId ?? user.uid;
+
+    final now = tz.TZDateTime.now(tz.local);
+    final endDate = tz.TZDateTime.from(endDateLocal, tz.local);
+
+    // Only schedule if rental is actually overdue
+    if (endDate.isAfter(now)) {
+      return; // Not overdue yet
+    }
+
+    // Calculate days overdue
+    final daysOverdue = now.difference(endDate).inDays;
+
+    // Schedule daily recurring notification at 9 AM
+    final nextNotification = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      9, // 9 AM
+    );
+
+    // If it's already past 9 AM today, schedule for tomorrow
+    final scheduledTime = nextNotification.isBefore(now)
+        ? nextNotification.add(const Duration(days: 1))
+        : nextNotification;
+
+    String title;
+    String body;
+    if (isRenter) {
+      title = '⚠️ Rental Overdue: $itemTitle';
+      if (daysOverdue == 0) {
+        body =
+            'Your rental of "$itemTitle" is due today. Please return it to $ownerName.';
+      } else if (daysOverdue == 1) {
+        body =
+            'Your rental of "$itemTitle" is 1 day overdue. Please return it to $ownerName.';
+      } else {
+        body =
+            'Your rental of "$itemTitle" is $daysOverdue days overdue. Please return it to $ownerName.';
+      }
+    } else {
+      title = '⚠️ Rental Overdue: $itemTitle';
+      if (daysOverdue == 0) {
+        body = 'The rental of "$itemTitle" by $renterName is due today.';
+      } else if (daysOverdue == 1) {
+        body = 'The rental of "$itemTitle" by $renterName is 1 day overdue.';
+      } else {
+        body =
+            'The rental of "$itemTitle" by $renterName is $daysOverdue days overdue.';
+      }
+    }
+
+    // Build unique reminder ID: rental_{requestId}_overdue_{userId}
+    final reminderId = 'rental_${rentalRequestId}_overdue_$recipientUserId';
+    final localNotificationId = _buildId(reminderId, 0);
+
+    // Schedule local recurring notification (works offline)
+    // Use DateTimeComponents.time to make it recur daily at the same time
+    await _scheduleLocalNotification(
+      id: localNotificationId,
+      title: title,
+      body: body,
+      scheduledDate: scheduledTime,
+      channelId: 'rental_overdue_reminders',
+      channelName: 'Rental Overdue Reminders',
+      channelDescription: 'Reminders for overdue rentals',
+      importance: Importance.max,
+      priority: Priority.max,
+      matchDateTimeComponents: DateTimeComponents.time, // Recur daily at 9 AM
+    );
+
+    // Also save to Firestore for FCM (if online)
+    try {
+      final fcmService = FCMService();
+      await fcmService.initialize();
+      await fcmService.saveReminderToFirestore(
+        reminderId: reminderId,
+        userId: recipientUserId,
+        itemId: itemId,
+        itemTitle: itemTitle,
+        scheduledTime: scheduledTime.toUtc(),
+        title: title,
+        body: body,
+        reminderType: 'rental_overdue',
+        isBorrower: isRenter,
+      );
+    } catch (e) {
+      debugPrint(
+        'Could not save rental overdue reminder to Firestore (offline?): $e',
+      );
+    }
+  }
+
+  /// Cancel overdue reminders for a rental
+  Future<void> cancelRentalOverdueReminders(
+    String rentalRequestId, {
+    String? userId,
+  }) async {
+    if (kIsWeb) return;
+    await initialize();
+
+    // Cancel local notification
+    final reminderId = userId != null
+        ? 'rental_${rentalRequestId}_overdue_$userId'
+        : 'rental_${rentalRequestId}_overdue';
+    await _plugin.cancel(_buildId(reminderId, 0));
+
+    // Cancel overdue reminder from Firestore (if online)
+    try {
+      final fcmService = FCMService();
+      if (userId != null) {
+        // Cancel reminder for specific user
+        final reminderId = 'rental_${rentalRequestId}_overdue_$userId';
+        await fcmService.cancelReminderFromFirestore(reminderId);
+      } else {
+        // Cancel all overdue reminders for this rental (for all users)
+        final reminders = await FirebaseFirestore.instance
+            .collection('reminders')
+            .where('rentalRequestId', isEqualTo: rentalRequestId)
+            .where('reminderType', isEqualTo: 'rental_overdue')
+            .where('sent', isEqualTo: false)
+            .get();
+
+        final batch = FirebaseFirestore.instance.batch();
+        for (final doc in reminders.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      }
+    } catch (e) {
+      debugPrint(
+        'Could not cancel Firestore rental overdue reminder (offline?): $e',
+      );
+    }
+  }
+
+  /// Check and schedule overdue notifications for all overdue rentals
+  /// This should be called periodically (e.g., when app opens or daily)
+  /// Checks both rentals the user is renting and rentals the user owns
+  Future<void> checkAndScheduleRentalOverdueNotifications({
+    required String userId,
+    required String userName,
+  }) async {
+    if (kIsWeb) return;
+    try {
+      await initialize();
+      final service = FirestoreService();
+      final now = DateTime.now();
+
+      // Check rentals the user is renting
+      final renterRentals = await service.getRentalRequestsByUser(
+        userId,
+        asOwner: false,
+      );
+      for (final data in renterRentals) {
+        final String requestId = data['id'] as String;
+        final String itemId = data['itemId'] as String? ?? '';
+        final String itemTitle = (data['itemTitle'] ?? 'Rental Item') as String;
+        final String status = (data['status'] ?? '') as String;
+
+        // Only check active rentals
+        if (status != 'active') continue;
+
+        final Timestamp? endDateTs = data['endDate'] as Timestamp?;
+        if (endDateTs == null) continue;
+
+        final DateTime endDate = endDateTs.toDate();
+        final String? ownerId = data['ownerId'] as String?;
+        String ownerName = (data['ownerName'] ?? 'Owner') as String;
+
+        // Get actual owner name
+        if (ownerId != null) {
+          try {
+            final ownerData = await service.getUser(ownerId);
+            if (ownerData != null) {
+              ownerName =
+                  '${ownerData['firstName'] ?? ''} ${ownerData['lastName'] ?? ''}'
+                      .trim();
+              if (ownerName.isEmpty)
+                ownerName = (data['ownerName'] ?? 'Owner') as String;
+            }
+          } catch (_) {}
+        }
+
+        if (endDate.isBefore(now)) {
+          // Rental is overdue - schedule notification for renter
+          await scheduleRentalOverdueReminders(
+            rentalRequestId: requestId,
+            itemId: itemId,
+            itemTitle: itemTitle,
+            endDateLocal: endDate,
+            renterId: userId,
+            ownerId: ownerId ?? '',
+            renterName: userName,
+            ownerName: ownerName,
+            isRenter: true,
+            targetUserId: userId,
+          );
+        } else {
+          // Rental is not overdue, cancel any existing overdue reminders
+          await cancelRentalOverdueReminders(requestId, userId: userId);
+        }
+      }
+
+      // Check rentals the user owns
+      final ownerRentals = await service.getRentalRequestsByUser(
+        userId,
+        asOwner: true,
+      );
+      for (final data in ownerRentals) {
+        final String requestId = data['id'] as String;
+        final String itemId = data['itemId'] as String? ?? '';
+        final String itemTitle = (data['itemTitle'] ?? 'Rental Item') as String;
+        final String status = (data['status'] ?? '') as String;
+
+        // Only check active rentals
+        if (status != 'active') continue;
+
+        final Timestamp? endDateTs = data['endDate'] as Timestamp?;
+        if (endDateTs == null) continue;
+
+        final DateTime endDate = endDateTs.toDate();
+        final String? renterId = data['renterId'] as String?;
+        String renterName = (data['renterName'] ?? 'Renter') as String;
+
+        // Get actual renter name
+        if (renterId != null) {
+          try {
+            final renterData = await service.getUser(renterId);
+            if (renterData != null) {
+              renterName =
+                  '${renterData['firstName'] ?? ''} ${renterData['lastName'] ?? ''}'
+                      .trim();
+              if (renterName.isEmpty)
+                renterName = (data['renterName'] ?? 'Renter') as String;
+            }
+          } catch (_) {}
+        }
+
+        if (endDate.isBefore(now)) {
+          // Rental is overdue - schedule notification for owner
+          await scheduleRentalOverdueReminders(
+            rentalRequestId: requestId,
+            itemId: itemId,
+            itemTitle: itemTitle,
+            endDateLocal: endDate,
+            renterId: renterId ?? '',
+            ownerId: userId,
+            renterName: renterName,
+            ownerName: userName,
+            isRenter: false,
+            targetUserId: userId,
+          );
+        } else {
+          // Rental is not overdue, cancel any existing overdue reminders
+          await cancelRentalOverdueReminders(requestId, userId: userId);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking rental overdue notifications: $e');
+    }
+  }
+
   Future<void> cancelReturnReminders(String itemId) async {
     if (kIsWeb) return;
     await initialize();

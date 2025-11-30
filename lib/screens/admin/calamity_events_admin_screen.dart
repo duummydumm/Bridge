@@ -81,90 +81,155 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Center(child: const Text('Calamity Events Management')),
-        backgroundColor: _primaryColor,
-        foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
-      ),
-      body: Consumer<CalamityProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading && provider.calamityEvents.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Consumer<CalamityProvider>(
+          builder: (context, provider, _) {
+            if (provider.isLoading && provider.calamityEvents.isEmpty) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          // Get filtered and sorted events
-          final filteredEvents = _getFilteredAndSortedEvents(provider);
+            // Get filtered and sorted events
+            final filteredEvents = _getFilteredAndSortedEvents(provider);
 
-          return Column(
-            children: [
-              // Statistics Dashboard
-              _buildStatisticsDashboard(provider),
-              // Search and Filter Bar
-              _buildSearchAndFilterBar(),
-              // Events Grid
-              Expanded(
-                child: filteredEvents.isEmpty
-                    ? Center(
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        const Color(0xFF00897B),
+                        const Color(0xFF00695C),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF00897B).withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.emergency_outlined,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.search_off,
-                              size: 64,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
                             Text(
-                              'No events found',
+                              'Calamity Events Management',
                               style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w600,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            SizedBox(height: 4),
                             Text(
-                              'Try adjusting your search or filters',
+                              'Manage disaster relief events and donations',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: Colors.grey[500],
+                                color: Colors.white70,
                               ),
                             ),
                           ],
                         ),
-                      )
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          final width = constraints.maxWidth;
-                          int crossAxisCount = 1;
-                          if (width >= 1200) {
-                            crossAxisCount = 3;
-                          } else if (width >= 800) {
-                            crossAxisCount = 2;
-                          }
-
-                          return GridView.builder(
-                            padding: const EdgeInsets.all(16),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: crossAxisCount,
-                                  mainAxisSpacing: 16,
-                                  crossAxisSpacing: 16,
-                                  childAspectRatio: 1.05,
-                                ),
-                            itemCount: filteredEvents.length,
-                            itemBuilder: (context, index) {
-                              final event = filteredEvents[index];
-                              return _buildEventCard(context, event, provider);
-                            },
-                          );
-                        },
                       ),
-              ),
-            ],
-          );
-        },
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Statistics Dashboard
+                _buildStatisticsDashboard(provider),
+                // Search and Filter Bar
+                _buildSearchAndFilterBar(),
+                // Events Grid
+                Expanded(
+                  child: filteredEvents.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.search_off,
+                                size: 64,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No events found',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Try adjusting your search or filters',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final width = constraints.maxWidth;
+                            int crossAxisCount = 1;
+                            if (width >= 1200) {
+                              crossAxisCount = 3;
+                            } else if (width >= 800) {
+                              crossAxisCount = 2;
+                            }
+
+                            return GridView.builder(
+                              padding: const EdgeInsets.all(16),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: crossAxisCount,
+                                    mainAxisSpacing: 16,
+                                    crossAxisSpacing: 16,
+                                    childAspectRatio: 1.05,
+                                  ),
+                              itemCount: filteredEvents.length,
+                              itemBuilder: (context, index) {
+                                final event = filteredEvents[index];
+                                return _buildEventCard(
+                                  context,
+                                  event,
+                                  provider,
+                                );
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
@@ -179,7 +244,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
             });
           });
         },
-        backgroundColor: _primaryColor,
+        backgroundColor: const Color(0xFF00897B),
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
         label: const Text('Create New Event'),

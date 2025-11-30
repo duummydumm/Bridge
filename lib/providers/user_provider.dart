@@ -31,6 +31,7 @@ class UserProvider extends ChangeNotifier {
     required String role,
     required String barangayIdType,
     required String barangayIdUrl,
+    String? barangayIdUrlBack,
   }) async {
     try {
       _setLoading(true);
@@ -72,6 +73,7 @@ class UserProvider extends ChangeNotifier {
         'verificationStatus': 'pending',
         'barangayIdType': barangayIdType,
         'barangayIdUrl': barangayIdUrl,
+        if (barangayIdUrlBack != null) 'barangayIdUrlBack': barangayIdUrlBack,
         'reputationScore': 0.0,
         'profilePhotoUrl': '',
         'createdAt': DateTime.now(),
@@ -129,7 +131,11 @@ class UserProvider extends ChangeNotifier {
   }
 
   // Upload ID image
-  Future<String?> uploadIdImage(dynamic file, String userHint) async {
+  Future<String?> uploadIdImage(
+    dynamic file,
+    String userHint, {
+    bool isFront = true,
+  }) async {
     try {
       _setLoading(true);
       _clearError();
@@ -137,6 +143,7 @@ class UserProvider extends ChangeNotifier {
       final imageUrl = await _storageService.uploadBarangayIdImage(
         file: file,
         userHint: userHint,
+        isFront: isFront,
       );
 
       // If user was previously rejected, reset verification status to pending

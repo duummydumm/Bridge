@@ -108,6 +108,9 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
             final listing = await _firestoreService.getRentalListing(listingId);
             if (listing != null) {
               enrichedRental['itemTitle'] = listing['title'] as String?;
+              // Store rental type from listing
+              enrichedRental['rentType'] =
+                  listing['rentType'] as String? ?? 'item';
               // Fallback to item title if listing title not available
               if (enrichedRental['itemTitle'] == null ||
                   (enrichedRental['itemTitle'] as String).isEmpty) {
@@ -123,6 +126,7 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
           }
         }
         enrichedRental['itemTitle'] ??= 'Rental Item';
+        enrichedRental['rentType'] ??= 'item';
 
         // Get names based on view
         if (showAsOwner) {
@@ -242,15 +246,78 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
     }
   }
 
+  String _getReturnActionText(Map<String, dynamic> rental) {
+    final rentType = (rental['rentType'] as String? ?? 'item').toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'End Rental';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Move Out';
+      case 'commercial':
+        return 'End Lease';
+      default:
+        return 'Initiate Return';
+    }
+  }
+
+  String _getReturnDialogTitle(Map<String, dynamic> rental) {
+    final rentType = (rental['rentType'] as String? ?? 'item').toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'End Rental?';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Move Out?';
+      case 'commercial':
+        return 'End Lease?';
+      default:
+        return 'Initiate Return?';
+    }
+  }
+
+  String _getReturnDialogMessage(Map<String, dynamic> rental) {
+    final rentType = (rental['rentType'] as String? ?? 'item').toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Are you sure you want to end this rental? The owner will be notified to verify that the apartment is in good condition.';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Are you sure you want to move out? The owner will be notified to verify that the room/space is in good condition.';
+      case 'commercial':
+        return 'Are you sure you want to end this lease? The owner will be notified to verify that the commercial space is in good condition.';
+      default:
+        return 'Are you sure you want to initiate the return? The owner will be notified to verify the return.';
+    }
+  }
+
+  String _getReturnSuccessMessage(Map<String, dynamic> rental) {
+    final rentType = (rental['rentType'] as String? ?? 'item').toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Rental ending initiated successfully! Owner will verify.';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Move out initiated successfully! Owner will verify.';
+      case 'commercial':
+        return 'Lease termination initiated successfully! Owner will verify.';
+      default:
+        return 'Return initiated successfully! Owner will verify.';
+    }
+  }
+
   Future<void> _initiateReturn(String requestId) async {
+    // Find the rental data
+    final rental = _activeRentals.firstWhere(
+      (r) => (r['id'] as String?) == requestId,
+      orElse: () => <String, dynamic>{},
+    );
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Initiate Return?'),
-        content: const Text(
-          'Are you sure you want to initiate the return? '
-          'The owner will be notified to verify the return.',
-        ),
+        title: Text(_getReturnDialogTitle(rental)),
+        content: Text(_getReturnDialogMessage(rental)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -262,7 +329,7 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Initiate Return'),
+            child: Text(_getReturnActionText(rental)),
           ),
         ],
       ),
@@ -297,11 +364,14 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
 
       if (mounted) {
         if (success) {
+          // Find the rental data for success message
+          final rental = _activeRentals.firstWhere(
+            (r) => (r['id'] as String?) == requestId,
+            orElse: () => <String, dynamic>{},
+          );
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Return initiated successfully! Owner will verify.',
-              ),
+            SnackBar(
+              content: Text(_getReturnSuccessMessage(rental)),
               backgroundColor: Colors.orange,
             ),
           );
@@ -692,8 +762,13 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () => _initiateReturn(requestId),
-                    icon: const Icon(Icons.assignment_return, size: 18),
-                    label: const Text('Initiate Return'),
+                    icon: Icon(
+                      _getReturnActionText(rental).contains('Return')
+                          ? Icons.assignment_return
+                          : Icons.exit_to_app,
+                      size: 18,
+                    ),
+                    label: Text(_getReturnActionText(rental)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
                       foregroundColor: Colors.white,

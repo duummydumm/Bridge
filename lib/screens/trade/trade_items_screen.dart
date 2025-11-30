@@ -80,6 +80,26 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
     }
   }
 
+  Future<bool> _checkIfHasPendingOffer(String tradeItemId) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.user?.uid;
+
+    if (currentUserId == null || currentUserId.isEmpty) {
+      return false;
+    }
+
+    try {
+      final firestoreService = FirestoreService();
+      return await firestoreService.hasPendingOrApprovedTradeOffer(
+        tradeItemId: tradeItemId,
+        userId: currentUserId,
+      );
+    } catch (e) {
+      // Return false on error to allow the button to be enabled
+      return false;
+    }
+  }
+
   Future<void> _loadBarangays() async {
     try {
       final String jsonString = await rootBundle.loadString(
@@ -1309,44 +1329,56 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _primaryColor,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            onPressed: () {
-                              final args = <String, dynamic>{
-                                'tradeItemId': tradeItem.id,
-                              };
-                              // If this is a match, pass the matched user trade item data
-                              if (match != null &&
-                                  match.matchedUserTradeItem != null) {
-                                final matchedItem = match.matchedUserTradeItem!;
-                                args['matchedItemName'] =
-                                    matchedItem.offeredItemName;
-                                args['matchedItemDescription'] =
-                                    matchedItem.offeredDescription;
-                                args['matchedItemImageUrls'] =
-                                    matchedItem.offeredImageUrls;
-                                args['isMatched'] = 'true';
-                              }
-                              Navigator.pushNamed(
-                                context,
-                                '/trade/make-offer',
-                                arguments: args,
+                          child: FutureBuilder<bool>(
+                            future: _checkIfHasPendingOffer(tradeItem.id),
+                            builder: (context, snapshot) {
+                              final hasPendingOffer = snapshot.data ?? false;
+                              return ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: hasPendingOffer
+                                      ? Colors.grey
+                                      : _primaryColor,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                onPressed: hasPendingOffer
+                                    ? null
+                                    : () {
+                                        final args = <String, dynamic>{
+                                          'tradeItemId': tradeItem.id,
+                                        };
+                                        // If this is a match, pass the matched user trade item data
+                                        if (match != null &&
+                                            match.matchedUserTradeItem != null) {
+                                          final matchedItem = match.matchedUserTradeItem!;
+                                          args['matchedItemName'] =
+                                              matchedItem.offeredItemName;
+                                          args['matchedItemDescription'] =
+                                              matchedItem.offeredDescription;
+                                          args['matchedItemImageUrls'] =
+                                              matchedItem.offeredImageUrls;
+                                          args['isMatched'] = 'true';
+                                        }
+                                        Navigator.pushNamed(
+                                          context,
+                                          '/trade/make-offer',
+                                          arguments: args,
+                                        );
+                                      },
+                                child: Text(
+                                  hasPendingOffer
+                                      ? 'Offer Pending'
+                                      : 'Make Offer',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               );
                             },
-                            child: const Text(
-                              'Make Offer',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
                           ),
                         ),
                       ],

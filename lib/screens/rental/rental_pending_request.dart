@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
-import '../service_fee_payment_screen.dart';
 
 class RentalPendingRequestScreen extends StatefulWidget {
   const RentalPendingRequestScreen({super.key});
@@ -327,95 +326,6 @@ class _RentalPendingRequestScreenState
               ),
             ),
             const SizedBox(height: 12),
-            // Service Fee Payment Section
-            if ((request['fees'] is num) &&
-                (request['fees'] as num).toDouble() > 0) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: (request['serviceFeePaid'] ?? false)
-                      ? const Color(0xFFE8F5E9)
-                      : const Color(0xFFFFF3E0),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: (request['serviceFeePaid'] ?? false)
-                        ? const Color(0xFF2ECC71)
-                        : const Color(0xFFFFB74D),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      (request['serviceFeePaid'] ?? false)
-                          ? Icons.check_circle
-                          : Icons.account_balance_wallet,
-                      color: (request['serviceFeePaid'] ?? false)
-                          ? const Color(0xFF2ECC71)
-                          : const Color(0xFFFF9800),
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            (request['serviceFeePaid'] ?? false)
-                                ? 'Service Fee Paid'
-                                : 'Service Fee Required',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: (request['serviceFeePaid'] ?? false)
-                                  ? const Color(0xFF1B5E20)
-                                  : const Color(0xFFE65100),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '₱${((request['fees'] as num).toDouble()).toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: (request['serviceFeePaid'] ?? false)
-                                  ? const Color(0xFF2ECC71)
-                                  : const Color(0xFFFF9800),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (!(request['serviceFeePaid'] ?? false))
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ServiceFeePaymentScreen(
-                                rentalRequestId: request['id'],
-                                serviceFeeAmount: (request['fees'] as num)
-                                    .toDouble(),
-                              ),
-                            ),
-                          ).then((_) => _loadRequests());
-                        },
-                        icon: const Icon(Icons.payment, size: 16),
-                        label: const Text('Pay Now'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFF9800),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
             Row(
               children: [
                 Icon(Icons.calendar_today, size: 14, color: Colors.grey[600]),

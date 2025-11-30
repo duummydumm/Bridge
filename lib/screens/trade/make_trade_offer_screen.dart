@@ -11,6 +11,7 @@ import '../../services/firestore_service.dart';
 import '../../services/storage_service.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 
 class MakeTradeOfferScreen extends StatefulWidget {
   const MakeTradeOfferScreen({super.key});
@@ -450,6 +451,44 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
       };
 
       await _firestore.createTradeOffer(offerData);
+
+      // After creating the trade offer, seed a chat so both parties can communicate
+      try {
+        final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+        // Get item title
+        final itemTitle = _tradeItem!.offeredItemName;
+
+        // Get image URL
+        String? imageUrl;
+        if (_tradeItem!.offeredImageUrls.isNotEmpty) {
+          imageUrl = _tradeItem!.offeredImageUrls.first;
+        }
+
+        // Create or get conversation
+        final conversationId = await chatProvider.createOrGetConversation(
+          userId1: currentUser.uid,
+          userId1Name: currentUser.fullName,
+          userId2: _tradeItem!.offeredBy,
+          userId2Name: listingOwnerName,
+          itemId: _tradeItem!.id,
+          itemTitle: itemTitle,
+        );
+
+        if (conversationId != null) {
+          // Seed default message with optional first image of the item
+          final String content = 'I want to offer your trade: $itemTitle';
+          await chatProvider.sendMessage(
+            conversationId: conversationId,
+            senderId: currentUser.uid,
+            senderName: currentUser.fullName,
+            content: content,
+            imageUrl: imageUrl,
+          );
+        }
+      } catch (_) {
+        // best-effort; failure to seed chat shouldn't block the offer
+      }
 
       if (mounted) {
         Navigator.pop(context); // Close loading dialog

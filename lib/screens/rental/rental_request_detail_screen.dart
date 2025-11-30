@@ -8,7 +8,6 @@ import '../../providers/rental_request_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../models/rental_request_model.dart';
 import '../chat_detail_screen.dart';
-import '../service_fee_payment_screen.dart';
 
 class RentalRequestDetailScreen extends StatefulWidget {
   final String requestId;
@@ -57,6 +56,8 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
             enrichedData['itemCategory'] =
                 listing['category'] as String? ??
                 listing['rentType'] as String?;
+            // Store rentType for return button logic
+            enrichedData['rentType'] = listing['rentType'] as String?;
 
             // Prefer main listing imageUrl, then first image from images[]
             String? imageUrl = listing['imageUrl'] as String?;
@@ -332,8 +333,10 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Mark Payment Received?'),
-        content: const Text(
-          'Have you received the payment (base price + deposit) from the renter via GCash?',
+        content: Text(
+          _requestData?['paymentMethod'] == 'online'
+              ? 'Have you received the payment (base price + deposit) from the renter via online payment?'
+              : 'Have you received the cash payment (base price + deposit) from the renter during meetup?',
         ),
         actions: [
           TextButton(
@@ -491,6 +494,26 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
     return '₱${amount.toStringAsFixed(2)}';
   }
 
+  String _getPaymentInstructions(
+    String paymentMethod,
+    double priceQuote,
+    double? depositAmount,
+  ) {
+    if (paymentMethod == 'online') {
+      return 'Waiting for renter to pay base price (₱${priceQuote.toStringAsFixed(2)})${depositAmount != null && depositAmount > 0 ? ' + deposit (₱${depositAmount.toStringAsFixed(2)})' : ''} via online payment (GCash or payment gateway).';
+    } else {
+      return 'Waiting for renter to pay base price (₱${priceQuote.toStringAsFixed(2)})${depositAmount != null && depositAmount > 0 ? ' + deposit (₱${depositAmount.toStringAsFixed(2)})' : ''} in cash during meetup.';
+    }
+  }
+
+  String _getPaymentMethodInstructions(String paymentMethod) {
+    if (paymentMethod == 'online') {
+      return 'The renter will pay online via GCash or payment gateway. Once payment is confirmed, you can mark it as received.';
+    } else {
+      return 'The renter will pay cash in person during meetup. Once you receive the cash payment, mark it as received.';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -519,11 +542,9 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
     final endDate = _requestData!['endDate'];
     final durationDays = _requestData!['durationDays'] as int? ?? 0;
     final priceQuote = (_requestData!['priceQuote'] as num?)?.toDouble() ?? 0.0;
-    final fees = (_requestData!['fees'] as num?)?.toDouble() ?? 0.0;
     final depositAmount = (_requestData!['depositAmount'] as num?)?.toDouble();
     final totalDue = (_requestData!['totalDue'] as num?)?.toDouble() ?? 0.0;
     final paymentStatus = _requestData!['paymentStatus'] as String? ?? 'unpaid';
-    final serviceFeePaid = _requestData!['serviceFeePaid'] as bool? ?? false;
     final ownerId = _requestData!['ownerId'] as String?;
 
     // Check if current user is the owner
@@ -851,11 +872,6 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
                     ),
                     const SizedBox(height: 12),
                     _buildPaymentRow('Base Price', priceQuote),
-                    _buildPaymentRow(
-                      'Service Fee (5%)',
-                      fees,
-                      isServiceFee: true,
-                    ),
                     if (depositAmount != null && depositAmount > 0)
                       _buildPaymentRow('Security Deposit', depositAmount),
                     const Divider(height: 20),
@@ -865,7 +881,7 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
               ),
             ),
 
-            // Payment & service fee status
+            // Payment status
             if (isOwner && isOwnerApproved) ...[
               const SizedBox(height: 16),
               Card(
@@ -907,11 +923,74 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
                           ),
                         ],
                       ),
+                      // Payment Method Badge
+                      if (_requestData != null) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color:
+                                (_requestData!['paymentMethod'] as String? ??
+                                        'meetup') ==
+                                    'online'
+                                ? Colors.blue[100]
+                                : Colors.purple[100],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                (_requestData!['paymentMethod'] as String? ??
+                                            'meetup') ==
+                                        'online'
+                                    ? Icons.payment
+                                    : Icons.handshake,
+                                size: 14,
+                                color:
+                                    (_requestData!['paymentMethod']
+                                                as String? ??
+                                            'meetup') ==
+                                        'online'
+                                    ? Colors.blue[800]
+                                    : Colors.purple[800],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                (_requestData!['paymentMethod'] as String? ??
+                                            'meetup') ==
+                                        'online'
+                                    ? 'Online Payment'
+                                    : 'Meetup Payment',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color:
+                                      (_requestData!['paymentMethod']
+                                                  as String? ??
+                                              'meetup') ==
+                                          'online'
+                                      ? Colors.blue[800]
+                                      : Colors.purple[800],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Text(
                         paymentStatus == 'captured'
                             ? 'Base price and deposit have been received.'
-                            : 'Waiting for renter to pay base price (₱${priceQuote.toStringAsFixed(2)})${depositAmount != null && depositAmount > 0 ? ' + deposit (₱${depositAmount.toStringAsFixed(2)})' : ''} via GCash.',
+                            : _getPaymentInstructions(
+                                _requestData?['paymentMethod'] as String? ??
+                                    'meetup',
+                                priceQuote,
+                                depositAmount,
+                              ),
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey[700],
@@ -927,91 +1006,15 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
                                 ? null
                                 : () => _markPaymentReceived(),
                             icon: const Icon(Icons.payment, size: 18),
-                            label: const Text('Mark Payment Received'),
+                            label: Text(
+                              (_requestData?['paymentMethod'] as String? ??
+                                          'meetup') ==
+                                      'online'
+                                  ? 'Mark Online Payment Received'
+                                  : 'Mark Payment Received',
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF00897B),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
-
-            if (isOwnerApproved || isActive) ...[
-              const SizedBox(height: 12),
-              Card(
-                elevation: 1,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                color: serviceFeePaid ? Colors.green[50] : Colors.orange[50],
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            serviceFeePaid ? Icons.check_circle : Icons.pending,
-                            color: serviceFeePaid
-                                ? Colors.green[700]
-                                : Colors.orange[700],
-                            size: 22,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              serviceFeePaid
-                                  ? 'Service Fee Paid'
-                                  : 'Service Fee Pending (₱${fees.toStringAsFixed(2)})',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: serviceFeePaid
-                                    ? Colors.green[900]
-                                    : Colors.orange[900],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (!serviceFeePaid &&
-                          isRenter &&
-                          (isOwnerApproved || isActive) &&
-                          fees > 0) ...[
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _isProcessing
-                                ? null
-                                : () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            ServiceFeePaymentScreen(
-                                              rentalRequestId: widget.requestId,
-                                              serviceFeeAmount: fees,
-                                            ),
-                                      ),
-                                    ).then((_) {
-                                      _loadRequest();
-                                    });
-                                  },
-                            icon: const Icon(Icons.payment, size: 18),
-                            label: const Text('Pay Service Fee'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFF9800),
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(
@@ -1105,7 +1108,9 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Share your GCash QR code in the chat. Once the renter pays, mark the payment as received.',
+                        _getPaymentMethodInstructions(
+                          _requestData?['paymentMethod'] as String? ?? 'meetup',
+                        ),
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey[700],
@@ -1260,8 +1265,12 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: _initiateReturn,
-                    icon: const Icon(Icons.assignment_return),
-                    label: const Text('Initiate Return'),
+                    icon: Icon(
+                      _getReturnActionText().contains('Return')
+                          ? Icons.assignment_return
+                          : Icons.exit_to_app,
+                    ),
+                    label: Text(_getReturnActionText()),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
                       foregroundColor: Colors.white,
@@ -1290,7 +1299,7 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Click to initiate return. The owner will verify once you return the item.',
+                          _getReturnInfoMessage(),
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.orange[900],
@@ -1437,17 +1446,107 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
     );
   }
 
+  String _getReturnActionText() {
+    if (_requestData == null) return 'Initiate Return';
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'End Rental';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Move Out';
+      case 'commercial':
+        return 'End Lease';
+      default:
+        return 'Initiate Return';
+    }
+  }
+
+  String _getReturnInfoMessage() {
+    if (_requestData == null) {
+      return 'Click to initiate return. The owner will verify once you return the item.';
+    }
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Click to end rental. The owner will verify that the apartment is in good condition.';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Click to move out. The owner will verify that the room/space is in good condition.';
+      case 'commercial':
+        return 'Click to end lease. The owner will verify that the commercial space is in good condition.';
+      default:
+        return 'Click to initiate return. The owner will verify once you return the item.';
+    }
+  }
+
+  String _getReturnDialogTitle() {
+    if (_requestData == null) return 'Initiate Return?';
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'End Rental?';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Move Out?';
+      case 'commercial':
+        return 'End Lease?';
+      default:
+        return 'Initiate Return?';
+    }
+  }
+
+  String _getReturnDialogMessage() {
+    if (_requestData == null) {
+      return 'Are you sure you want to initiate the return? '
+          'The owner will be notified to verify the return.';
+    }
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Are you sure you want to end this rental? The owner will be notified to verify that the apartment is in good condition.';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Are you sure you want to move out? The owner will be notified to verify that the room/space is in good condition.';
+      case 'commercial':
+        return 'Are you sure you want to end this lease? The owner will be notified to verify that the commercial space is in good condition.';
+      default:
+        return 'Are you sure you want to initiate the return? '
+            'The owner will be notified to verify the return.';
+    }
+  }
+
+  String _getReturnSuccessMessage() {
+    if (_requestData == null) {
+      return 'Return initiated successfully! Owner will verify.';
+    }
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Rental ending initiated successfully! Owner will verify.';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Move out initiated successfully! Owner will verify.';
+      case 'commercial':
+        return 'Lease termination initiated successfully! Owner will verify.';
+      default:
+        return 'Return initiated successfully! Owner will verify.';
+    }
+  }
+
   Future<void> _initiateReturn() async {
     if (_requestData == null) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Initiate Return?'),
-        content: const Text(
-          'Are you sure you want to initiate the return? '
-          'The owner will be notified to verify the return.',
-        ),
+        title: Text(_getReturnDialogTitle()),
+        content: Text(_getReturnDialogMessage()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1459,7 +1558,7 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Initiate Return'),
+            child: Text(_getReturnActionText()),
           ),
         ],
       ),
@@ -1503,10 +1602,8 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
 
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Return initiated successfully! Owner will verify.',
-              ),
+            SnackBar(
+              content: Text(_getReturnSuccessMessage()),
               backgroundColor: Colors.orange,
             ),
           );
@@ -1705,7 +1802,6 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
   Widget _buildPaymentRow(
     String label,
     double? amount, {
-    bool isServiceFee = false,
     bool isTotal = false,
   }) {
     return Padding(
@@ -1725,15 +1821,6 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
                     color: Colors.grey[800],
                   ),
                 ),
-                if (isServiceFee)
-                  Text(
-                    'Pay separately to platform',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[600],
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
               ],
             ),
           ),

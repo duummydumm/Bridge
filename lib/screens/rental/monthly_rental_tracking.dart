@@ -45,7 +45,7 @@ class _MonthlyRentalTrackingScreenState
     super.dispose();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool? forceViewAsOwner}) async {
     setState(() {
       _isLoading = true;
     });
@@ -86,9 +86,11 @@ class _MonthlyRentalTrackingScreenState
         return isLongTerm && (status == 'active' || status == 'returned');
       }).toList();
 
-      // Auto-detect view based on which has more rentals
-      final showAsOwner =
-          monthlyOwnerRentals.length >= monthlyRenterRentals.length;
+      // Determine view: use forced value if provided, otherwise auto-detect on first load, otherwise use current state
+      final showAsOwner = forceViewAsOwner ?? 
+          (_monthlyRentals.isEmpty 
+              ? (monthlyOwnerRentals.length >= monthlyRenterRentals.length)
+              : _viewingAsOwner);
       final selectedRentals = showAsOwner
           ? monthlyOwnerRentals
           : monthlyRenterRentals;
@@ -277,10 +279,9 @@ class _MonthlyRentalTrackingScreenState
             ),
             tooltip: _viewingAsOwner ? 'View as Renter' : 'View as Owner',
             onPressed: () {
-              setState(() {
-                _viewingAsOwner = !_viewingAsOwner;
-              });
-              _loadData();
+              // Toggle the view and reload data with the new view mode
+              final newViewAsOwner = !_viewingAsOwner;
+              _loadData(forceViewAsOwner: newViewAsOwner);
             },
           ),
         ],

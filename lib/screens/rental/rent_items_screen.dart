@@ -61,9 +61,11 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
         'assets/data/oroquieta_barangays.json',
       );
       final List<dynamic> jsonData = json.decode(jsonString);
-      setState(() {
-        _barangays = jsonData.cast<String>();
-      });
+      if (mounted) {
+        setState(() {
+          _barangays = jsonData.cast<String>();
+        });
+      }
     } catch (e) {
       print('Error loading barangays: $e');
     }
@@ -197,7 +199,7 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
           },
         ),
         title: const Text(
-          'Rent Items',
+          'Rent',
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
       ),
@@ -415,7 +417,9 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                                     ),
                                     onPressed: () {
                                       _searchController.clear();
-                                      setState(() {});
+                                      if (mounted) {
+                                        setState(() {});
+                                      }
                                     },
                                   )
                                 : null,
@@ -431,7 +435,9 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                             ),
                           ),
                           onChanged: (value) {
-                            setState(() {});
+                            if (mounted) {
+                              setState(() {});
+                            }
                           },
                         ),
                       ),
@@ -712,11 +718,19 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: listingsQuery.snapshots(),
                 builder: (context, snapshot) {
+                  // Safety check: Don't build if widget is disposed
+                  if (!mounted) {
+                    return const SizedBox.shrink();
+                  }
                   // Get existing approved/active requests to filter out listings
                   // (We don't filter 'requested' status so users can see their pending requests)
                   return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: existingRequestsQuery,
                     builder: (context, requestsSnapshot) {
+                      // Safety check: Don't build if widget is disposed
+                      if (!mounted) {
+                        return const SizedBox.shrink();
+                      }
                       // Build set of listing IDs that user already has requests for
                       final Set<String> requestedListingIds = {};
                       if (requestsSnapshot.hasData &&

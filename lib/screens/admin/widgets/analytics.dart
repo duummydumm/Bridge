@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../../providers/admin_provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 
@@ -12,6 +14,11 @@ class AnalyticsTab extends StatefulWidget {
 
 class _AnalyticsTabState extends State<AnalyticsTab> {
   bool _hasLoaded = false;
+  DateTime? _startDate;
+  DateTime? _endDate;
+  bool _compareMode = false;
+  DateTime? _compareStartDate;
+  DateTime? _compareEndDate;
 
   @override
   void initState() {
@@ -94,19 +101,89 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                         ),
                       ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh, color: Colors.white),
-                      onPressed: () {
-                        admin.loadAnalytics();
-                        _hasLoaded = true;
-                      },
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                      ),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.date_range,
+                            color: Colors.white,
+                          ),
+                          onPressed: () => _showDateRangePicker(context),
+                          tooltip: 'Select date range',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white.withOpacity(0.2),
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            _compareMode
+                                ? Icons.compare_arrows
+                                : Icons.timeline,
+                            color: Colors.white,
+                          ),
+                          onPressed: () {
+                            setState(() => _compareMode = !_compareMode);
+                          },
+                          tooltip: 'Toggle comparison mode',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white.withOpacity(0.2),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh, color: Colors.white),
+                          onPressed: () {
+                            admin.loadAnalytics();
+                            _hasLoaded = true;
+                          },
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white.withOpacity(0.2),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
+              if (_startDate != null || _endDate != null || _compareMode)
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      if (_startDate != null || _endDate != null)
+                        Expanded(
+                          child: Text(
+                            'Date Range: ${_startDate != null ? DateFormat('MMM dd, yyyy').format(_startDate!) : 'Start'} - ${_endDate != null ? DateFormat('MMM dd, yyyy').format(_endDate!) : 'End'}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      if (_compareMode)
+                        Expanded(
+                          child: Text(
+                            'Comparison: ${_compareStartDate != null ? DateFormat('MMM dd').format(_compareStartDate!) : 'Period 1'} vs ${_compareEndDate != null ? DateFormat('MMM dd').format(_compareEndDate!) : 'Period 2'}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _startDate = null;
+                            _endDate = null;
+                            _compareMode = false;
+                            _compareStartDate = null;
+                            _compareEndDate = null;
+                          });
+                        },
+                        child: const Text('Clear'),
+                      ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 12),
               if (admin.isBusy)
                 const Center(
@@ -228,14 +305,25 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                     Expanded(
                       child: _CardWrap(
                         title: 'User Growth',
-                        child: _UsersGrowthChart(points: data.usersMonthly),
+                        child: _UsersGrowthChart(
+                          points: data.usersMonthly,
+                          onExport: () => _exportChart(context, 'user_growth'),
+                          onDrillDown: () => _showDrillDown(context, 'users'),
+                        ),
+                        showExport: true,
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: _CardWrap(
                         title: 'Popular Categories (30d)',
-                        child: _CategoriesPieChart(slices: data.categories30d),
+                        child: _CategoriesPieChart(
+                          slices: data.categories30d,
+                          onExport: () => _exportChart(context, 'categories'),
+                          onDrillDown: () =>
+                              _showDrillDown(context, 'categories'),
+                        ),
+                        showExport: true,
                       ),
                     ),
                   ],
@@ -243,13 +331,188 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 const SizedBox(height: 16),
                 _CardWrap(
                   title: 'Most Reported Issues (30d)',
-                  child: _IssuesBarChart(issues: data.issues30d),
+                  child: _IssuesBarChart(
+                    issues: data.issues30d,
+                    onExport: () => _exportChart(context, 'issues'),
+                    onDrillDown: () => _showDrillDown(context, 'issues'),
+                  ),
+                  showExport: true,
                 ),
+                const SizedBox(height: 16),
+                if (data.usersMonthly.length >= 3)
+                  _CardWrap(
+                    title: 'Growth Trends & Predictions',
+                    child: _GrowthTrendsWidget(points: data.usersMonthly),
+                    showExport: false,
+                  ),
               ],
             ],
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showDateRangePicker(BuildContext context) async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: _startDate != null && _endDate != null
+          ? DateTimeRange(start: _startDate!, end: _endDate!)
+          : null,
+    );
+    if (picked != null) {
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+        if (_compareMode) {
+          final duration = _endDate!.difference(_startDate!);
+          _compareStartDate = _startDate!.subtract(duration);
+          _compareEndDate = _startDate!;
+        }
+      });
+    }
+  }
+
+  Future<void> _exportChart(BuildContext context, String chartType) async {
+    try {
+      final admin = Provider.of<AdminProvider>(context, listen: false);
+      final data = admin.analyticsData;
+      if (data == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No data available to export'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      String csv = '';
+
+      switch (chartType) {
+        case 'user_growth':
+          csv = _exportUserGrowthData(data.usersMonthly);
+          break;
+        case 'categories':
+          csv = _exportCategoriesData(data.categories30d);
+          break;
+        case 'issues':
+          csv = _exportIssuesData(data.issues30d);
+          break;
+        default:
+          csv =
+              'Chart Type: $chartType\n'
+              'Export Date: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}';
+      }
+
+      await Clipboard.setData(ClipboardData(text: csv));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$chartType data exported as CSV and copied to clipboard!\n'
+              'You can paste it into Excel or Google Sheets.',
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting chart: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  String _exportUserGrowthData(List<dynamic> points) {
+    final csv = StringBuffer();
+    csv.writeln('Month,User Count');
+    for (final point in points) {
+      final month = point.month as String;
+      final count = point.count as int;
+      // Format month as readable date (e.g., "2024-01" -> "January 2024")
+      final year = month.substring(0, 4);
+      final monthNum = month.substring(5, 7);
+      final monthNames = [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ];
+      final monthName = monthNames[int.parse(monthNum) - 1];
+      csv.writeln('$monthName $year,$count');
+    }
+    return csv.toString();
+  }
+
+  String _exportCategoriesData(List<dynamic> slices) {
+    final csv = StringBuffer();
+    csv.writeln('Category,Count,Percentage');
+    final total = slices.fold<int>(0, (a, b) => a + (b.count as int));
+    for (final slice in slices) {
+      final name = slice.name as String;
+      final count = slice.count as int;
+      final percentage = total > 0
+          ? (count / total * 100).toStringAsFixed(1)
+          : '0.0';
+      csv.writeln('$name,$count,$percentage%');
+    }
+    csv.writeln('Total,$total,100.0%');
+    return csv.toString();
+  }
+
+  String _exportIssuesData(List<dynamic> issues) {
+    final csv = StringBuffer();
+    csv.writeln('Issue Type,Count');
+    for (final issue in issues) {
+      final issueType = issue.issueType as String;
+      final count = issue.count as int;
+      csv.writeln('$issueType,$count');
+    }
+    final total = issues.fold<int>(0, (a, b) => a + (b.count as int));
+    csv.writeln('Total,$total');
+    return csv.toString();
+  }
+
+  void _showDrillDown(BuildContext context, String metricType) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${metricType.toUpperCase()} Details'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Text('Detailed breakdown for $metricType would appear here.'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -456,7 +719,12 @@ class _CalamityKpiGrid extends StatelessWidget {
 class _CardWrap extends StatelessWidget {
   final String title;
   final Widget child;
-  const _CardWrap({required this.title, required this.child});
+  final bool showExport;
+  const _CardWrap({
+    required this.title,
+    required this.child,
+    this.showExport = false,
+  });
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -484,29 +752,42 @@ class _CardWrap extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      const Color(0xFF00897B).withOpacity(0.1),
-                      const Color(0xFF00695C).withOpacity(0.05),
-                    ],
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFF00897B).withOpacity(0.1),
+                            const Color(0xFF00695C).withOpacity(0.05),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: Color(0xFF004D40),
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                    color: Color(0xFF004D40),
-                    letterSpacing: 0.3,
-                  ),
-                ),
+                  if (showExport && child is _ExportableChart)
+                    IconButton(
+                      icon: const Icon(Icons.download, size: 20),
+                      onPressed: () => (child as _ExportableChart).onExport(),
+                      tooltip: 'Export chart',
+                    ),
+                ],
               ),
               const SizedBox(height: 20),
               SizedBox(height: 220, child: child),
@@ -518,9 +799,19 @@ class _CardWrap extends StatelessWidget {
   }
 }
 
-class _UsersGrowthChart extends StatelessWidget {
+abstract class _ExportableChart extends StatelessWidget {
+  final VoidCallback onExport;
+  final VoidCallback? onDrillDown;
+  const _ExportableChart({required this.onExport, this.onDrillDown});
+}
+
+class _UsersGrowthChart extends _ExportableChart {
   final List<dynamic> points; // UsersMonthlyPoint
-  const _UsersGrowthChart({required this.points});
+  const _UsersGrowthChart({
+    required this.points,
+    required super.onExport,
+    super.onDrillDown,
+  });
   @override
   Widget build(BuildContext context) {
     final primaryColor = const Color(0xFF00897B);
@@ -571,117 +862,127 @@ class _UsersGrowthChart extends StatelessWidget {
       return names[mm] ?? mm;
     }
 
-    return Column(
-      children: [
-        Expanded(
-          child: BarChart(
-            BarChartData(
-              gridData: FlGridData(
-                show: true,
-                drawVerticalLine: false,
-                horizontalInterval: 0.5,
-                getDrawingHorizontalLine: (value) {
-                  return FlLine(
-                    color: Colors.grey[300]!,
-                    strokeWidth: 1,
-                    dashArray: [5, 5],
-                  );
-                },
-              ),
-              borderData: FlBorderData(
-                show: true,
-                border: Border(
-                  bottom: BorderSide(color: Colors.grey[400]!, width: 1),
-                  left: BorderSide(color: Colors.grey[400]!, width: 1),
+    return GestureDetector(
+      onTap: onDrillDown,
+      child: Column(
+        children: [
+          Expanded(
+            child: BarChart(
+              BarChartData(
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: 0.5,
+                  getDrawingHorizontalLine: (value) {
+                    return FlLine(
+                      color: Colors.grey[300]!,
+                      strokeWidth: 1,
+                      dashArray: [5, 5],
+                    );
+                  },
                 ),
-              ),
-              alignment: BarChartAlignment.spaceAround,
-              titlesData: FlTitlesData(
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (v, __) => Text(
-                      monthLabel(v.toInt()),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[700],
-                      ),
-                    ),
+                borderData: FlBorderData(
+                  show: true,
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey[400]!, width: 1),
+                    left: BorderSide(color: Colors.grey[400]!, width: 1),
                   ),
                 ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (value, meta) {
-                      return Text(
-                        value.toInt().toString(),
+                alignment: BarChartAlignment.spaceAround,
+                titlesData: FlTitlesData(
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      getTitlesWidget: (v, __) => Text(
+                        monthLabel(v.toInt()),
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: Colors.grey[700],
                         ),
-                      );
-                    },
+                      ),
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      getTitlesWidget: (value, meta) {
+                        return Text(
+                          value.toInt().toString(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
                   ),
                 ),
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
+                barGroups: barGroups,
               ),
-              barGroups: barGroups,
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                primaryColor.withOpacity(0.1),
-                secondaryColor.withOpacity(0.1),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  primaryColor.withOpacity(0.1),
+                  secondaryColor.withOpacity(0.1),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: primaryColor.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [primaryColor, secondaryColor],
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'users',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    color: Color(0xFF004D40),
+                  ),
+                ),
               ],
             ),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: primaryColor.withOpacity(0.2), width: 1),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 16,
-                height: 16,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [primaryColor, secondaryColor],
-                  ),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'users',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  color: Color(0xFF004D40),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _CategoriesPieChart extends StatelessWidget {
+class _CategoriesPieChart extends _ExportableChart {
   final List<dynamic> slices; // CategorySlice
-  const _CategoriesPieChart({required this.slices});
+  const _CategoriesPieChart({
+    required this.slices,
+    required super.onExport,
+    super.onDrillDown,
+  });
 
   static const List<Color> _colors = [
     Color(0xFF00897B),
@@ -716,48 +1017,55 @@ class _CategoriesPieChart extends StatelessWidget {
         ),
       );
     }
-    return PieChart(
-      PieChartData(
-        sectionsSpace: 3,
-        centerSpaceRadius: 50,
-        sections: [
-          for (int i = 0; i < slices.length; i++)
-            PieChartSectionData(
-              value: (slices[i].count as num).toDouble(),
-              title:
-                  '${slices[i].name}\n${((slices[i].count as num).toDouble() / total * 100).toStringAsFixed(0)}%',
-              radius: 65,
-              titleStyle: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-                shadows: [
-                  Shadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+    return GestureDetector(
+      onTap: onDrillDown,
+      child: PieChart(
+        PieChartData(
+          sectionsSpace: 3,
+          centerSpaceRadius: 50,
+          sections: [
+            for (int i = 0; i < slices.length; i++)
+              PieChartSectionData(
+                value: (slices[i].count as num).toDouble(),
+                title:
+                    '${slices[i].name}\n${((slices[i].count as num).toDouble() / total * 100).toStringAsFixed(0)}%',
+                radius: 65,
+                titleStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                color: _colors[i % _colors.length],
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    _colors[i % _colors.length],
+                    _colors[i % _colors.length].withOpacity(0.7),
+                  ],
+                ),
               ),
-              color: _colors[i % _colors.length],
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  _colors[i % _colors.length],
-                  _colors[i % _colors.length].withOpacity(0.7),
-                ],
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class _IssuesBarChart extends StatelessWidget {
+class _IssuesBarChart extends _ExportableChart {
   final List<dynamic> issues; // IssueCount
-  const _IssuesBarChart({required this.issues});
+  const _IssuesBarChart({
+    required this.issues,
+    required super.onExport,
+    super.onDrillDown,
+  });
   @override
   Widget build(BuildContext context) {
     if (issues.isEmpty) {
@@ -779,95 +1087,240 @@ class _IssuesBarChart extends StatelessWidget {
         ),
       );
     }
-    return BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceAround,
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: 1,
-          getDrawingHorizontalLine: (value) {
-            return FlLine(
-              color: Colors.grey[300]!,
-              strokeWidth: 1,
-              dashArray: [5, 5],
-            );
-          },
-        ),
-        borderData: FlBorderData(
-          show: true,
-          border: Border(
-            bottom: BorderSide(color: Colors.grey[400]!, width: 1),
-            left: BorderSide(color: Colors.grey[400]!, width: 1),
+    return GestureDetector(
+      onTap: onDrillDown,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 1,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: Colors.grey[300]!,
+                strokeWidth: 1,
+                dashArray: [5, 5],
+              );
+            },
           ),
-        ),
-        titlesData: FlTitlesData(
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (v, __) {
-                final idx = v.toInt();
-                if (idx < 0 || idx >= issues.length)
-                  return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    issues[idx].issueType,
+          borderData: FlBorderData(
+            show: true,
+            border: Border(
+              bottom: BorderSide(color: Colors.grey[400]!, width: 1),
+              left: BorderSide(color: Colors.grey[400]!, width: 1),
+            ),
+          ),
+          titlesData: FlTitlesData(
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (v, __) {
+                  final idx = v.toInt();
+                  if (idx < 0 || idx >= issues.length)
+                    return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      issues[idx].issueType,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[700],
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  return Text(
+                    value.toInt().toString(),
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: Colors.grey[700],
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                  ),
-                );
-              },
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
             ),
           ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  value.toInt().toString(),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[700],
+          barGroups: [
+            for (int i = 0; i < issues.length; i++)
+              BarChartGroupData(
+                x: i,
+                barRods: [
+                  BarChartRodData(
+                    toY: (issues[i].count as num).toDouble(),
+                    width: 20,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(4),
+                      topRight: Radius.circular(4),
+                    ),
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        const Color(0xFFD32F2F),
+                        const Color(0xFFB71C1C),
+                      ],
+                    ),
                   ),
-                );
-              },
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GrowthTrendsWidget extends StatelessWidget {
+  final List<dynamic> points; // UsersMonthlyPoint
+  const _GrowthTrendsWidget({required this.points});
+
+  double _calculateGrowthRate(List<dynamic> points) {
+    if (points.length < 2) return 0.0;
+    final recent = points.sublist(points.length - 3);
+    final older = points.sublist(0, points.length - 3);
+    if (older.isEmpty) return 0.0;
+    final recentAvg =
+        recent.fold<int>(0, (a, b) => a + (b.count as int)) / recent.length;
+    final olderAvg =
+        older.fold<int>(0, (a, b) => a + (b.count as int)) / older.length;
+    if (olderAvg == 0) return 0.0;
+    return ((recentAvg - olderAvg) / olderAvg) * 100;
+  }
+
+  int _predictNextMonth(List<dynamic> points) {
+    if (points.length < 2) return 0;
+    final last = points.last.count as int;
+    final secondLast = points[points.length - 2].count as int;
+    final growth = last - secondLast;
+    return (last + growth).round();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final growthRate = _calculateGrowthRate(points);
+    final prediction = _predictNextMonth(points);
+    final isPositive = growthRate >= 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _TrendCard(
+                title: 'Growth Rate',
+                value: '${growthRate.toStringAsFixed(1)}%',
+                icon: isPositive ? Icons.trending_up : Icons.trending_down,
+                color: isPositive ? Colors.green : Colors.red,
+              ),
             ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _TrendCard(
+                title: 'Next Month Prediction',
+                value: '$prediction',
+                icon: Icons.auto_graph,
+                color: Colors.blue,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
           ),
-          rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Trend Analysis',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isPositive
+                    ? 'User growth is trending upward. Based on current patterns, expect continued growth in the coming months.'
+                    : 'User growth is declining. Consider reviewing user acquisition strategies.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+            ],
           ),
         ),
-        barGroups: [
-          for (int i = 0; i < issues.length; i++)
-            BarChartGroupData(
-              x: i,
-              barRods: [
-                BarChartRodData(
-                  toY: (issues[i].count as num).toDouble(),
-                  width: 20,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(4),
-                    topRight: Radius.circular(4),
-                  ),
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [const Color(0xFFD32F2F), const Color(0xFFB71C1C)],
-                  ),
+      ],
+    );
+  }
+}
+
+class _TrendCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _TrendCard({
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w600,
                 ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: color,
             ),
+          ),
         ],
       ),
     );

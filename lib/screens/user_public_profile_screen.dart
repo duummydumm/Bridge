@@ -719,7 +719,9 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
             ),
             TextButton(
               onPressed: () async {
-                Navigator.pop(context);
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
 
                 final reporterName =
                     userProvider.currentUser?.fullName ??
@@ -740,21 +742,23 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                   );
 
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
                       const SnackBar(
                         content: Text(
-                          'User has been reported. Thank you for keeping the community safe.',
+                          'User has been reported successfully. Thank you for keeping the community safe.',
                         ),
                         backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
                       ),
                     );
                   }
                 } catch (e) {
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
                       SnackBar(
                         content: Text('Error reporting user: $e'),
                         backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
                       ),
                     );
                   }

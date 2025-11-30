@@ -20,6 +20,7 @@ import '../providers/connectivity_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'user_public_profile_screen.dart';
 import '../providers/auth_provider.dart';
+import '../providers/chat_theme_provider.dart';
 
 class ChatDetailScreen extends StatefulWidget {
   final String conversationId;
@@ -312,11 +313,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final chatProvider = Provider.of<ChatProvider>(context);
+    final chatThemeProvider = Provider.of<ChatThemeProvider>(context);
+    final themeData = chatThemeProvider.getThemeData(widget.conversationId);
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: themeData.backgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF00897B),
+        backgroundColor: themeData.primaryColor,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -463,7 +466,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             child:
                 chatProvider.isLoadingMessages && chatProvider.messages.isEmpty
                 ? const Center(child: CircularProgressIndicator())
-                : _buildMessagesList(chatProvider),
+                : _buildMessagesList(chatProvider, themeData),
           ),
           // Typing Indicator
           if (_isOtherUserTyping && !_isSearchMode)
@@ -503,7 +506,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  Widget _buildMessagesList(ChatProvider chatProvider) {
+  Widget _buildMessagesList(
+    ChatProvider chatProvider,
+    ChatThemeData themeData,
+  ) {
     // Show search results if in search mode
     if (_isSearchMode) {
       if (_searchQuery.isEmpty) {
@@ -544,7 +550,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildMessageBubble(message, isMe),
+                _buildMessageBubble(message, isMe, themeData),
                 const SizedBox(height: 4),
               ],
             ),
@@ -613,7 +619,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 ),
               ),
             ],
-            _buildMessageBubble(message, isMe),
+            _buildMessageBubble(message, isMe, themeData),
             const SizedBox(height: 4),
           ],
         );
@@ -621,7 +627,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  Widget _buildMessageBubble(MessageModel message, bool isMe) {
+  Widget _buildMessageBubble(
+    MessageModel message,
+    bool isMe,
+    ChatThemeData themeData,
+  ) {
     // Skip deleted messages (for everyone)
     if (message.isDeleted && message.deletedForEveryone) {
       return Container(
@@ -670,7 +680,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: isMe ? const Color(0xFF00897B) : Colors.white,
+              color: isMe
+                  ? themeData.messageBubbleColor
+                  : themeData.otherMessageBubbleColor,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(20),
                 topRight: const Radius.circular(20),
@@ -704,9 +716,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border(
                         left: BorderSide(
-                          color: isMe
-                              ? Colors.white70
-                              : const Color(0xFF00897B),
+                          color: isMe ? Colors.white70 : themeData.primaryColor,
                           width: 3,
                         ),
                       ),
@@ -721,7 +731,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                             fontWeight: FontWeight.bold,
                             color: isMe
                                 ? Colors.white70
-                                : const Color(0xFF00897B),
+                                : themeData.primaryColor,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -758,11 +768,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: isMe ? Colors.white70 : const Color(0xFF00897B),
+                        color: isMe ? Colors.white70 : themeData.primaryColor,
                         decoration: TextDecoration.underline,
                         decorationColor: isMe
                             ? Colors.white70
-                            : const Color(0xFF00897B),
+                            : themeData.primaryColor,
                       ),
                     ),
                   ),
@@ -849,11 +859,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             const SizedBox(width: 8),
             CircleAvatar(
               radius: 14,
-              backgroundColor: const Color(0xFF00897B).withOpacity(0.1),
+              backgroundColor: themeData.primaryColor.withOpacity(0.1),
               child: Icon(
                 Icons.person,
                 size: 16,
-                color: const Color(0xFF00897B),
+                color: themeData.primaryColor,
               ),
             ),
           ],
@@ -863,9 +873,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Widget _buildMessageInputBar() {
-    return Consumer<ConnectivityProvider>(
-      builder: (context, connectivityProvider, child) {
+    return Consumer2<ConnectivityProvider, ChatThemeProvider>(
+      builder: (context, connectivityProvider, chatThemeProvider, child) {
         final isOnline = connectivityProvider.isOnline;
+        final themeData = chatThemeProvider.getThemeData(widget.conversationId);
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -923,7 +934,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 const SizedBox(width: 8),
                 Container(
                   decoration: BoxDecoration(
-                    color: isOnline ? const Color(0xFF00897B) : Colors.grey,
+                    color: isOnline ? themeData.primaryColor : Colors.grey,
                     shape: BoxShape.circle,
                   ),
                   child: IconButton(
@@ -947,6 +958,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.palette),
+              title: const Text('Chat Theme'),
+              onTap: () {
+                Navigator.pop(context);
+                _showThemeSelector();
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('Conversation Info'),
@@ -1226,14 +1245,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
             TextButton(
               onPressed: () async {
-                Navigator.pop(context);
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
 
                 final authProvider = Provider.of<AuthProvider>(
-                  context,
+                  parentContext,
                   listen: false,
                 );
                 final userProvider = Provider.of<UserProvider>(
-                  context,
+                  parentContext,
                   listen: false,
                 );
 
@@ -1260,21 +1281,23 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   );
 
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
                       const SnackBar(
                         content: Text(
-                          'User has been reported. Thank you for keeping the community safe.',
+                          'User has been reported successfully. Thank you for keeping the community safe.',
                         ),
                         backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
                       ),
                     );
                   }
                 } catch (e) {
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
                       SnackBar(
                         content: Text('Error reporting user: $e'),
                         backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
                       ),
                     );
                   }
@@ -1654,52 +1677,58 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Widget _buildReplyPreview() {
     if (_replyingToMessage == null) return const SizedBox.shrink();
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      color: Colors.grey[200],
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFF00897B),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Replying to ${_replyingToMessage!.senderName}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF00897B),
-                  ),
+    return Consumer<ChatThemeProvider>(
+      builder: (context, chatThemeProvider, _) {
+        final themeData = chatThemeProvider.getThemeData(widget.conversationId);
+
+        return Container(
+          padding: const EdgeInsets.all(12),
+          color: Colors.grey[200],
+          child: Row(
+            children: [
+              Container(
+                width: 4,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: themeData.primaryColor,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  _replyingToMessage!.content,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Replying to ${_replyingToMessage!.senderName}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: themeData.primaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _replyingToMessage!.content,
+                      style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _replyingToMessage = null;
+                  });
+                },
+              ),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 20),
-            onPressed: () {
-              setState(() {
-                _replyingToMessage = null;
-              });
-            },
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1850,5 +1879,113 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         curve: Curves.easeOut,
       );
     }
+  }
+
+  void _showThemeSelector() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Consumer<ChatThemeProvider>(
+        builder: (context, chatThemeProvider, _) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Choose Chat Theme',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 20),
+                Flexible(
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 4,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.9,
+                        ),
+                    itemCount: ChatTheme.values.length,
+                    itemBuilder: (context, index) {
+                      final theme = ChatTheme.values[index];
+                      final isSelected =
+                          chatThemeProvider.getThemeForConversation(
+                            widget.conversationId,
+                          ) ==
+                          theme;
+                      final themeColor = ChatThemeProvider.getThemeColor(theme);
+                      final themeName = ChatThemeProvider.getThemeName(theme);
+
+                      return InkWell(
+                        onTap: () {
+                          chatThemeProvider.setThemeForConversation(
+                            widget.conversationId,
+                            theme,
+                          );
+                          Navigator.pop(context);
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? themeColor.withOpacity(0.1)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? themeColor
+                                  : Colors.grey[300]!,
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: themeColor,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: isSelected
+                                    ? const Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                        size: 20,
+                                      )
+                                    : null,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                themeName,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: isSelected
+                                      ? themeColor
+                                      : Colors.grey[700],
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 }

@@ -1,11 +1,17 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/rental_request_provider.dart';
 import '../../services/firestore_service.dart';
+import '../../services/report_block_service.dart';
+import '../../services/storage_service.dart';
 import '../../models/rental_payment_model.dart';
 import '../chat_detail_screen.dart';
 
@@ -21,6 +27,9 @@ class ActiveRentalDetailScreen extends StatefulWidget {
 
 class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final ReportBlockService _reportBlockService = ReportBlockService();
+  final StorageService _storageService = StorageService();
+  final ImagePicker _imagePicker = ImagePicker();
   Map<String, dynamic>? _requestData;
   bool _isLoading = true;
   bool _isProcessing = false;
@@ -55,6 +64,8 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
           final listing = await _firestoreService.getRentalListing(listingId);
           if (listing != null) {
             enrichedData['itemTitle'] = listing['title'] as String?;
+            // Store rental type from listing
+            enrichedData['rentType'] = listing['rentType'] as String? ?? 'item';
             // Fallback to item title if listing title not available
             if (enrichedData['itemTitle'] == null ||
                 (enrichedData['itemTitle'] as String).isEmpty) {
@@ -70,6 +81,7 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
         }
       }
       enrichedData['itemTitle'] ??= 'Rental Item';
+      enrichedData['rentType'] ??= 'item';
 
       // Get owner name
       final ownerId = data['ownerId'] as String?;
@@ -420,32 +432,9 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
   Future<void> _initiateReturn() async {
     if (_requestData == null) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Initiate Return?'),
-        content: const Text(
-          'Are you sure you want to initiate the return? '
-          'The owner will be notified to verify the return.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Initiate Return'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
+    // Show condition verification modal
+    final conditionData = await _showConditionVerificationModal();
+    if (conditionData == null) return; // User cancelled
 
     setState(() {
       _isProcessing = true;
@@ -471,10 +460,29 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
         return;
       }
 
+      // Show loading
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        useRootNavigator: true,
+        builder: (dialogContext) =>
+            const Center(child: CircularProgressIndicator()),
+      );
+
       final success = await reqProvider.initiateReturn(
         widget.requestId,
         currentUser.uid,
+        condition: conditionData['condition'],
+        conditionNotes: conditionData['notes'],
+        conditionPhotos: conditionData['photos'],
       );
+
+      // Close loading dialog
+      if (mounted) {
+        final rootNav = Navigator.of(context, rootNavigator: true);
+        if (rootNav.canPop()) rootNav.pop();
+      }
 
       if (mounted) {
         setState(() {
@@ -482,10 +490,17 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
         });
 
         if (success) {
+          final actionText = _getReturnActionText().toLowerCase();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'Return initiated successfully! Owner will verify.',
+                actionText.contains('return')
+                    ? 'Return initiated successfully! Owner will verify.'
+                    : actionText.contains('move out')
+                    ? 'Move out initiated successfully! Owner will verify.'
+                    : actionText.contains('end lease')
+                    ? 'Lease termination initiated successfully! Owner will verify.'
+                    : 'Rental ending initiated successfully! Owner will verify.',
               ),
               backgroundColor: Colors.orange,
             ),
@@ -505,6 +520,8 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final rootNav = Navigator.of(context, rootNavigator: true);
+        if (rootNav.canPop()) rootNav.pop();
         setState(() {
           _isProcessing = false;
         });
@@ -515,16 +532,446 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
     }
   }
 
+  String _getReturnActionText() {
+    if (_requestData == null) return 'Initiate Return';
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'End Rental';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Move Out';
+      case 'commercial':
+        return 'End Lease';
+      default:
+        return 'Initiate Return';
+    }
+  }
+
+  String _getReturnDialogTitle() {
+    if (_requestData == null) return 'Item Condition Verification';
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'End Rental';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Move Out';
+      case 'commercial':
+        return 'End Lease';
+      default:
+        return 'Item Condition Verification';
+    }
+  }
+
+  String _getReturnDialogMessage() {
+    if (_requestData == null)
+      return 'Please report the condition of the item you are returning:';
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Please report the condition of the apartment you are vacating:';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Please report the condition of the room/space you are moving out from:';
+      case 'commercial':
+        return 'Please report the condition of the commercial space you are vacating:';
+      default:
+        return 'Please report the condition of the item you are returning:';
+    }
+  }
+
+  Future<Map<String, dynamic>?> _showConditionVerificationModal() async {
+    String? selectedCondition;
+    final notesController = TextEditingController();
+    final List<XFile> selectedPhotos = [];
+    bool isUploading = false;
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(_getReturnDialogTitle()),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _getReturnDialogMessage(),
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                // Condition Selection
+                const Text(
+                  'Condition:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildConditionChip(
+                      'same',
+                      'Same',
+                      selectedCondition,
+                      () => setState(() => selectedCondition = 'same'),
+                    ),
+                    _buildConditionChip(
+                      'better',
+                      'Better',
+                      selectedCondition,
+                      () => setState(() => selectedCondition = 'better'),
+                    ),
+                    _buildConditionChip(
+                      'worse',
+                      'Worse',
+                      selectedCondition,
+                      () => setState(() => selectedCondition = 'worse'),
+                    ),
+                    _buildConditionChip(
+                      'damaged',
+                      'Damaged',
+                      selectedCondition,
+                      () => setState(() => selectedCondition = 'damaged'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Notes
+                TextField(
+                  controller: notesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional Notes (Optional)',
+                    hintText: 'Describe the condition or any issues...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 16),
+                // Photo Upload
+                const Text(
+                  'Photos (Optional):',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                if (selectedPhotos.isNotEmpty)
+                  SizedBox(
+                    height: 100,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: List.generate(
+                          selectedPhotos.length,
+                          (index) => Stack(
+                            children: [
+                              Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                width: 100,
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.grey),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: kIsWeb
+                                      ? FutureBuilder<List<int>>(
+                                          future: selectedPhotos[index]
+                                              .readAsBytes(),
+                                          builder: (context, snapshot) {
+                                            if (snapshot.connectionState ==
+                                                ConnectionState.waiting) {
+                                              return Container(
+                                                color: Colors.grey[300],
+                                                child: const Center(
+                                                  child:
+                                                      CircularProgressIndicator(),
+                                                ),
+                                              );
+                                            }
+                                            if (snapshot.hasError ||
+                                                !snapshot.hasData) {
+                                              return Container(
+                                                color: Colors.grey[300],
+                                                child: const Icon(
+                                                  Icons.error_outline,
+                                                  color: Colors.red,
+                                                ),
+                                              );
+                                            }
+                                            return Image.memory(
+                                              Uint8List.fromList(
+                                                snapshot.data!,
+                                              ),
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                    return Container(
+                                                      color: Colors.grey[300],
+                                                      child: const Icon(
+                                                        Icons.error_outline,
+                                                        color: Colors.red,
+                                                      ),
+                                                    );
+                                                  },
+                                            );
+                                          },
+                                        )
+                                      : Image.file(
+                                          File(selectedPhotos[index].path),
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                                return Container(
+                                                  color: Colors.grey[300],
+                                                  child: const Icon(
+                                                    Icons.error_outline,
+                                                    color: Colors.red,
+                                                  ),
+                                                );
+                                              },
+                                        ),
+                                ),
+                              ),
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: IconButton(
+                                  icon: const Icon(Icons.close, size: 20),
+                                  color: Colors.red,
+                                  onPressed: () {
+                                    setState(() {
+                                      selectedPhotos.removeAt(index);
+                                    });
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: isUploading
+                      ? null
+                      : () async {
+                          try {
+                            final XFile? photo = await _imagePicker.pickImage(
+                              source: ImageSource.gallery,
+                              imageQuality: 85,
+                            );
+                            if (photo != null) {
+                              setState(() {
+                                selectedPhotos.add(photo);
+                              });
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error picking image: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  icon: const Icon(Icons.add_photo_alternate),
+                  label: const Text('Add Photo'),
+                ),
+                if (isUploading) ...[
+                  const SizedBox(height: 8),
+                  const Center(child: CircularProgressIndicator()),
+                  const Center(
+                    child: Text(
+                      'Uploading photos...',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isUploading
+                  ? null
+                  : () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: isUploading || selectedCondition == null
+                  ? null
+                  : () async {
+                      if (selectedCondition == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please select item condition'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        return;
+                      }
+
+                      setState(() => isUploading = true);
+
+                      // Upload photos if any
+                      final List<String> uploadedPhotoUrls = [];
+                      if (selectedPhotos.isNotEmpty) {
+                        try {
+                          final authProvider = Provider.of<AuthProvider>(
+                            context,
+                            listen: false,
+                          );
+                          final userId = authProvider.user?.uid;
+
+                          if (userId != null) {
+                            for (final photo in selectedPhotos) {
+                              try {
+                                final url = await _storageService
+                                    .uploadConditionPhoto(
+                                      file: photo,
+                                      requestId: widget.requestId,
+                                      userId: userId,
+                                    );
+                                uploadedPhotoUrls.add(url);
+                              } catch (e) {
+                                debugPrint('Error uploading photo: $e');
+                              }
+                            }
+                          }
+                        } catch (e) {
+                          debugPrint('Error uploading photos: $e');
+                        }
+                      }
+
+                      Navigator.pop(context, {
+                        'condition': selectedCondition,
+                        'notes': notesController.text.trim().isNotEmpty
+                            ? notesController.text.trim()
+                            : null,
+                        'photos': uploadedPhotoUrls.isNotEmpty
+                            ? uploadedPhotoUrls
+                            : null,
+                      });
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(_getReturnActionText()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConditionChip(
+    String value,
+    String label,
+    String? selected,
+    VoidCallback onTap,
+  ) {
+    final isSelected = selected == value;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? _getConditionColor(value).withOpacity(0.1)
+              : Colors.grey[200],
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? _getConditionColor(value) : Colors.grey[300]!,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _getConditionIcon(value),
+              size: 18,
+              color: isSelected ? _getConditionColor(value) : Colors.grey[600],
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected
+                    ? _getConditionColor(value)
+                    : Colors.grey[700],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getConditionColor(String condition) {
+    switch (condition) {
+      case 'same':
+        return Colors.green;
+      case 'better':
+        return Colors.blue;
+      case 'worse':
+        return Colors.orange;
+      case 'damaged':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getConditionIcon(String condition) {
+    switch (condition) {
+      case 'same':
+        return Icons.check_circle;
+      case 'better':
+        return Icons.trending_up;
+      case 'worse':
+        return Icons.trending_down;
+      case 'damaged':
+        return Icons.warning;
+      default:
+        return Icons.help;
+    }
+  }
+
   Future<void> _verifyReturn() async {
     if (_requestData == null) return;
+
+    final isPropertyRental =
+        _requestData != null &&
+        ['apartment', 'boardinghouse', 'boarding_house', 'commercial'].contains(
+          (_requestData!['rentType'] as String? ?? 'item').toLowerCase(),
+        );
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Verify Return?'),
-        content: const Text(
-          'Have you received the item in good condition? '
-          'This will complete the rental.',
+        title: Text(
+          isPropertyRental
+              ? 'Verify ${_getReturnActionText().replaceAll("Initiate ", "")}?'
+              : 'Verify Return?',
+        ),
+        content: Text(
+          isPropertyRental
+              ? 'Have you verified that the property is in good condition? This will complete the rental.'
+              : 'Have you received the item in good condition? This will complete the rental.',
         ),
         actions: [
           TextButton(
@@ -580,9 +1027,23 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
         });
 
         if (success) {
+          final isPropertyRental =
+              _requestData != null &&
+              [
+                'apartment',
+                'boardinghouse',
+                'boarding_house',
+                'commercial',
+              ].contains(
+                (_requestData!['rentType'] as String? ?? 'item').toLowerCase(),
+              );
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Return verified successfully! Rental completed.'),
+            SnackBar(
+              content: Text(
+                isPropertyRental
+                    ? 'Rental termination verified successfully! Rental completed.'
+                    : 'Return verified successfully! Rental completed.',
+              ),
               backgroundColor: Colors.green,
             ),
           );
@@ -618,6 +1079,14 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
         title: const Text('Active Rental'),
         backgroundColor: const Color(0xFF00897B),
         foregroundColor: Colors.white,
+        actions: [
+          if (_requestData != null)
+            IconButton(
+              icon: const Icon(Icons.flag_outlined),
+              onPressed: () => _showReportOptions(),
+              tooltip: 'Report',
+            ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -693,7 +1162,7 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
 
           // Monthly Payment Card (for long-term rentals)
           if (isLongTerm && isActive) ...[
-            _buildMonthlyPaymentCard(),
+            _buildMonthlyPaymentCard(isOwner: isOwner),
             const SizedBox(height: 16),
             _buildPaymentHistoryCard(),
             const SizedBox(height: 16),
@@ -711,8 +1180,10 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
           ] else if (isReturnInitiated && isRenter) ...[
             _buildStatusInfoCard(
               icon: Icons.hourglass_empty,
-              title: 'Return Initiated',
-              message: 'Waiting for owner to verify the return',
+              title:
+                  _getReturnActionText().replaceAll('Initiate ', '') +
+                  ' Initiated',
+              message: 'Waiting for owner to verify',
               color: Colors.orange,
             ),
           ] else if (isReturnInitiated && isOwner && !_isProcessing) ...[
@@ -721,7 +1192,19 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
             _buildStatusInfoCard(
               icon: Icons.check_circle,
               title: 'Rental Completed',
-              message: 'The rental has been completed successfully',
+              message:
+                  _requestData != null &&
+                      [
+                        'apartment',
+                        'boardinghouse',
+                        'boarding_house',
+                        'commercial',
+                      ].contains(
+                        (_requestData!['rentType'] as String? ?? 'item')
+                            .toLowerCase(),
+                      )
+                  ? 'The rental has been completed successfully'
+                  : 'The item has been returned successfully',
               color: Colors.green,
             ),
           ],
@@ -950,7 +1433,7 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
     );
   }
 
-  Widget _buildMonthlyPaymentCard() {
+  Widget _buildMonthlyPaymentCard({required bool isOwner}) {
     final monthlyAmount = (_requestData!['monthlyPaymentAmount'] as num?)
         ?.toDouble();
     final lastPaymentDate = (_requestData!['lastPaymentDate'] as Timestamp?)
@@ -1060,64 +1543,67 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              children: [
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isProcessing ? null : _recordMonthlyPayment,
-                    icon: const Icon(Icons.payment, size: 20),
-                    label: const Text(
-                      'Record Monthly Payment',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00897B),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 2,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        size: 16,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Record payment after receiving it via GCash or other method',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[700],
-                            height: 1.3,
-                          ),
+          // Only show record payment button to owners
+          if (isOwner) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : _recordMonthlyPayment,
+                      icon: const Icon(Icons.payment, size: 20),
+                      label: const Text(
+                        'Record Monthly Payment',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00897B),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: Colors.grey[600],
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Record payment after you have received it from the renter via GCash or other payment method',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[700],
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1361,10 +1847,15 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _initiateReturn,
-                    icon: const Icon(Icons.assignment_return, size: 20),
-                    label: const Text(
-                      'Return',
-                      style: TextStyle(
+                    icon: Icon(
+                      _getReturnActionText().contains('Return')
+                          ? Icons.assignment_return
+                          : Icons.exit_to_app,
+                      size: 20,
+                    ),
+                    label: Text(
+                      _getReturnActionText().replaceAll('Initiate ', ''),
+                      style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1417,7 +1908,18 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Renter has initiated return. Please verify that you received the item in good condition.',
+                    _requestData != null &&
+                            [
+                              'apartment',
+                              'boardinghouse',
+                              'boarding_house',
+                              'commercial',
+                            ].contains(
+                              (_requestData!['rentType'] as String? ?? 'item')
+                                  .toLowerCase(),
+                            )
+                        ? 'Renter has initiated ${_getReturnActionText().toLowerCase()}. Please verify that the property is in good condition.'
+                        : 'Renter has initiated return. Please verify that you received the item in good condition.',
                     style: TextStyle(fontSize: 12, color: Colors.orange[900]),
                   ),
                 ),
@@ -1732,6 +2234,371 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  void _showReportOptions() {
+    if (_requestData == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.orange),
+              title: const Text('Report Rental'),
+              onTap: () {
+                Navigator.pop(context);
+                _reportRental();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_off, color: Colors.red),
+              title: const Text('Report Other Party'),
+              onTap: () {
+                Navigator.pop(context);
+                _reportOtherParty();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _reportRental() {
+    if (_requestData == null) return;
+
+    String selectedReason = 'spam';
+    final TextEditingController descriptionController = TextEditingController();
+    final itemTitle = _requestData!['itemTitle'] as String? ?? 'Rental Item';
+    final ownerName = _requestData!['ownerName'] as String? ?? 'Owner';
+    final ownerId = _requestData!['ownerId'] as String?;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report Rental'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason for reporting:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  title: const Text('Spam'),
+                  value: 'spam',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Inappropriate Content'),
+                  value: 'inappropriate_content',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Fraud'),
+                  value: 'fraud',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Other'),
+                  value: 'other',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional details (optional)',
+                    hintText: 'Please provide more information...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
+
+                final authProvider = Provider.of<AuthProvider>(
+                  parentContext,
+                  listen: false,
+                );
+                final userProvider = Provider.of<UserProvider>(
+                  parentContext,
+                  listen: false,
+                );
+
+                if (authProvider.user == null || ownerId == null) return;
+
+                final reporterName =
+                    userProvider.currentUser?.fullName ??
+                    authProvider.user!.email ??
+                    'Unknown';
+
+                try {
+                  await _reportBlockService.reportContent(
+                    reporterId: authProvider.user!.uid,
+                    reporterName: reporterName,
+                    contentType: 'rental',
+                    contentId: widget.requestId,
+                    contentTitle: itemTitle,
+                    ownerId: ownerId,
+                    ownerName: ownerName,
+                    reason: selectedReason,
+                    description: descriptionController.text.trim().isNotEmpty
+                        ? descriptionController.text.trim()
+                        : null,
+                  );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Rental has been reported successfully. Thank you for keeping the community safe.',
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Error reporting rental: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Report',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _reportOtherParty() {
+    if (_requestData == null) return;
+
+    String selectedReason = 'spam';
+    final TextEditingController descriptionController = TextEditingController();
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.user?.uid;
+    final ownerId = _requestData!['ownerId'] as String?;
+    final renterId = _requestData!['renterId'] as String?;
+    final ownerName = _requestData!['ownerName'] as String? ?? 'Owner';
+    final renterName = _requestData!['renterName'] as String? ?? 'Renter';
+
+    // Determine which user to report (the other party)
+    String? reportedUserId;
+    String reportedUserName;
+
+    if (currentUserId == ownerId) {
+      // Current user is owner, report renter
+      reportedUserId = renterId;
+      reportedUserName = renterName;
+    } else if (currentUserId == renterId) {
+      // Current user is renter, report owner
+      reportedUserId = ownerId;
+      reportedUserName = ownerName;
+    } else {
+      return; // Should not happen
+    }
+
+    if (reportedUserId == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report User'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason for reporting:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  title: const Text('Spam'),
+                  value: 'spam',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Harassment'),
+                  value: 'harassment',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Inappropriate Content'),
+                  value: 'inappropriate_content',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Fraud'),
+                  value: 'fraud',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Other'),
+                  value: 'other',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional details (optional)',
+                    hintText: 'Please provide more information...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
+
+                final userProvider = Provider.of<UserProvider>(
+                  parentContext,
+                  listen: false,
+                );
+
+                if (authProvider.user == null) return;
+
+                final reporterName =
+                    userProvider.currentUser?.fullName ??
+                    authProvider.user!.email ??
+                    'Unknown';
+
+                try {
+                  await _reportBlockService.reportUser(
+                    reporterId: authProvider.user!.uid,
+                    reporterName: reporterName,
+                    reportedUserId: reportedUserId!,
+                    reportedUserName: reportedUserName,
+                    reason: selectedReason,
+                    description: descriptionController.text.trim().isNotEmpty
+                        ? descriptionController.text.trim()
+                        : null,
+                    contextType: 'rental',
+                    contextId: widget.requestId,
+                  );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'User has been reported successfully. Thank you for keeping the community safe.',
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Error reporting user: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Report',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

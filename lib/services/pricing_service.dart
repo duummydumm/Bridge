@@ -14,7 +14,6 @@ class PricingService {
     required RentalListingModel listing,
     required DateTime startDate,
     required DateTime endDate,
-    double serviceFeeRate = 0.05,
   }) {
     final rawDays = _daysBetween(startDate, endDate);
     final durationDays = rawDays.ceil();
@@ -41,14 +40,13 @@ class PricingService {
       base = rate * months;
     }
 
-    final fees = base * serviceFeeRate;
     final deposit = listing.securityDeposit ?? 0.0;
-    final total = base + fees + deposit;
+    final total = base + deposit;
 
     return {
       'durationDays': durationDays,
       'priceQuote': base,
-      'fees': fees,
+      'fees': 0.0, // Service fee removed
       'depositAmount': deposit,
       'totalDue': total,
     };

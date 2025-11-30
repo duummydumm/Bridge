@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import '../providers/user_provider.dart';
-import '../models/user_model.dart';
-import '../services/firestore_service.dart';
+import '../../providers/user_provider.dart';
+import '../../models/user_model.dart';
+import '../../services/firestore_service.dart';
 
 class VerificationScreen extends StatefulWidget {
   const VerificationScreen({super.key});
@@ -104,6 +104,24 @@ class _VerificationScreenState extends State<VerificationScreen> {
   }
 
   Future<void> _submitVerification() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final user = userProvider.currentUser;
+    if (user == null) return;
+
+    // Prevent submission if account is already verified
+    if (user.isVerified || user.verificationStatus == 'approved') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Your account is already verified. You cannot update or resubmit verification information.',
+          ),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -117,10 +135,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
       );
       return;
     }
-
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final user = userProvider.currentUser;
-    if (user == null) return;
 
     setState(() => _isUploading = true);
 
@@ -185,6 +199,8 @@ class _VerificationScreenState extends State<VerificationScreen> {
     final userProvider = Provider.of<UserProvider>(context);
     final user = userProvider.currentUser;
     final isRejected = user?.verificationStatus == 'rejected';
+    final isVerified =
+        (user?.isVerified ?? false) || (user?.verificationStatus == 'approved');
     final rejectionReason = _rejectionReason ?? '';
 
     return Scaffold(
@@ -205,7 +221,48 @@ class _VerificationScreenState extends State<VerificationScreen> {
               const SizedBox(height: 24),
 
               // Instructions
-              if (isRejected) ...[
+              if (isVerified) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.verified,
+                            color: Colors.green[700],
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Account Already Verified',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.green[900],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Your account has been verified. You cannot update or resubmit verification information.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.green[800],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ] else if (isRejected) ...[
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -257,12 +314,14 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 icon: Icons.person_outline,
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
+                readOnly: isVerified,
               ),
               const SizedBox(height: 12),
               _buildTextField(
                 controller: _middleInitialController,
                 label: 'Middle Initial',
                 icon: Icons.text_fields_outlined,
+                readOnly: isVerified,
               ),
               const SizedBox(height: 12),
               _buildTextField(
@@ -271,6 +330,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 icon: Icons.person_outline,
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
+                readOnly: isVerified,
               ),
               const SizedBox(height: 24),
 
@@ -283,6 +343,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 icon: Icons.streetview_outlined,
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
+                readOnly: isVerified,
               ),
               const SizedBox(height: 12),
               _buildTextField(
@@ -291,6 +352,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 icon: Icons.home_work_outlined,
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
+                readOnly: isVerified,
               ),
               const SizedBox(height: 12),
               _buildTextField(
@@ -319,17 +381,21 @@ class _VerificationScreenState extends State<VerificationScreen> {
                       Icons.credit_card_outlined,
                     ).copyWith(
                       suffixIcon: IconButton(
-                        tooltip: _pickedImage == null
-                            ? 'Upload Barangay ID photo'
-                            : 'Change Barangay ID photo',
-                        onPressed: _pickImage,
+                        tooltip: isVerified
+                            ? 'Account is verified'
+                            : (_pickedImage == null
+                                  ? 'Upload Barangay ID photo'
+                                  : 'Change Barangay ID photo'),
+                        onPressed: isVerified ? null : _pickImage,
                         icon: Icon(
                           _pickedImage == null
                               ? Icons.upload
                               : Icons.check_circle_outline,
-                          color: _pickedImage == null
+                          color: isVerified
                               ? Colors.grey
-                              : const Color(0xFF00897B),
+                              : (_pickedImage == null
+                                    ? Colors.grey
+                                    : const Color(0xFF00897B)),
                         ),
                       ),
                       helperText: _pickedImage == null
@@ -350,7 +416,9 @@ class _VerificationScreenState extends State<VerificationScreen> {
                     child: Text("Driver's License"),
                   ),
                 ],
-                onChanged: (val) => setState(() => _barangayIdType = val),
+                onChanged: isVerified
+                    ? null
+                    : (val) => setState(() => _barangayIdType = val),
                 validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
               ),
               const SizedBox(height: 12),
@@ -414,11 +482,14 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: (_isUploading || userProvider.isLoading)
+                  onPressed:
+                      (isVerified || _isUploading || userProvider.isLoading)
                       ? null
                       : _submitVerification,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00897B),
+                    backgroundColor: isVerified
+                        ? Colors.grey[400]
+                        : const Color(0xFF00897B),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -436,9 +507,11 @@ class _VerificationScreenState extends State<VerificationScreen> {
                           ),
                         )
                       : Text(
-                          isRejected
-                              ? 'Resubmit for Verification'
-                              : 'Update & Submit',
+                          isVerified
+                              ? 'Account Already Verified'
+                              : (isRejected
+                                    ? 'Resubmit for Verification'
+                                    : 'Update & Submit'),
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

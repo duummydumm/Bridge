@@ -168,6 +168,12 @@ class HomePageState extends State<HomePage> {
         userId: userId,
         userName: userName,
       );
+      // Also check rental overdue notifications
+      await LocalNotificationsService()
+          .checkAndScheduleRentalOverdueNotifications(
+            userId: userId,
+            userName: userName,
+          );
     } catch (_) {
       // Best-effort; don't fail if notification scheduling fails
     }
@@ -945,11 +951,15 @@ class HomePageState extends State<HomePage> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  _formatDue(it.dueLocal),
-                                  style: TextStyle(
-                                    color: Colors.grey[700],
-                                    fontSize: 13,
+                                Flexible(
+                                  child: Text(
+                                    _formatDue(it.dueLocal),
+                                    style: TextStyle(
+                                      color: Colors.grey[700],
+                                      fontSize: 13,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ],
@@ -969,37 +979,44 @@ class HomePageState extends State<HomePage> {
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  TextButton.icon(
-                    onPressed: () async {
-                      if (_dueSoonItems.isEmpty) return;
-                      final earliest = _dueSoonItems.first;
-                      try {
-                        await LocalNotificationsService().scheduleNudge(
-                          itemId: earliest.id,
-                          itemTitle: earliest.title,
-                        );
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('We will remind you again later.'),
-                            ),
+                  Flexible(
+                    child: TextButton.icon(
+                      onPressed: () async {
+                        if (_dueSoonItems.isEmpty) return;
+                        final earliest = _dueSoonItems.first;
+                        try {
+                          await LocalNotificationsService().scheduleNudge(
+                            itemId: earliest.id,
+                            itemTitle: earliest.title,
                           );
-                        }
-                      } catch (_) {}
-                    },
-                    icon: const Icon(Icons.snooze),
-                    label: const Text('Remind me later'),
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'We will remind you again later.',
+                                ),
+                              ),
+                            );
+                          }
+                        } catch (_) {}
+                      },
+                      icon: const Icon(Icons.snooze),
+                      label: const Text('Remind me later'),
+                    ),
                   ),
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pushNamed(context, '/upcoming-reminders');
-                    },
-                    icon: const Icon(Icons.calendar_today),
-                    label: const Text('View Calendar'),
+                  Flexible(
+                    child: TextButton.icon(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/upcoming-reminders');
+                      },
+                      icon: const Icon(Icons.calendar_today),
+                      label: const Text('View Calendar'),
+                    ),
                   ),
-                  const Spacer(),
                   TextButton(
                     onPressed: () async {
                       try {

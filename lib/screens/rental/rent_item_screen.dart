@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import '../../services/firestore_service.dart';
 import '../../services/pricing_service.dart';
+import '../../services/report_block_service.dart';
 import '../../models/rental_listing_model.dart';
+import '../../models/rental_request_model.dart';
 import '../../providers/rental_request_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -21,6 +23,7 @@ class RentItemScreen extends StatefulWidget {
 class _RentItemScreenState extends State<RentItemScreen> {
   final _firestore = FirestoreService();
   final _pricing = const PricingService();
+  final _reportBlockService = ReportBlockService();
 
   RentalListingModel? _listing;
   Map<String, dynamic>? _rawData; // Store raw data for denormalized fields
@@ -32,8 +35,12 @@ class _RentItemScreenState extends State<RentItemScreen> {
   DateTime? _end;
   Map<String, dynamic>? _quote;
   Map<String, dynamic>? _existingRequest; // Track if user already has a request
+  Map<String, dynamic>?
+  _occupancyInfo; // For boarding houses: current occupancy data
   int _currentImageIndex = 0;
   StreamSubscription<QuerySnapshot>? _requestSubscription;
+  PaymentMethod _selectedPaymentMethod =
+      PaymentMethod.meetup; // Default to meetup
 
   Widget _buildPageIndicator(bool isActive) {
     return AnimatedContainer(
@@ -140,6 +147,20 @@ class _RentItemScreenState extends State<RentItemScreen> {
         _checkExistingRequest(listingId, currentUserId);
         // Set up real-time listener for status changes
         _setupRequestListener(listingId, currentUserId);
+      }
+
+      // Load occupancy info for boarding houses
+      if (_listing?.rentType == RentalType.boardingHouse) {
+        try {
+          final occupancy = await _firestore.getBoardingHouseOccupancy(
+            listingId,
+          );
+          setState(() {
+            _occupancyInfo = occupancy;
+          });
+        } catch (e) {
+          print('Error loading occupancy info: $e');
+        }
       }
 
       setState(() {
@@ -250,6 +271,14 @@ class _RentItemScreenState extends State<RentItemScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          if (_listing != null && !isOwner)
+            IconButton(
+              icon: const Icon(Icons.flag_outlined, color: Colors.white),
+              onPressed: () => _showReportOptions(),
+              tooltip: 'Report',
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -645,11 +674,67 @@ class _RentItemScreenState extends State<RentItemScreen> {
                                   ),
                               ] else if (_listing!.rentType ==
                                   RentalType.boardingHouse) ...[
+                                if (_listing!.numberOfRooms != null)
+                                  _buildDetailRow(
+                                    icon: Icons.door_front_door,
+                                    label: 'Number of rooms',
+                                    value: '${_listing!.numberOfRooms}',
+                                  ),
+                                if (_listing!.occupantsPerRoom != null)
+                                  _buildDetailRow(
+                                    icon: Icons.person_outline,
+                                    label: 'Occupants per room',
+                                    value: '${_listing!.occupantsPerRoom}',
+                                  ),
                                 if (_listing!.maxOccupants != null)
                                   _buildDetailRow(
                                     icon: Icons.people_outline,
                                     label: 'Max occupants',
                                     value: '${_listing!.maxOccupants}',
+                                  ),
+                                if (_occupancyInfo != null) ...[
+                                  _buildDetailRow(
+                                    icon: Icons.people,
+                                    label: 'Current occupancy',
+                                    value:
+                                        '${_occupancyInfo!['currentOccupants']}/${_occupancyInfo!['maxOccupants']}',
+                                  ),
+                                  if (_occupancyInfo!['availableSlots'] !=
+                                          null &&
+                                      (_occupancyInfo!['availableSlots']
+                                              as int) >
+                                          0)
+                                    _buildDetailRow(
+                                      icon: Icons.event_available,
+                                      label: 'Available slots',
+                                      value:
+                                          '${_occupancyInfo!['availableSlots']}',
+                                    ),
+                                  if (_occupancyInfo!['occupiedRooms'] !=
+                                          null &&
+                                      (_occupancyInfo!['occupiedRooms'] as List)
+                                          .isNotEmpty)
+                                    _buildDetailRow(
+                                      icon: Icons.hotel,
+                                      label: 'Occupied rooms',
+                                      value:
+                                          'Rooms ${(_occupancyInfo!['occupiedRooms'] as List).join(', ')}',
+                                    ),
+                                ],
+                                if ((_listing!.genderPreference ?? '')
+                                    .isNotEmpty)
+                                  _buildDetailRow(
+                                    icon: Icons.person_outline,
+                                    label: 'Gender preference',
+                                    value: _listing!.genderPreference == 'Any'
+                                        ? 'Any'
+                                        : _listing!.genderPreference == 'Male'
+                                        ? 'Male Only'
+                                        : _listing!.genderPreference == 'Female'
+                                        ? 'Female Only'
+                                        : _listing!.genderPreference == 'Mixed'
+                                        ? 'Mixed (Male & Female)'
+                                        : _listing!.genderPreference!,
                                   ),
                                 if (_listing!.sharedCR == true)
                                   _buildDetailRow(
@@ -896,6 +981,51 @@ class _RentItemScreenState extends State<RentItemScreen> {
                       ],
                     ),
                   ),
+                  // Payment Method Selection (only for items, not for apartments/commercial/boarding house)
+                  if (_quote != null &&
+                      _listing != null &&
+                      _listing!.rentType == RentalType.item) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Payment Method',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildPaymentMethodOption(
+                                  PaymentMethod.online,
+                                  'Online Payment',
+                                  Icons.payment,
+                                  'Pay securely through the app',
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildPaymentMethodOption(
+                                  PaymentMethod.meetup,
+                                  'Meetup Payment',
+                                  Icons.handshake,
+                                  'Pay cash in person when meeting',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   // Quote Card
                   if (_quote != null) ...[
                     const SizedBox(height: 8),
@@ -922,42 +1052,6 @@ class _RentItemScreenState extends State<RentItemScreen> {
                           _buildQuoteRow(
                             'Base Price',
                             '₱${(_quote!['priceQuote'] as num).toStringAsFixed(2)}',
-                          ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Service Fee (5%)',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[700],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Pay separately to platform',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey[500],
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                '₱${(_quote!['fees'] as num).toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1A1A1A),
-                                ),
-                              ),
-                            ],
                           ),
                           if ((_quote!['depositAmount'] as num) > 0)
                             _buildQuoteRow(
@@ -1021,9 +1115,12 @@ class _RentItemScreenState extends State<RentItemScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        '• Base Price: Pay to owner via GCash QR in chat\n'
-                                        '• Service Fee: Pay separately to platform (after request is approved)\n'
-                                        '• Deposit: Pay to owner, refundable after return',
+                                        _selectedPaymentMethod ==
+                                                PaymentMethod.online
+                                            ? '• Base Price: Pay online via GCash or payment gateway\n'
+                                                  '• Deposit: Pay online, refundable after return'
+                                            : '• Base Price: Pay cash to owner during meetup\n'
+                                                  '• Deposit: Pay cash to owner during meetup, refundable after return',
                                         style: TextStyle(
                                           fontSize: 11,
                                           color: Colors.grey[700],
@@ -1053,12 +1150,6 @@ class _RentItemScreenState extends State<RentItemScreen> {
                                 _quote == null
                             ? null
                             : () async {
-                                // For long-term rentals, end date is optional
-                                final isLongTerm =
-                                    _listing?.pricingMode ==
-                                        PricingMode.perMonth ||
-                                    _listing?.allowMultipleRentals == true;
-
                                 if (_start == null || _quote == null) return;
 
                                 // Double-check: prevent owner from renting their own item
@@ -1125,6 +1216,18 @@ class _RentItemScreenState extends State<RentItemScreen> {
                                   );
                                 }
 
+                                // For apartment, commercial, and boarding house, default to meetup
+                                // For items, use the selected payment method
+                                final paymentMethod =
+                                    (_listing!.rentType ==
+                                            RentalType.apartment ||
+                                        _listing!.rentType ==
+                                            RentalType.commercial ||
+                                        _listing!.rentType ==
+                                            RentalType.boardingHouse)
+                                    ? PaymentMethod.meetup
+                                    : _selectedPaymentMethod;
+
                                 final id = await reqProvider.createRequest(
                                   listingId: _listing!.id,
                                   itemId: _listing!.itemId,
@@ -1147,6 +1250,8 @@ class _RentItemScreenState extends State<RentItemScreen> {
                                   isLongTerm: isLongTermRental,
                                   monthlyPaymentAmount: monthlyPaymentAmount,
                                   nextPaymentDueDate: nextPaymentDueDate,
+                                  // Payment method
+                                  paymentMethod: paymentMethod,
                                 );
                                 if (!mounted) return;
                                 if (id != null) {
@@ -1382,6 +1487,425 @@ class _RentItemScreenState extends State<RentItemScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentMethodOption(
+    PaymentMethod method,
+    String title,
+    IconData icon,
+    String description,
+  ) {
+    final isSelected = _selectedPaymentMethod == method;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedPaymentMethod = method;
+        });
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: isSelected ? const Color(0xFF00897B) : Colors.grey[300]!,
+            width: isSelected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          color: isSelected
+              ? const Color(0xFF00897B).withOpacity(0.05)
+              : Colors.grey[50],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  icon,
+                  color: isSelected
+                      ? const Color(0xFF00897B)
+                      : Colors.grey[600],
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected
+                          ? const Color(0xFF00897B)
+                          : Colors.grey[800],
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  const Icon(
+                    Icons.check_circle,
+                    color: Color(0xFF00897B),
+                    size: 20,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              description,
+              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReportOptions() {
+    if (_listing == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.orange),
+              title: const Text('Report Rental Listing'),
+              onTap: () {
+                Navigator.pop(context);
+                _reportRentalListing();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_off, color: Colors.red),
+              title: const Text('Report Owner'),
+              onTap: () {
+                Navigator.pop(context);
+                _reportOwner();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _reportRentalListing() {
+    if (_listing == null) return;
+
+    String selectedReason = 'spam';
+    final TextEditingController descriptionController = TextEditingController();
+
+    final title =
+        (_rawData?['title'] as String?)?.trim() ??
+        (_itemData?['title'] as String?) ??
+        'Rental Item';
+    final ownerName = (_rawData?['ownerName'] as String?)?.trim() ?? 'Owner';
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report Rental Listing'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason for reporting:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  title: const Text('Spam'),
+                  value: 'spam',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Inappropriate Content'),
+                  value: 'inappropriate_content',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Fraud'),
+                  value: 'fraud',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Other'),
+                  value: 'other',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional details (optional)',
+                    hintText: 'Please provide more information...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
+
+                final authProvider = Provider.of<AuthProvider>(
+                  parentContext,
+                  listen: false,
+                );
+                final userProvider = Provider.of<UserProvider>(
+                  parentContext,
+                  listen: false,
+                );
+
+                if (authProvider.user == null) return;
+
+                final reporterName =
+                    userProvider.currentUser?.fullName ??
+                    authProvider.user!.email ??
+                    'Unknown';
+
+                try {
+                  await _reportBlockService.reportContent(
+                    reporterId: authProvider.user!.uid,
+                    reporterName: reporterName,
+                    contentType: 'rental',
+                    contentId: _listing!.id,
+                    contentTitle: title,
+                    ownerId: _listing!.ownerId,
+                    ownerName: ownerName,
+                    reason: selectedReason,
+                    description: descriptionController.text.trim().isNotEmpty
+                        ? descriptionController.text.trim()
+                        : null,
+                  );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Rental listing has been reported successfully. Thank you for keeping the community safe.',
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Error reporting rental listing: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Report',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _reportOwner() {
+    if (_listing == null) return;
+
+    String selectedReason = 'spam';
+    final TextEditingController descriptionController = TextEditingController();
+
+    final ownerName = (_rawData?['ownerName'] as String?)?.trim() ?? 'Owner';
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report Owner'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason for reporting:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  title: const Text('Spam'),
+                  value: 'spam',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Harassment'),
+                  value: 'harassment',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Inappropriate Content'),
+                  value: 'inappropriate_content',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Fraud'),
+                  value: 'fraud',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Other'),
+                  value: 'other',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional details (optional)',
+                    hintText: 'Please provide more information...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Store parent context before closing dialog
+                final parentContext = context;
+                Navigator.pop(parentContext);
+
+                final authProvider = Provider.of<AuthProvider>(
+                  parentContext,
+                  listen: false,
+                );
+                final userProvider = Provider.of<UserProvider>(
+                  parentContext,
+                  listen: false,
+                );
+
+                if (authProvider.user == null) return;
+
+                final reporterName =
+                    userProvider.currentUser?.fullName ??
+                    authProvider.user!.email ??
+                    'Unknown';
+
+                try {
+                  await _reportBlockService.reportUser(
+                    reporterId: authProvider.user!.uid,
+                    reporterName: reporterName,
+                    reportedUserId: _listing!.ownerId,
+                    reportedUserName: ownerName,
+                    reason: selectedReason,
+                    description: descriptionController.text.trim().isNotEmpty
+                        ? descriptionController.text.trim()
+                        : null,
+                    contextType: 'rental',
+                    contextId: _listing!.id,
+                  );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Owner has been reported successfully. Thank you for keeping the community safe.',
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Error reporting owner: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Report',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

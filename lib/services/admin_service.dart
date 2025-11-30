@@ -337,25 +337,354 @@ class AdminService {
 
   Future<void> fileViolation({required String userId, String? note}) async {
     final userRef = _db.collection('users').doc(userId);
+    int newViolationCount = 0;
+    String? userName;
+
     await _db.runTransaction((txn) async {
       final snap = await txn.get(userRef);
       final current = (snap.data()?['violationCount'] ?? 0) as int;
+      newViolationCount = current + 1;
+
+      // Get user name for notification
+      final userData = snap.data();
+      final firstName = userData?['firstName'] ?? '';
+      final lastName = userData?['lastName'] ?? '';
+      userName = '$firstName $lastName'.trim();
+      if (userName!.isEmpty) {
+        userName = userData?['email'] ?? 'User';
+      }
+
       txn.update(userRef, {
-        'violationCount': current + 1,
+        'violationCount': newViolationCount,
         'lastViolationNote': note ?? '',
         'lastViolationAt': FieldValue.serverTimestamp(),
       });
     });
+
+    // Send notification to the user about the violation with warning system
+    try {
+      String notificationTitle;
+      String notificationMessage;
+      String warningLevel = 'info';
+
+      // Warning system based on violation count
+      if (newViolationCount == 1) {
+        notificationTitle = 'First Violation - Warning';
+        notificationMessage =
+            '⚠️ You have received your first violation. '
+            'Please review our community guidelines to avoid further violations.';
+        warningLevel = 'warning';
+      } else if (newViolationCount == 2) {
+        notificationTitle = 'Second Violation - Serious Warning';
+        notificationMessage =
+            '⚠️⚠️ You have received a second violation. '
+            'Continued violations may result in account suspension. '
+            'Please ensure you follow all community guidelines.';
+        warningLevel = 'warning';
+      } else if (newViolationCount == 3) {
+        notificationTitle = 'Third Violation - Final Warning';
+        notificationMessage =
+            '🚨 You have received a third violation. '
+            'Your account is at high risk of suspension. '
+            'Any further violations will result in immediate account suspension.';
+        warningLevel = 'critical';
+      } else if (newViolationCount >= 4) {
+        notificationTitle = 'Multiple Violations - Account at Risk';
+        notificationMessage =
+            '🚨🚨 You have received $newViolationCount violations. '
+            'Your account is at severe risk of permanent suspension. '
+            'Please contact support if you have questions about these violations.';
+        warningLevel = 'critical';
+      } else {
+        notificationTitle = 'Violation Issued';
+        notificationMessage =
+            'You have received a violation. '
+            'Your account has $newViolationCount total violations.';
+        warningLevel = 'warning';
+      }
+
+      if (note != null && note.trim().isNotEmpty) {
+        notificationMessage += '\n\nAdmin Note: $note';
+      }
+
+      await _db.collection('notifications').add({
+        'toUserId': userId,
+        'type': 'violation_issued',
+        'title': notificationTitle,
+        'message': notificationMessage,
+        'violationCount': newViolationCount,
+        'violationNote': note ?? '',
+        'warningLevel': warningLevel,
+        'status': 'unread',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // Auto-suspend if violation count reaches threshold (e.g., 5 violations)
+      if (newViolationCount >= 5) {
+        try {
+          await suspendUser(
+            userId,
+            reason: 'Automatic suspension due to $newViolationCount violations',
+          );
+          // Send additional notification about suspension
+          await _db.collection('notifications').add({
+            'toUserId': userId,
+            'type': 'account_suspended',
+            'title': 'Account Suspended',
+            'message':
+                'Your account has been automatically suspended due to '
+                'reaching $newViolationCount violations. '
+                'Please contact support if you believe this is an error.',
+            'status': 'unread',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error auto-suspending user after violations: $e');
+        }
+      }
+
+      // Create activity log
+      try {
+        final adminUser = fb_auth.FirebaseAuth.instance.currentUser;
+        final adminId = adminUser?.uid ?? 'system';
+        String adminName = 'Admin';
+
+        if (adminUser != null) {
+          final adminDoc = await _db.collection('users').doc(adminId).get();
+          if (adminDoc.exists) {
+            final adminData = adminDoc.data();
+            adminName =
+                '${adminData?['firstName'] ?? ''} ${adminData?['lastName'] ?? ''}'
+                    .trim();
+            if (adminName.isEmpty) {
+              adminName = adminData?['email'] ?? 'Admin';
+            }
+          }
+        }
+
+        await _db.collection('activity_logs').add({
+          'timestamp': FieldValue.serverTimestamp(),
+          'category': 'admin',
+          'action': 'violation_filed',
+          'actorId': adminId,
+          'actorName': adminName,
+          'targetId': userId,
+          'targetType': 'user',
+          'description': 'Filed violation against user: $userName',
+          'metadata': {
+            'userId': userId,
+            'userName': userName,
+            'violationCount': newViolationCount,
+            'note': note ?? '',
+          },
+          'severity': 'warning',
+        });
+      } catch (e) {
+        debugPrint('Error creating activity log for violation: $e');
+      }
+    } catch (e) {
+      debugPrint('Error sending violation notification: $e');
+      // Don't fail the violation filing if notification fails
+    }
   }
 
   Future<void> resolveReport(
     String reportId, {
     String resolution = 'resolved',
   }) async {
+    // Get report data before updating
+    final reportDoc = await _db.collection('reports').doc(reportId).get();
+    if (!reportDoc.exists) {
+      throw Exception('Report not found');
+    }
+
+    final reportData = reportDoc.data()!;
+    final reporterId = reportData['reporterId'] as String?;
+    final reportedUserId = reportData['reportedUserId'] as String?;
+    final reportedUserName =
+        reportData['reportedUserName'] as String? ?? 'User';
+    final reason = reportData['reason'] as String? ?? 'No reason specified';
+    final isUserReport = reportedUserId != null;
+
+    // Update report status
     await _db.collection('reports').doc(reportId).update({
       'status': resolution,
       'resolvedAt': FieldValue.serverTimestamp(),
+      'resolvedBy': fb_auth.FirebaseAuth.instance.currentUser?.uid ?? 'system',
     });
+
+    // Send notifications to both parties
+    try {
+      // Get admin name for notifications
+      final adminUser = fb_auth.FirebaseAuth.instance.currentUser;
+      final adminId = adminUser?.uid ?? 'system';
+      String adminName = 'Admin';
+
+      if (adminUser != null) {
+        final adminDoc = await _db.collection('users').doc(adminId).get();
+        if (adminDoc.exists) {
+          final adminData = adminDoc.data();
+          adminName =
+              '${adminData?['firstName'] ?? ''} ${adminData?['lastName'] ?? ''}'
+                  .trim();
+          if (adminName.isEmpty) {
+            adminName = adminData?['email'] ?? 'Admin';
+          }
+        }
+      }
+
+      // Notification to reporter
+      if (reporterId != null) {
+        await _db.collection('notifications').add({
+          'toUserId': reporterId,
+          'type': 'report_resolved',
+          'title': 'Report Resolved',
+          'message': isUserReport
+              ? 'Your report against $reportedUserName has been reviewed and resolved by an administrator.'
+              : 'Your report has been reviewed and resolved by an administrator.',
+          'reportId': reportId,
+          'status': 'unread',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // Notification to reported user (if it's a user report)
+      if (isUserReport) {
+        String messageToReported;
+        if (resolution == 'resolved' || resolution == 'dismissed') {
+          messageToReported =
+              'A report filed against you has been reviewed. '
+              'The report has been ${resolution == 'dismissed' ? 'dismissed' : 'resolved'}. '
+              'Please continue to follow our community guidelines.';
+        } else {
+          messageToReported =
+              'A report filed against you has been reviewed and marked as: $resolution. '
+              'Please review our community guidelines.';
+        }
+
+        await _db.collection('notifications').add({
+          'toUserId': reportedUserId,
+          'type': 'report_resolved',
+          'title': 'Report Review Completed',
+          'message': messageToReported,
+          'reportId': reportId,
+          'status': 'unread',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // Create activity log
+      try {
+        await _db.collection('activity_logs').add({
+          'timestamp': FieldValue.serverTimestamp(),
+          'category': 'admin',
+          'action': 'report_resolved',
+          'actorId': adminId,
+          'actorName': adminName,
+          'targetId': reportId,
+          'targetType': 'report',
+          'description': 'Resolved report: $reportId',
+          'metadata': {
+            'reportId': reportId,
+            'resolution': resolution,
+            'reporterId': reporterId,
+            'reportedUserId': reportedUserId,
+            'reason': reason,
+          },
+          'severity': 'info',
+        });
+      } catch (e) {
+        debugPrint('Error creating activity log for report resolution: $e');
+      }
+    } catch (e) {
+      debugPrint('Error sending report resolution notifications: $e');
+      // Don't fail the report resolution if notification fails
+    }
+  }
+
+  // Bulk Operations
+  Future<BulkOperationResult> bulkApproveUsers(List<String> uids) async {
+    final results = BulkOperationResult();
+    for (final uid in uids) {
+      try {
+        await approveUser(uid);
+        results.successCount++;
+        results.successIds.add(uid);
+      } catch (e) {
+        results.failureCount++;
+        results.failures[uid] = e.toString();
+      }
+    }
+    return results;
+  }
+
+  Future<BulkOperationResult> bulkRejectUsers(
+    List<String> uids, {
+    String? reason,
+  }) async {
+    final results = BulkOperationResult();
+    for (final uid in uids) {
+      try {
+        await rejectUser(uid, reason: reason);
+        results.successCount++;
+        results.successIds.add(uid);
+      } catch (e) {
+        results.failureCount++;
+        results.failures[uid] = e.toString();
+      }
+    }
+    return results;
+  }
+
+  Future<BulkOperationResult> bulkSuspendUsers(
+    List<String> uids, {
+    String? reason,
+  }) async {
+    final results = BulkOperationResult();
+    for (final uid in uids) {
+      try {
+        await suspendUser(uid, reason: reason);
+        results.successCount++;
+        results.successIds.add(uid);
+      } catch (e) {
+        results.failureCount++;
+        results.failures[uid] = e.toString();
+      }
+    }
+    return results;
+  }
+
+  Future<BulkOperationResult> bulkRestoreUsers(List<String> uids) async {
+    final results = BulkOperationResult();
+    for (final uid in uids) {
+      try {
+        await restoreUser(uid);
+        results.successCount++;
+        results.successIds.add(uid);
+      } catch (e) {
+        results.failureCount++;
+        results.failures[uid] = e.toString();
+      }
+    }
+    return results;
+  }
+
+  Future<BulkOperationResult> bulkResolveReports(
+    List<String> reportIds, {
+    String resolution = 'resolved',
+  }) async {
+    final results = BulkOperationResult();
+    for (final reportId in reportIds) {
+      try {
+        await resolveReport(reportId, resolution: resolution);
+        results.successCount++;
+        results.successIds.add(reportId);
+      } catch (e) {
+        results.failureCount++;
+        results.failures[reportId] = e.toString();
+      }
+    }
+    return results;
   }
 
   // Analytics
@@ -396,4 +725,16 @@ class AdminService {
 
     return results;
   }
+}
+
+// Bulk operation result model
+class BulkOperationResult {
+  int successCount = 0;
+  int failureCount = 0;
+  List<String> successIds = [];
+  Map<String, String> failures = {};
+
+  bool get hasFailures => failureCount > 0;
+  bool get hasSuccess => successCount > 0;
+  int get totalCount => successCount + failureCount;
 }

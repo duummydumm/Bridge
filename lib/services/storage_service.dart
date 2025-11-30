@@ -19,15 +19,17 @@ class StorageService {
     required dynamic
     file, // Changed from File to dynamic to support both File and XFile
     required String userHint,
+    bool isFront = true,
   }) async {
     try {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final side = isFront ? 'front' : 'back';
       final ref = _storage
           .ref()
           .child('users')
           .child(userHint)
           .child('barangay_ids')
-          .child('id_$timestamp.jpg');
+          .child('id_${side}_$timestamp.jpg');
 
       const int maxAttempts = 3;
       for (int attempt = 1; attempt <= maxAttempts; attempt++) {

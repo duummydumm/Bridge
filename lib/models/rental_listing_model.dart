@@ -43,7 +43,13 @@ class RentalListingModel {
   final bool? sharedCR; // Shared comfort room (bathroom)
   final bool? bedSpaceAvailable; // Bed space available
   final int? maxOccupants; // Maximum number of occupants
+  final int? numberOfRooms; // Number of rooms in the boarding house
+  final int? occupantsPerRoom; // Standard occupants per room
+  final String?
+  genderPreference; // Gender preference: "Male", "Female", "Mixed", "Any"
   final String? curfewRules; // Optional curfew rules
+  final int?
+  initialOccupants; // Pre-existing occupants before listing (not tracked in app)
 
   RentalListingModel({
     required this.id,
@@ -75,7 +81,11 @@ class RentalListingModel {
     this.sharedCR,
     this.bedSpaceAvailable,
     this.maxOccupants,
+    this.numberOfRooms,
+    this.occupantsPerRoom,
+    this.genderPreference,
     this.curfewRules,
+    this.initialOccupants,
   });
 
   factory RentalListingModel.fromMap(Map<String, dynamic> data, String id) {
@@ -158,7 +168,17 @@ class RentalListingModel {
       maxOccupants: (data['maxOccupants'] is int)
           ? data['maxOccupants'] as int
           : int.tryParse('${data['maxOccupants']}'),
+      numberOfRooms: (data['numberOfRooms'] is int)
+          ? data['numberOfRooms'] as int
+          : int.tryParse('${data['numberOfRooms']}'),
+      occupantsPerRoom: (data['occupantsPerRoom'] is int)
+          ? data['occupantsPerRoom'] as int
+          : int.tryParse('${data['occupantsPerRoom']}'),
+      genderPreference: data['genderPreference'] as String?,
       curfewRules: data['curfewRules'] as String?,
+      initialOccupants: (data['initialOccupants'] is int)
+          ? data['initialOccupants'] as int
+          : int.tryParse('${data['initialOccupants']}'),
     );
   }
 
@@ -193,7 +213,11 @@ class RentalListingModel {
       'sharedCR': sharedCR,
       'bedSpaceAvailable': bedSpaceAvailable,
       'maxOccupants': maxOccupants,
+      'numberOfRooms': numberOfRooms,
+      'occupantsPerRoom': occupantsPerRoom,
+      'genderPreference': genderPreference,
       'curfewRules': curfewRules,
+      'initialOccupants': initialOccupants,
     };
   }
 
@@ -226,7 +250,11 @@ class RentalListingModel {
     bool? sharedCR,
     bool? bedSpaceAvailable,
     int? maxOccupants,
+    int? numberOfRooms,
+    int? occupantsPerRoom,
+    List<int>? availableRoomNumbers,
     String? curfewRules,
+    int? initialOccupants,
   }) {
     return RentalListingModel(
       id: id ?? this.id,
@@ -257,7 +285,11 @@ class RentalListingModel {
       sharedCR: sharedCR ?? this.sharedCR,
       bedSpaceAvailable: bedSpaceAvailable ?? this.bedSpaceAvailable,
       maxOccupants: maxOccupants ?? this.maxOccupants,
+      numberOfRooms: numberOfRooms ?? this.numberOfRooms,
+      occupantsPerRoom: occupantsPerRoom ?? this.occupantsPerRoom,
+      genderPreference: genderPreference ?? this.genderPreference,
       curfewRules: curfewRules ?? this.curfewRules,
+      initialOccupants: initialOccupants ?? this.initialOccupants,
     );
   }
 }

@@ -65,6 +65,94 @@ class AdminProvider extends ChangeNotifier {
     await _adminService.resolveReport(reportId, resolution: resolution);
   }
 
+  // Bulk operations
+  Future<BulkOperationResult> bulkApproveUsers(List<String> uids) async {
+    _setBusy(true);
+    _clearError();
+    try {
+      final result = await _adminService.bulkApproveUsers(uids);
+      return result;
+    } catch (e) {
+      _setError(e.toString());
+      rethrow;
+    } finally {
+      _setBusy(false);
+      notifyListeners();
+    }
+  }
+
+  Future<BulkOperationResult> bulkRejectUsers(
+    List<String> uids, {
+    String? reason,
+  }) async {
+    _setBusy(true);
+    _clearError();
+    try {
+      final result = await _adminService.bulkRejectUsers(uids, reason: reason);
+      return result;
+    } catch (e) {
+      _setError(e.toString());
+      rethrow;
+    } finally {
+      _setBusy(false);
+      notifyListeners();
+    }
+  }
+
+  Future<BulkOperationResult> bulkSuspendUsers(
+    List<String> uids, {
+    String? reason,
+  }) async {
+    _setBusy(true);
+    _clearError();
+    try {
+      final result = await _adminService.bulkSuspendUsers(uids, reason: reason);
+      return result;
+    } catch (e) {
+      _setError(e.toString());
+      rethrow;
+    } finally {
+      _setBusy(false);
+      notifyListeners();
+    }
+  }
+
+  Future<BulkOperationResult> bulkRestoreUsers(List<String> uids) async {
+    _setBusy(true);
+    _clearError();
+    try {
+      final result = await _adminService.bulkRestoreUsers(uids);
+      return result;
+    } catch (e) {
+      _setError(e.toString());
+      rethrow;
+    } finally {
+      _setBusy(false);
+      notifyListeners();
+    }
+  }
+
+  Future<BulkOperationResult> bulkResolveReports(
+    List<String> reportIds, {
+    String resolution = 'resolved',
+  }) async {
+    _setBusy(true);
+    _clearError();
+    try {
+      final result = await _adminService.bulkResolveReports(
+        reportIds,
+        resolution: resolution,
+      );
+      return result;
+    } catch (e) {
+      _setError(e.toString());
+      rethrow;
+    } finally {
+      _setBusy(false);
+      notifyListeners();
+    }
+  }
+
   Future<void> loadAnalytics() async {
     try {
       _setBusy(true);
