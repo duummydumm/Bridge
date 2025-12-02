@@ -1005,23 +1005,25 @@ class _MyListingsScreenState extends State<MyListingsScreen>
             icon: Icons.share_outlined,
             label: 'Share',
           ),
-          SlidableAction(
-            onPressed: (_) {
-              Navigator.pushNamed(
-                context,
-                '/trade/add-item',
-                arguments: {'tradeItemId': trade.id},
-              );
-            },
-            backgroundColor: const Color(0xFF546E7A),
-            foregroundColor: Colors.white,
-            icon: Icons.edit_outlined,
-            label: 'Edit',
-            borderRadius: const BorderRadius.only(
-              topRight: Radius.circular(12),
-              bottomRight: Radius.circular(12),
+          // Only show Edit button if item is not traded
+          if (trade.status != TradeStatus.traded)
+            SlidableAction(
+              onPressed: (_) {
+                Navigator.pushNamed(
+                  context,
+                  '/trade/add-item',
+                  arguments: {'tradeItemId': trade.id},
+                );
+              },
+              backgroundColor: const Color(0xFF546E7A),
+              foregroundColor: Colors.white,
+              icon: Icons.edit_outlined,
+              label: 'Edit',
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(12),
+                bottomRight: Radius.circular(12),
+              ),
             ),
-          ),
         ],
       ),
       child: Card(

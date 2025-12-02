@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import '../providers/auth_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/verification_service.dart';
@@ -27,12 +28,18 @@ class ProtectedRoute extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer2<AuthProvider, UserProvider>(
       builder: (context, authProvider, userProvider, _) {
-        final user = authProvider.user;
+        // Check both AuthProvider and Firebase Auth directly as fallback
+        // This ensures we catch the user even if AuthProvider hasn't updated yet
+        final user =
+            authProvider.user ??
+            firebase_auth.FirebaseAuth.instance.currentUser;
 
         // If user is not authenticated, redirect to login
         if (user == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            Navigator.of(context).pushReplacementNamed('/login');
+            if (context.mounted) {
+              Navigator.of(context).pushReplacementNamed('/login');
+            }
           });
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
@@ -42,7 +49,9 @@ class ProtectedRoute extends StatelessWidget {
         // Load user profile if not loaded
         if (userProvider.currentUser == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            userProvider.loadUserProfile(user.uid);
+            if (context.mounted) {
+              userProvider.loadUserProfile(user.uid);
+            }
           });
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
@@ -82,7 +91,9 @@ class ProtectedRoute extends StatelessWidget {
             // If email is not verified, redirect to verification screen
             if (!isEmailVerified) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                Navigator.of(context).pushReplacementNamed('/verify-email');
+                if (context.mounted) {
+                  Navigator.of(context).pushReplacementNamed('/verify-email');
+                }
               });
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),

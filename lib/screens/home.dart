@@ -43,6 +43,7 @@ class HomePageState extends State<HomePage> {
   bool _isFabOpen = false;
   bool _isLoadingAllActivity = false;
   List<Map<String, dynamic>> _allActivities = [];
+  String _selectedActivityFilter = 'all';
   bool _dueBannerDismissed = false;
   // Minimal info for due-soon banner
   final List<_DueItem> _dueSoonItems = <_DueItem>[];
@@ -1529,10 +1530,46 @@ class HomePageState extends State<HomePage> {
   }
 
   Widget _buildStatsCards(UserRole role) {
-    // New dashboard layout - same for all users
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Compact at-a-glance stats row
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildMiniStat(
+                icon: Icons.shopping_bag_outlined,
+                label: 'Borrowed',
+                value: _itemsBorrowed,
+              ),
+              _buildMiniStat(
+                icon: Icons.home_work_outlined,
+                label: 'Rentals',
+                value: _activeRentals,
+              ),
+              _buildMiniStat(
+                icon: Icons.hourglass_bottom_outlined,
+                label: 'Pending',
+                value: _pendingRequests + _pendingRentalRequests,
+              ),
+            ],
+          ),
+        ),
+
         // Row 1: Borrow Dashboard and Rental Dashboard
         Row(
           children: [
@@ -1607,6 +1644,40 @@ class HomePageState extends State<HomePage> {
             ),
             const SizedBox(width: 16),
             Expanded(child: _buildDueSoonCard()),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniStat({
+    required IconData icon,
+    required String label,
+    required int value,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: const Color(0xFF00897B)),
+        const SizedBox(width: 6),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$value',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1A1A1A),
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[600],
+              ),
+            ),
           ],
         ),
       ],
@@ -1731,6 +1802,37 @@ class HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildActivityFilterChip(String value, String label) {
+    final bool isSelected = _selectedActivityFilter == value;
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: isSelected ? Colors.white : Colors.grey[800],
+        ),
+      ),
+      selected: isSelected,
+      onSelected: (selected) {
+        if (!selected) return;
+        setState(() {
+          _selectedActivityFilter = value;
+        });
+      },
+      selectedColor: const Color(0xFF00897B),
+      backgroundColor: const Color(0xFFF1F4F6),
+      pressElevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: isSelected
+              ? const Color(0xFF00897B)
+              : Colors.grey.withOpacity(0.2),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDueSoonCard() {
     return _DashboardCardWithAnimation(
       icon: Icons.access_time_outlined,
@@ -1784,7 +1886,8 @@ class HomePageState extends State<HomePage> {
               if (role != UserRole.lender && _allActivities.isNotEmpty)
                 TextButton.icon(
                   onPressed: () {
-                    Navigator.pushNamed(context, '/pending-requests');
+                    // Navigate to the dedicated All Activity screen
+                    Navigator.pushNamed(context, '/activity/all');
                   },
                   icon: const Icon(Icons.arrow_forward, size: 16),
                   label: const Text('View All'),
@@ -1795,7 +1898,27 @@ class HomePageState extends State<HomePage> {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        // Filter chips for activity types (borrow, rent, trade, donate)
+        if (role != UserRole.lender && _allActivities.isNotEmpty)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Row(
+              children: [
+                _buildActivityFilterChip('all', 'All'),
+                const SizedBox(width: 8),
+                _buildActivityFilterChip('borrow', 'Borrow'),
+                const SizedBox(width: 8),
+                _buildActivityFilterChip('rent', 'Rent'),
+                const SizedBox(width: 8),
+                _buildActivityFilterChip('trade', 'Trade'),
+                const SizedBox(width: 8),
+                _buildActivityFilterChip('donate', 'Donate'),
+              ],
+            ),
+          ),
+        const SizedBox(height: 8),
         // Show different activities based on role
         if (role == UserRole.lender) ...[
           // Show user's listed items
@@ -1910,15 +2033,81 @@ class HomePageState extends State<HomePage> {
                 );
               }
 
+              // Apply simple type filter based on currently selected chip
+              final filteredActivities = _selectedActivityFilter == 'all'
+                  ? _allActivities
+                  : _allActivities
+                        .where(
+                          (a) =>
+                              (a['type'] as String?) == _selectedActivityFilter,
+                        )
+                        .toList();
+
+              // If specific filter has no results, show a friendly empty state
+              if (filteredActivities.isEmpty &&
+                  _selectedActivityFilter != 'all') {
+                String label;
+                if (_selectedActivityFilter == 'trade') {
+                  label = 'No trade activity yet';
+                } else if (_selectedActivityFilter == 'borrow') {
+                  label = 'No borrow activity yet';
+                } else if (_selectedActivityFilter == 'rent') {
+                  label = 'No rental activity yet';
+                } else {
+                  label = 'No activity yet for this category';
+                }
+
+                return Container(
+                  padding: const EdgeInsets.all(24),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.inbox_outlined,
+                        size: 48,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                );
+              }
+
               final widgets = <Widget>[];
-              for (final activity in _allActivities.take(5)) {
+              for (final activity in filteredActivities.take(5)) {
+                final icon = activity['icon'] as IconData?;
+                final iconColor = activity['iconColor'] as Color?;
+                final title = (activity['title'] ?? '').toString();
+                final subtitle = (activity['subtitle'] ?? '').toString();
+                final status = (activity['status'] ?? '').toString();
+
                 widgets.add(
                   _buildActivityItem(
-                    icon: activity['icon'] as IconData,
-                    iconColor: activity['iconColor'] as Color,
-                    title: activity['title'] as String,
-                    subtitle: activity['subtitle'] as String,
-                    status: activity['status'] as String,
+                    icon: icon ?? Icons.info_outline,
+                    iconColor: iconColor ?? Colors.grey,
+                    title: title,
+                    subtitle: subtitle,
+                    status: status.isEmpty ? 'status' : status,
                     onTap: () {
                       _handleActivityTap(activity);
                     },

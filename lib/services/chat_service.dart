@@ -46,6 +46,7 @@ class ChatService {
         'hasUnreadMessages': false,
         'unreadCount': 0,
         'unreadCountByUser': {userId1: 0, userId2: 0},
+        'mutedByUsers': [],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         if (itemId != null) 'itemId': itemId,
@@ -470,6 +471,376 @@ class ChatService {
           .toList();
     } catch (e) {
       throw Exception('Error searching messages: $e');
+    }
+  }
+
+  // Mute a conversation for a user
+  Future<void> muteConversation({
+    required String conversationId,
+    required String userId,
+  }) async {
+    try {
+      await _db.collection('conversations').doc(conversationId).update({
+        'mutedByUsers': FieldValue.arrayUnion([userId]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw Exception('Error muting conversation: $e');
+    }
+  }
+
+  // Unmute a conversation for a user
+  Future<void> unmuteConversation({
+    required String conversationId,
+    required String userId,
+  }) async {
+    try {
+      await _db.collection('conversations').doc(conversationId).update({
+        'mutedByUsers': FieldValue.arrayRemove([userId]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw Exception('Error unmuting conversation: $e');
+    }
+  }
+
+  // Get conversation details
+  Future<ConversationModel?> getConversation(String conversationId) async {
+    try {
+      final doc = await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .get();
+
+      if (!doc.exists || doc.data() == null) {
+        return null;
+      }
+
+      return ConversationModel.fromMap(doc.data()!, doc.id);
+    } catch (e) {
+      throw Exception('Error getting conversation: $e');
+    }
+  }
+
+  // Create a group conversation
+  Future<String> createGroupConversation({
+    required String adminId,
+    required String adminName,
+    required List<String> participantIds,
+    required Map<String, String> participantNames,
+    required String groupName,
+    String? groupImageUrl,
+  }) async {
+    try {
+      // Ensure admin is in participants
+      final allParticipants = <String>{...participantIds, adminId};
+      final allParticipantNames = Map<String, String>.from(participantNames);
+      allParticipantNames[adminId] = adminName;
+
+      // Initialize unread counts for all participants
+      final unreadCountByUser = <String, int>{};
+      for (var participantId in allParticipants) {
+        unreadCountByUser[participantId] = 0;
+      }
+
+      final conversationData = {
+        'participants': allParticipants.toList(),
+        'participantNames': allParticipantNames,
+        'lastMessage': '',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': '',
+        'hasUnreadMessages': false,
+        'unreadCount': 0,
+        'unreadCountByUser': unreadCountByUser,
+        'mutedByUsers': [],
+        'isGroup': true,
+        'groupName': groupName,
+        'groupAdmin': adminId,
+        'groupImageUrl': groupImageUrl,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      final docRef = await _db
+          .collection('conversations')
+          .add(conversationData);
+      return docRef.id;
+    } catch (e) {
+      throw Exception('Error creating group conversation: $e');
+    }
+  }
+
+  // Add participant to group
+  Future<void> addParticipantToGroup({
+    required String conversationId,
+    required String userId,
+    required String userName,
+    required String adminId,
+  }) async {
+    try {
+      final conversationDoc = await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .get();
+
+      if (!conversationDoc.exists) {
+        throw Exception('Conversation not found');
+      }
+
+      final data = conversationDoc.data()!;
+      if (data['isGroup'] != true) {
+        throw Exception('Not a group conversation');
+      }
+
+      if (data['groupAdmin'] != adminId) {
+        throw Exception('Only group admin can add participants');
+      }
+
+      final participants = List<String>.from(data['participants'] ?? []);
+      if (participants.contains(userId)) {
+        throw Exception('User is already in the group');
+      }
+
+      final participantNames = Map<String, dynamic>.from(
+        data['participantNames'] ?? {},
+      );
+      participantNames[userId] = userName;
+
+      final unreadCountByUser = Map<String, dynamic>.from(
+        data['unreadCountByUser'] ?? {},
+      );
+      unreadCountByUser[userId] = 0;
+
+      await _db.collection('conversations').doc(conversationId).update({
+        'participants': FieldValue.arrayUnion([userId]),
+        'participantNames': participantNames,
+        'unreadCountByUser': unreadCountByUser,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw Exception('Error adding participant: $e');
+    }
+  }
+
+  // Remove participant from group
+  Future<void> removeParticipantFromGroup({
+    required String conversationId,
+    required String userId,
+    required String adminId,
+  }) async {
+    try {
+      final conversationDoc = await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .get();
+
+      if (!conversationDoc.exists) {
+        throw Exception('Conversation not found');
+      }
+
+      final data = conversationDoc.data()!;
+      if (data['isGroup'] != true) {
+        throw Exception('Not a group conversation');
+      }
+
+      // Admin can remove anyone, users can leave themselves
+      final isAdmin = data['groupAdmin'] == adminId;
+      final isLeavingSelf = userId == adminId;
+
+      if (!isAdmin && !isLeavingSelf) {
+        throw Exception('Only group admin can remove participants');
+      }
+
+      // Can't remove the admin (unless they're leaving themselves)
+      if (data['groupAdmin'] == userId && !isLeavingSelf) {
+        throw Exception('Cannot remove group admin. Transfer admin first.');
+      }
+
+      final participantNames = Map<String, dynamic>.from(
+        data['participantNames'] ?? {},
+      );
+      participantNames.remove(userId);
+
+      final unreadCountByUser = Map<String, dynamic>.from(
+        data['unreadCountByUser'] ?? {},
+      );
+      unreadCountByUser.remove(userId);
+
+      final participants = List<String>.from(data['participants'] ?? []);
+      participants.remove(userId);
+
+      // If admin is leaving and there are other participants, transfer admin
+      if (data['groupAdmin'] == userId && isLeavingSelf) {
+        if (participants.isEmpty) {
+          // Delete group if no participants left
+          await _db.collection('conversations').doc(conversationId).delete();
+          return;
+        }
+
+        // Transfer admin to first remaining participant
+        final newAdminId = participants.first;
+        await _db.collection('conversations').doc(conversationId).update({
+          'participants': participants,
+          'participantNames': participantNames,
+          'unreadCountByUser': unreadCountByUser,
+          'groupAdmin': newAdminId,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } else if (participants.isEmpty) {
+        // Delete group if no participants left (shouldn't happen for non-admin)
+        await _db.collection('conversations').doc(conversationId).delete();
+      } else {
+        // Regular member leaving or admin removing someone
+        await _db.collection('conversations').doc(conversationId).update({
+          'participants': participants,
+          'participantNames': participantNames,
+          'unreadCountByUser': unreadCountByUser,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      throw Exception('Error removing participant: $e');
+    }
+  }
+
+  // Update group name
+  Future<void> updateGroupName({
+    required String conversationId,
+    required String newName,
+    required String adminId,
+  }) async {
+    try {
+      final conversationDoc = await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .get();
+
+      if (!conversationDoc.exists) {
+        throw Exception('Conversation not found');
+      }
+
+      final data = conversationDoc.data()!;
+      if (data['isGroup'] != true) {
+        throw Exception('Not a group conversation');
+      }
+
+      if (data['groupAdmin'] != adminId) {
+        throw Exception('Only group admin can update group name');
+      }
+
+      await _db.collection('conversations').doc(conversationId).update({
+        'groupName': newName,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw Exception('Error updating group name: $e');
+    }
+  }
+
+  // Update group image
+  Future<void> updateGroupImage({
+    required String conversationId,
+    required String? imageUrl,
+    required String adminId,
+  }) async {
+    try {
+      final conversationDoc = await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .get();
+
+      if (!conversationDoc.exists) {
+        throw Exception('Conversation not found');
+      }
+
+      final data = conversationDoc.data()!;
+      if (data['isGroup'] != true) {
+        throw Exception('Not a group conversation');
+      }
+
+      if (data['groupAdmin'] != adminId) {
+        throw Exception('Only group admin can update group image');
+      }
+
+      await _db.collection('conversations').doc(conversationId).update({
+        'groupImageUrl': imageUrl,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw Exception('Error updating group image: $e');
+    }
+  }
+
+  // Transfer group admin
+  Future<void> transferGroupAdmin({
+    required String conversationId,
+    required String newAdminId,
+    required String currentAdminId,
+  }) async {
+    try {
+      final conversationDoc = await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .get();
+
+      if (!conversationDoc.exists) {
+        throw Exception('Conversation not found');
+      }
+
+      final data = conversationDoc.data()!;
+      if (data['isGroup'] != true) {
+        throw Exception('Not a group conversation');
+      }
+
+      if (data['groupAdmin'] != currentAdminId) {
+        throw Exception('Only current admin can transfer admin');
+      }
+
+      final participants = List<String>.from(data['participants'] ?? []);
+      if (!participants.contains(newAdminId)) {
+        throw Exception('New admin must be a participant');
+      }
+
+      await _db.collection('conversations').doc(conversationId).update({
+        'groupAdmin': newAdminId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw Exception('Error transferring admin: $e');
+    }
+  }
+
+  // Update group settings
+  Future<void> updateGroupSettings({
+    required String conversationId,
+    required Map<String, dynamic> settings,
+    required String adminId,
+  }) async {
+    try {
+      final conversationDoc = await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .get();
+
+      if (!conversationDoc.exists) {
+        throw Exception('Conversation not found');
+      }
+
+      final data = conversationDoc.data()!;
+      if (data['isGroup'] != true) {
+        throw Exception('Not a group conversation');
+      }
+
+      if (data['groupAdmin'] != adminId) {
+        throw Exception('Only group admin can update settings');
+      }
+
+      await _db.collection('conversations').doc(conversationId).update({
+        'groupSettings': settings,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw Exception('Error updating group settings: $e');
     }
   }
 }

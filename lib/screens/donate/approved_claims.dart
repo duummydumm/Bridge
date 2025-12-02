@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 import '../../models/giveaway_claim_request_model.dart';
 import '../../models/giveaway_listing_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../chat_detail_screen.dart';
 
 class ApprovedClaimsScreen extends StatefulWidget {
   const ApprovedClaimsScreen({super.key});
@@ -447,8 +450,22 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                       ],
                     ),
 
-                    // Action Button
+                    // Action Buttons
                     const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _messageClaimant(claim, giveaway),
+                        icon: const Icon(Icons.message),
+                        label: const Text('Message Claimant'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -485,6 +502,78 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
       return GiveawayListingModel.fromMap(data, data['id'] as String);
     } catch (e) {
       return null;
+    }
+  }
+
+  Future<void> _messageClaimant(
+    GiveawayClaimRequestModel claim,
+    GiveawayListingModel? giveaway,
+  ) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    final currentUserId = authProvider.user?.uid;
+    final currentUser = userProvider.currentUser;
+
+    if (currentUserId == null || currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to send a message'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final conversationId = await chatProvider.createOrGetConversation(
+        userId1: currentUserId,
+        userId1Name: currentUser.fullName,
+        userId2: claim.claimantId,
+        userId2Name: claim.claimantName,
+        itemId: claim.giveawayId,
+        itemTitle: giveaway?.title ?? 'Giveaway Item',
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+
+      if (conversationId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              conversationId: conversationId,
+              otherParticipantName: claim.claimantName,
+              userId: currentUserId,
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to start conversation'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

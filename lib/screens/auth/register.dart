@@ -307,12 +307,12 @@ class _RegisterScreenState extends State<RegisterScreen>
         }
       }
 
-      if (finalImage != null && mounted) {
+      if (mounted) {
         setState(() {
           if (isFront) {
-            _pickedImageFront = finalImage;
+            _pickedImageFront = finalImage!;
           } else {
-            _pickedImageBack = finalImage;
+            _pickedImageBack = finalImage!;
           }
         });
       }

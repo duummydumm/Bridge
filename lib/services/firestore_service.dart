@@ -523,6 +523,7 @@ class FirestoreService {
           'currentBorrowerId': null,
           'returnDate': null,
           'lastUpdated': FieldValue.serverTimestamp(),
+          'borrowCount': FieldValue.increment(1),
         });
       } else {
         // Condition disputed - requires damage reporting
@@ -1690,6 +1691,35 @@ extension FirestoreServiceRentals on FirestoreService {
       }
     }
 
+    // Ensure we always store a human-friendly title for the rented thing
+    // so "Your Activity" and other UIs can display the correct name
+    if ((payload['itemTitle'] == null ||
+        (payload['itemTitle'] as String?)?.trim().isEmpty == true)) {
+      String? derivedTitle;
+      try {
+        // Prefer the rental listing title (works for apartments, boarding houses, commercial, etc.)
+        if (listingId != null) {
+          final listing = await getRentalListing(listingId);
+          derivedTitle = (listing?['title'] as String?)?.trim();
+        }
+
+        // Fallback to the underlying item title for item-based rentals
+        if (derivedTitle == null || derivedTitle.isEmpty) {
+          final itemId = payload['itemId'] as String?;
+          if (itemId != null) {
+            final item = await getItem(itemId);
+            derivedTitle = (item?['title'] as String?)?.trim();
+          }
+        }
+      } catch (_) {
+        // Best-effort only; we'll still create the request even if this fails
+      }
+
+      payload['itemTitle'] = (derivedTitle == null || derivedTitle.isEmpty)
+          ? 'Rental Item'
+          : derivedTitle;
+    }
+
     // Convert dates
     for (final k in [
       'startDate',
@@ -1705,22 +1735,11 @@ extension FirestoreServiceRentals on FirestoreService {
 
     // Create a lightweight notification for the owner
     try {
-      // Fetch listing to get item title
-      String? itemTitle;
-      final listingId = payload['listingId'] as String?;
-      if (listingId != null) {
-        final listing = await getRentalListing(listingId);
-        itemTitle = listing?['title'] as String?;
-        // Fallback to item title if listing title not available
-        if (itemTitle == null || itemTitle.isEmpty) {
-          final itemId = payload['itemId'] as String?;
-          if (itemId != null) {
-            final item = await getItem(itemId);
-            itemTitle = item?['title'] as String? ?? 'Rental Item';
-          }
-        }
-      }
-      itemTitle ??= 'Rental Item';
+      // We already ensured a good itemTitle in the payload above
+      final itemTitle =
+          (payload['itemTitle'] as String?)?.trim().isNotEmpty == true
+          ? (payload['itemTitle'] as String)
+          : 'Rental Item';
 
       // Fetch renter name
       String? renterName;
@@ -1876,7 +1895,7 @@ extension FirestoreServiceRentals on FirestoreService {
           if (renterId != null) {
             final priceQuote =
                 (currentRequest['priceQuote'] as num?)?.toDouble() ?? 0.0;
-            final fees = (currentRequest['fees'] as num?)?.toDouble() ?? 0.0;
+            // final fees = (currentRequest['fees'] as num?)?.toDouble() ?? 0.0;
             final depositAmount = (currentRequest['depositAmount'] as num?)
                 ?.toDouble();
 
@@ -2682,6 +2701,7 @@ extension FirestoreServiceRentals on FirestoreService {
       final renterId = request['renterId'] as String?;
       final itemTitle = request['itemTitle'] as String? ?? 'Rental Item';
       final ownerName = request['ownerName'] as String? ?? 'Owner';
+      final listingId = request['listingId'] as String?;
 
       final updateData = <String, dynamic>{
         'returnVerifiedBy': ownerId,
@@ -2711,6 +2731,19 @@ extension FirestoreServiceRentals on FirestoreService {
       }
 
       await updateRentalRequest(requestId, updateData);
+
+      // If return is accepted, increment rentalCount on the listing for analytics / social proof
+      if (conditionAccepted && listingId != null && listingId.isNotEmpty) {
+        try {
+          await _db.collection('rental_listings').doc(listingId).update({
+            'rentalCount': FieldValue.increment(1),
+          });
+        } catch (e) {
+          debugPrint(
+            'Error incrementing rentalCount for listing $listingId: $e',
+          );
+        }
+      }
 
       // Cancel rental reminders
       try {
@@ -3549,6 +3582,7 @@ extension FirestoreServiceTrading on FirestoreService {
     }
     final offerData = offerDoc.data() as Map<String, dynamic>;
     final fromUserId = offerData['fromUserId'] as String?;
+    final offeredItemName = offerData['offeredItemName'] as String?;
 
     // Update the accepted offer
     final offerRef = _db.collection('trade_offers').doc(offerId);
@@ -3557,12 +3591,56 @@ extension FirestoreServiceTrading on FirestoreService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    // Update trade item status to Traded
+    // Update trade item status to Traded (User2's listing)
     final tradeItemRef = _db.collection('trade_items').doc(tradeItemId);
     batch.update(tradeItemRef, {
       'status': 'Traded',
       'updatedAt': FieldValue.serverTimestamp(),
     });
+
+    // Also mark User1's matching trade item as Traded (if they have a listing for the item they're offering)
+    if (fromUserId != null &&
+        offeredItemName != null &&
+        offeredItemName.isNotEmpty) {
+      try {
+        // Find User1's trade items that match the offered item name and are still Open
+        final user1ItemsSnap = await _db
+            .collection('trade_items')
+            .where('offeredBy', isEqualTo: fromUserId)
+            .where('offeredItemName', isEqualTo: offeredItemName)
+            .where('status', isEqualTo: 'Open')
+            .get();
+
+        // Mark all matching items as Traded and decline other pending offers on them
+        for (var doc in user1ItemsSnap.docs) {
+          final user1ItemId = doc.id;
+          final user1ItemRef = _db.collection('trade_items').doc(user1ItemId);
+          batch.update(user1ItemRef, {
+            'status': 'Traded',
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
+          // Decline all other pending offers for User1's trade item
+          final user1OtherOffersSnap = await _db
+              .collection('trade_offers')
+              .where('tradeItemId', isEqualTo: user1ItemId)
+              .where('status', isEqualTo: 'pending')
+              .get();
+
+          for (var offerDoc in user1OtherOffersSnap.docs) {
+            if (offerDoc.id != offerId) {
+              batch.update(offerDoc.reference, {
+                'status': 'declined',
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+            }
+          }
+        }
+      } catch (e) {
+        // Log but don't fail - this is best-effort to mark User1's item as traded
+        debugPrint('Warning: Could not mark User1\'s trade item as traded: $e');
+      }
+    }
 
     // Decline all other pending offers for the same trade item
     final otherOffersSnap = await _db
@@ -3712,6 +3790,75 @@ extension FirestoreServiceTrading on FirestoreService {
       }
     } catch (_) {
       // Best-effort; don't fail if notification write fails
+    }
+  }
+
+  /// Create a dispute record for a completed trade
+  Future<String> createTradeDispute(Map<String, dynamic> data) async {
+    final payload = Map<String, dynamic>.from(data);
+
+    // Normalize DateTime fields
+    if (payload['createdAt'] is DateTime) {
+      payload['createdAt'] = Timestamp.fromDate(payload['createdAt']);
+    }
+    if (payload['updatedAt'] is DateTime) {
+      payload['updatedAt'] = Timestamp.fromDate(payload['updatedAt']);
+    }
+
+    // Ensure participants array exists for querying
+    final openedByUserId = payload['openedByUserId'] as String?;
+    final otherUserId = payload['otherUserId'] as String?;
+    final participants = <String>{};
+    if (openedByUserId != null && openedByUserId.isNotEmpty) {
+      participants.add(openedByUserId);
+    }
+    if (otherUserId != null && otherUserId.isNotEmpty) {
+      participants.add(otherUserId);
+    }
+    payload['participants'] = participants.toList();
+
+    final doc = await _db.collection('trade_disputes').add(payload);
+
+    // Notify the other party that a dispute was opened
+    try {
+      if (otherUserId != null && otherUserId.isNotEmpty) {
+        await _db.collection('notifications').add({
+          'toUserId': otherUserId,
+          'type': 'trade_dispute_opened',
+          'offerId': payload['offerId'],
+          'tradeItemId': payload['tradeItemId'],
+          'itemTitle': payload['itemTitle'],
+          'openedByUserId': openedByUserId,
+          'openedByUserName': payload['openedByUserName'],
+          'status': 'unread',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (_) {
+      // Best-effort; don't fail if notification write fails
+    }
+
+    return doc.id;
+  }
+
+  /// Get trade disputes where the user is a participant
+  Future<List<Map<String, dynamic>>> getTradeDisputesForUser(
+    String userId,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('trade_disputes')
+          .where('participants', arrayContains: userId)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return snap.docs.map((d) {
+        final data = d.data();
+        data['id'] = d.id;
+        return data;
+      }).toList();
+    } catch (e) {
+      throw Exception('Error getting trade disputes for user: $e');
     }
   }
 }
@@ -3962,6 +4109,246 @@ extension FirestoreServiceGiveaway on FirestoreService {
         .limit(1)
         .get();
     return snap.docs.isNotEmpty;
+  }
+
+  // Giveaway Rating operations
+  Future<String> createGiveawayRating(Map<String, dynamic> data) async {
+    final payload = Map<String, dynamic>.from(data);
+    if (payload['createdAt'] is DateTime) {
+      payload['createdAt'] = Timestamp.fromDate(payload['createdAt']);
+    }
+    if (payload['updatedAt'] is DateTime) {
+      payload['updatedAt'] = Timestamp.fromDate(payload['updatedAt']);
+    }
+    final doc = await _db.collection('giveaway_ratings').add(payload);
+    return doc.id;
+  }
+
+  Future<List<Map<String, dynamic>>> getRatingsForDonor(String donorId) async {
+    final snap = await _db
+        .collection('giveaway_ratings')
+        .where('donorId', isEqualTo: donorId)
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snap.docs.map((d) {
+      final data = d.data();
+      data['id'] = d.id;
+      return data;
+    }).toList();
+  }
+
+  Future<Map<String, dynamic>?> getRatingForGiveaway({
+    required String giveawayId,
+    required String raterId,
+  }) async {
+    final snap = await _db
+        .collection('giveaway_ratings')
+        .where('giveawayId', isEqualTo: giveawayId)
+        .where('raterId', isEqualTo: raterId)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final data = snap.docs.first.data();
+    data['id'] = snap.docs.first.id;
+    return data;
+  }
+
+  Future<double> getAverageRatingForDonor(String donorId) async {
+    final snap = await _db
+        .collection('giveaway_ratings')
+        .where('donorId', isEqualTo: donorId)
+        .get();
+    if (snap.docs.isEmpty) return 0.0;
+    int total = 0;
+    for (final doc in snap.docs) {
+      total += (doc.data()['rating'] as int? ?? 5);
+    }
+    return total / snap.docs.length;
+  }
+
+  // Donor Analytics operations
+  Future<Map<String, dynamic>> getDonorAnalytics(String donorId) async {
+    try {
+      // Get all giveaways by donor
+      final giveawaysSnap = await _db
+          .collection('giveaways')
+          .where('donorId', isEqualTo: donorId)
+          .get();
+
+      // Get all claims for donor's giveaways
+      final claimsSnap = await _db
+          .collection('giveaway_claims')
+          .where('donorId', isEqualTo: donorId)
+          .get();
+
+      // Get all ratings for donor
+      final ratingsSnap = await _db
+          .collection('giveaway_ratings')
+          .where('donorId', isEqualTo: donorId)
+          .get();
+
+      // Process giveaways
+      int totalGiveaways = giveawaysSnap.docs.length;
+      int activeGiveaways = 0;
+      int claimedGiveaways = 0;
+      int completedGiveaways = 0;
+      final giveawaysByCategory = <String, int>{};
+
+      for (final doc in giveawaysSnap.docs) {
+        final data = doc.data();
+        final status = data['status'] as String? ?? 'active';
+        if (status == 'active') activeGiveaways++;
+        if (status == 'claimed') claimedGiveaways++;
+        if (status == 'completed') completedGiveaways++;
+
+        final category = data['category'] as String? ?? 'Others';
+        giveawaysByCategory[category] =
+            (giveawaysByCategory[category] ?? 0) + 1;
+      }
+
+      // Process claims
+      int totalClaimsReceived = claimsSnap.docs.length;
+      int pendingClaims = 0;
+      int approvedClaims = 0;
+      int rejectedClaims = 0;
+      final claimsByMonth = <String, int>{};
+
+      for (final doc in claimsSnap.docs) {
+        final data = doc.data();
+        final status = data['status'] as String? ?? 'pending';
+        if (status == 'pending') pendingClaims++;
+        if (status == 'approved') approvedClaims++;
+        if (status == 'rejected') rejectedClaims++;
+
+        final createdAt =
+            (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+        final monthKey =
+            '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}';
+        claimsByMonth[monthKey] = (claimsByMonth[monthKey] ?? 0) + 1;
+      }
+
+      // Process ratings
+      double averageRating = 0.0;
+      int totalRatings = ratingsSnap.docs.length;
+      if (totalRatings > 0) {
+        int totalRating = 0;
+        for (final doc in ratingsSnap.docs) {
+          totalRating += (doc.data()['rating'] as int? ?? 5);
+        }
+        averageRating = totalRating / totalRatings;
+      }
+
+      // Calculate monthly stats (last 6 months)
+      final monthlyStats = <Map<String, dynamic>>[];
+      final now = DateTime.now();
+      for (int i = 5; i >= 0; i--) {
+        final monthDate = DateTime(now.year, now.month - i, 1);
+        final monthKey =
+            '${monthDate.year}-${monthDate.month.toString().padLeft(2, '0')}';
+        final monthName = _getMonthName(monthDate.month);
+
+        int giveawaysPosted = 0;
+        int claimsReceived = 0;
+        int claimsApproved = 0;
+        double monthAvgRating = 0.0;
+        int monthRatings = 0;
+
+        for (final doc in giveawaysSnap.docs) {
+          final createdAt = (doc.data()['createdAt'] as Timestamp?)?.toDate();
+          if (createdAt != null &&
+              createdAt.year == monthDate.year &&
+              createdAt.month == monthDate.month) {
+            giveawaysPosted++;
+          }
+        }
+
+        for (final doc in claimsSnap.docs) {
+          final createdAt = (doc.data()['createdAt'] as Timestamp?)?.toDate();
+          if (createdAt != null &&
+              createdAt.year == monthDate.year &&
+              createdAt.month == monthDate.month) {
+            claimsReceived++;
+            if (doc.data()['status'] == 'approved') {
+              claimsApproved++;
+            }
+          }
+        }
+
+        for (final doc in ratingsSnap.docs) {
+          final createdAt = (doc.data()['createdAt'] as Timestamp?)?.toDate();
+          if (createdAt != null &&
+              createdAt.year == monthDate.year &&
+              createdAt.month == monthDate.month) {
+            monthRatings++;
+            monthAvgRating += (doc.data()['rating'] as int? ?? 5);
+          }
+        }
+
+        if (monthRatings > 0) {
+          monthAvgRating = monthAvgRating / monthRatings;
+        }
+
+        monthlyStats.add({
+          'month': monthKey,
+          'monthName': monthName,
+          'giveawaysPosted': giveawaysPosted,
+          'claimsReceived': claimsReceived,
+          'claimsApproved': claimsApproved,
+          'averageRating': monthAvgRating,
+        });
+      }
+
+      return {
+        'totalGiveaways': totalGiveaways,
+        'activeGiveaways': activeGiveaways,
+        'claimedGiveaways': claimedGiveaways,
+        'completedGiveaways': completedGiveaways,
+        'totalClaimsReceived': totalClaimsReceived,
+        'pendingClaims': pendingClaims,
+        'approvedClaims': approvedClaims,
+        'rejectedClaims': rejectedClaims,
+        'averageRating': averageRating,
+        'totalRatings': totalRatings,
+        'giveawaysByCategory': giveawaysByCategory,
+        'claimsByMonth': claimsByMonth,
+        'monthlyStats': monthlyStats,
+      };
+    } catch (e) {
+      debugPrint('Error getting donor analytics: $e');
+      return {
+        'totalGiveaways': 0,
+        'activeGiveaways': 0,
+        'claimedGiveaways': 0,
+        'completedGiveaways': 0,
+        'totalClaimsReceived': 0,
+        'pendingClaims': 0,
+        'approvedClaims': 0,
+        'rejectedClaims': 0,
+        'averageRating': 0.0,
+        'totalRatings': 0,
+        'giveawaysByCategory': <String, int>{},
+        'claimsByMonth': <String, int>{},
+        'monthlyStats': <Map<String, dynamic>>[],
+      };
+    }
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[month - 1];
   }
 }
 
@@ -4768,6 +5155,34 @@ extension FirestoreServiceCalamity on FirestoreService {
     } catch (e) {
       debugPrint('Error deleting old activity logs: $e');
       return 0;
+    }
+  }
+
+  /// Submit user feedback
+  Future<void> submitFeedback({
+    required String userId,
+    required String userName,
+    String? userEmail,
+    required String category,
+    required String subject,
+    required String message,
+  }) async {
+    try {
+      await _db.collection('feedback').add({
+        'userId': userId,
+        'userName': userName,
+        'userEmail': userEmail,
+        'category': category,
+        'subject': subject,
+        'message': message,
+        'status': 'pending', // pending, reviewed, resolved
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      debugPrint('Feedback submitted successfully by user: $userId');
+    } catch (e) {
+      debugPrint('Error submitting feedback: $e');
+      rethrow;
     }
   }
 }

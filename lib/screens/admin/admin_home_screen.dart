@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 // import removed: admin provider used in sub-widgets
+import '../../providers/theme_provider.dart';
 import 'widgets/admin_sidebar.dart';
 import 'widgets/user_verification_board.dart';
 import 'widgets/activity_monitoring.dart';
@@ -10,6 +11,7 @@ import 'widgets/analytics.dart';
 import 'widgets/account_management.dart';
 import 'widgets/logs.dart';
 import 'widgets/dashboard_quick_stats.dart';
+import 'widgets/feedback_tab.dart';
 import 'admin_notifications_screen.dart';
 import 'calamity_events_admin_screen.dart';
 
@@ -26,6 +28,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Force light theme for admin panel
+    return Theme(
+      data: ThemeProvider.lightTheme,
+      child: _buildAdminContent(context),
+    );
+  }
+
+  Widget _buildAdminContent(BuildContext context) {
     if (kIsWeb) {
       // Web: Sidebar layout
       return Scaffold(
@@ -134,7 +144,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       body: SafeArea(child: _buildPage(_selected)),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selected > 8 ? 0 : _selected,
+        selectedIndex: _selected > 9 ? 0 : _selected,
         onDestinationSelected: (i) => setState(() => _selected = i),
         destinations: const [
           NavigationDestination(
@@ -173,6 +183,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             icon: Icon(Icons.article_outlined),
             label: 'Logs',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.feedback_outlined),
+            label: 'Feedback',
+          ),
         ],
       ),
     );
@@ -198,6 +212,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         return const CalamityEventsAdminScreen();
       case 8:
         return const ActivityLogsTab();
+      case 9:
+        return const FeedbackTab();
       default:
         return const SizedBox.shrink();
     }

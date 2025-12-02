@@ -9,8 +9,11 @@ import '../services/report_block_service.dart';
 import '../services/rating_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/user_provider.dart';
+import '../providers/chat_provider.dart';
 import 'all_reviews_screen.dart';
-import 'borrow/borrow_items_screen.dart';
+import 'user_listings_screen.dart';
+import 'user_rate_history_screen.dart';
+import 'chat_detail_screen.dart';
 
 class UserPublicProfileScreen extends StatefulWidget {
   final String userId;
@@ -305,6 +308,34 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_isBlocked)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.block, color: Colors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'You have blocked this user. You will not receive messages or requests from them.\n'
+                        'You can unblock them from the menu in the top-right corner.',
+                        style: TextStyle(
+                          color: Colors.red[700],
+                          fontSize: 12,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // Header
             Container(
               decoration: BoxDecoration(
@@ -387,6 +418,10 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                   _buildRating(
                     _averageRating > 0 ? _averageRating : user.reputationScore,
                   ),
+                  const SizedBox(height: 8),
+                  _buildTrustBadges(user),
+                  const SizedBox(height: 12),
+                  _buildProfileActions(user),
                 ],
               ),
             ),
@@ -448,9 +483,11 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
-                  _row('Email', user.email),
+                  _row('Email', _maskedEmail(user.email)),
                   const Divider(height: 20),
                   _row('Role', _roleText(user.role)),
+                  const Divider(height: 20),
+                  _row('Location', _shortAddress(user.fullAddress)),
                   const Divider(height: 20),
                   _row('Member since', _formatDate(user.createdAt)),
                 ],
@@ -779,6 +816,177 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
+  String _maskedEmail(String email) {
+    if (email.isEmpty) return 'Hidden for privacy';
+    final parts = email.split('@');
+    if (parts.length != 2) return 'Hidden for privacy';
+    final name = parts[0];
+    final domain = parts[1];
+    if (name.length <= 2) {
+      return '${name[0]}***@$domain';
+    }
+    return '${name.substring(0, 2)}***@$domain';
+  }
+
+  String _shortAddress(String fullAddress) {
+    if (fullAddress.isEmpty) return 'Not specified';
+    // Show only the first two comma-separated parts (e.g. barangay, city)
+    final parts = fullAddress.split(',').map((p) => p.trim()).toList();
+    if (parts.length == 1) return parts[0];
+    if (parts.length == 2) return '${parts[0]}, ${parts[1]}';
+    return '${parts[0]}, ${parts[1]}';
+  }
+
+  Widget _buildProfileActions(UserModel user) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final isOwnProfile = authProvider.user?.uid == widget.userId;
+
+    // Don't show actions for own profile
+    if (isOwnProfile) return const SizedBox.shrink();
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: _isBlocked ? null : () => _messageUser(user),
+            icon: const Icon(Icons.chat_bubble_outline),
+            label: const Text('Message'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00897B),
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(40),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTrustBadges(UserModel user) {
+    final List<Widget> badges = [];
+
+    // Top rated badge: high rating and multiple reviews
+    final ratingScore = _averageRating > 0
+        ? _averageRating
+        : user.reputationScore;
+    if (ratingScore >= 4.5 && _reviews.length >= 5) {
+      badges.add(
+        _buildBadge(
+          icon: Icons.star,
+          color: Colors.amber[700]!,
+          label: 'Top Rated',
+        ),
+      );
+    }
+
+    // Active member badge based on activity stats
+    final totalListings = (_activityStats?['totalListings'] ?? 0) as int;
+    final totalBorrowed = (_activityStats?['totalBorrowed'] ?? 0) as int;
+    if (totalListings + totalBorrowed >= 5) {
+      badges.add(
+        _buildBadge(
+          icon: Icons.handshake_outlined,
+          color: const Color(0xFF26A69A),
+          label: 'Active Member',
+        ),
+      );
+    }
+
+    // Verified badge (separate from status pill)
+    if (user.isVerified) {
+      badges.add(
+        _buildBadge(
+          icon: Icons.verified_user,
+          color: const Color(0xFF42A5F5),
+          label: 'ID Verified',
+        ),
+      );
+    }
+
+    if (badges.isEmpty) return const SizedBox.shrink();
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      alignment: WrapAlignment.center,
+      children: badges,
+    );
+  }
+
+  Widget _buildBadge({
+    required IconData icon,
+    required Color color,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewContextChip(RatingContext context) {
+    final String label;
+    Color color;
+
+    switch (context) {
+      case RatingContext.borrow:
+        label = 'Borrow';
+        color = const Color(0xFF00897B);
+        break;
+      case RatingContext.rental:
+        label = 'Rent';
+        color = const Color(0xFF42A5F5);
+        break;
+      case RatingContext.trade:
+        label = 'Trade';
+        color = const Color(0xFFFFA726);
+        break;
+      case RatingContext.giveaway:
+        label = 'Giveaway';
+        color = const Color(0xFFE91E63);
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
   Widget _buildRating(double score) {
     final double clamped = score.clamp(0.0, 5.0);
     return Row(
@@ -806,6 +1014,124 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _messageUser(UserModel user) async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+      // Basic auth checks
+      if (!authProvider.isAuthenticated || authProvider.user == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please log in to send a message'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Prevent messaging yourself
+      if (authProvider.user!.uid == widget.userId) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("You can't message yourself."),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Respect block state
+      if (_isBlocked) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'You have blocked this user. Unblock them to chat.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final currentUser = userProvider.currentUser;
+      if (currentUser == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Your user profile could not be loaded'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Show loading
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        useRootNavigator: true,
+        builder: (dialogContext) =>
+            const Center(child: CircularProgressIndicator()),
+      );
+
+      // Create or get generic conversation between the two users (no item)
+      final conversationId = await chatProvider.createOrGetConversation(
+        userId1: authProvider.user!.uid,
+        userId1Name: currentUser.fullName,
+        userId2: widget.userId,
+        userId2Name: user.fullName,
+      );
+
+      // Close loading dialog
+      if (mounted) {
+        final rootNav = Navigator.of(context, rootNavigator: true);
+        if (rootNav.canPop()) rootNav.pop();
+      }
+
+      if (conversationId != null && mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              conversationId: conversationId,
+              otherParticipantName: user.fullName,
+              userId: authProvider.user!.uid,
+            ),
+          ),
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to start conversation'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        final rootNav = Navigator.of(context, rootNavigator: true);
+        if (rootNav.canPop()) rootNav.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error starting chat: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildActivityStatsSection() {
@@ -1016,11 +1342,14 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
               ),
               TextButton(
                 onPressed: () {
-                  // Navigate to borrow items screen filtered by this user
+                  if (_user == null) return;
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const BorrowItemsScreen(),
+                      builder: (context) => UserListingsScreen(
+                        userId: widget.userId,
+                        userName: _user!.fullName,
+                      ),
                     ),
                   );
                 },
@@ -1362,17 +1691,22 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Reviews & Ratings',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              const Expanded(
+                child: Text(
+                  'Reviews & Ratings',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ),
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
                     icon: const Icon(Icons.refresh, size: 18),
                     color: const Color(0xFF00897B),
                     tooltip: 'Refresh reviews',
                     onPressed: _loadReviews,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                   ),
                   TextButton(
                     onPressed: () {
@@ -1388,10 +1722,50 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                         );
                       }
                     },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                     child: const Text(
                       'View All',
-                      style: TextStyle(color: Color(0xFF00897B), fontSize: 14),
+                      style: TextStyle(color: Color(0xFF00897B), fontSize: 12),
                     ),
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(
+                      Icons.more_vert,
+                      size: 18,
+                      color: Color(0xFF00897B),
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onSelected: (value) {
+                      if (_user == null) return;
+                      if (value == 'rate') {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => UserRateHistoryScreen(
+                              userId: widget.userId,
+                              userName: _user!.fullName,
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'rate',
+                        child: Row(
+                          children: [
+                            Icon(Icons.star_outline, size: 18),
+                            SizedBox(width: 8),
+                            Text('Rate from history'),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1401,11 +1775,19 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
           if (_reviews.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                child: Text(
-                  'No reviews yet',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                ),
+              child: Column(
+                children: [
+                  Text(
+                    'No reviews yet',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Reviews can only be left after a completed transaction.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                  ),
+                ],
               ),
             )
           else
@@ -1460,13 +1842,20 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                                 ],
                               ),
                               const SizedBox(height: 2),
-                              Text(
-                                review.timeAgo,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
+                              Row(
+                                children: [
+                                  _buildReviewContextChip(review.context),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    review.timeAgo,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
                               ),
+                              const SizedBox(height: 2),
                               if (review.feedback != null &&
                                   review.feedback!.isNotEmpty) ...[
                                 const SizedBox(height: 4),

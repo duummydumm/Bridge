@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../chat_detail_screen.dart';
 
 class TradePendingRequestScreen extends StatefulWidget {
   const TradePendingRequestScreen({super.key});
@@ -187,6 +190,95 @@ class _TradePendingRequestScreenState extends State<TradePendingRequestScreen> {
     final createdAt =
         (request['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
 
+    Future<void> startChat() async {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+      if (authProvider.user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to message the other user'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final currentUserId = authProvider.user!.uid;
+      final currentUserName =
+          userProvider.currentUser?.fullName.isNotEmpty == true
+          ? userProvider.currentUser!.fullName
+          : (authProvider.user!.email ?? 'You');
+
+      final String otherUserId = (request['toUserId'] ?? '') as String;
+      final String otherUserName =
+          ((request['toUserName'] ?? '') as String).isNotEmpty
+          ? request['toUserName'] as String
+          : 'User';
+
+      if (otherUserId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not determine the other user for this trade'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        final conversationId = await chatProvider.createOrGetConversation(
+          userId1: currentUserId,
+          userId1Name: currentUserName,
+          userId2: otherUserId,
+          userId2Name: otherUserName,
+          itemId: request['tradeItemId'] as String?,
+          itemTitle:
+              (request['originalOfferedItemName'] ?? request['offeredItemName'])
+                  as String?,
+        );
+
+        if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop();
+
+        if (conversationId == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to start conversation'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              conversationId: conversationId,
+              otherParticipantName: otherUserName,
+              userId: currentUserId,
+            ),
+          ),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error starting chat: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
@@ -319,14 +411,53 @@ class _TradePendingRequestScreenState extends State<TradePendingRequestScreen> {
                   'Offered: ${_formatDate(createdAt)}',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
-                const Spacer(),
-                OutlinedButton.icon(
-                  onPressed: () => _cancelRequest(request['id']),
-                  icon: const Icon(Icons.cancel_outlined, size: 18),
-                  label: const Text('Cancel'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(
+                        context,
+                        '/trade/make-offer',
+                        arguments: {
+                          'tradeItemId': request['tradeItemId'],
+                          'offerId': request['id'],
+                        },
+                      );
+                    },
+                    icon: const Icon(Icons.edit, size: 18),
+                    label: const Text('Edit'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blueGrey,
+                      side: const BorderSide(color: Colors.blueGrey),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: startChat,
+                    icon: const Icon(Icons.message, size: 18),
+                    label: const Text('Message'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF9C27B0),
+                      side: const BorderSide(color: Color(0xFF9C27B0)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _cancelRequest(request['id']),
+                    icon: const Icon(Icons.cancel_outlined, size: 18),
+                    label: const Text('Cancel'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                    ),
                   ),
                 ),
               ],

@@ -50,6 +50,8 @@ class RentalListingModel {
   final String? curfewRules; // Optional curfew rules
   final int?
   initialOccupants; // Pre-existing occupants before listing (not tracked in app)
+  final int
+  rentalCount; // How many times this listing has been successfully rented (all time)
 
   RentalListingModel({
     required this.id,
@@ -86,6 +88,7 @@ class RentalListingModel {
     this.genderPreference,
     this.curfewRules,
     this.initialOccupants,
+    this.rentalCount = 0,
   });
 
   factory RentalListingModel.fromMap(Map<String, dynamic> data, String id) {
@@ -179,6 +182,9 @@ class RentalListingModel {
       initialOccupants: (data['initialOccupants'] is int)
           ? data['initialOccupants'] as int
           : int.tryParse('${data['initialOccupants']}'),
+      rentalCount: (data['rentalCount'] is int)
+          ? data['rentalCount'] as int
+          : int.tryParse((data['rentalCount'] ?? '0').toString()) ?? 0,
     );
   }
 
@@ -218,6 +224,7 @@ class RentalListingModel {
       'genderPreference': genderPreference,
       'curfewRules': curfewRules,
       'initialOccupants': initialOccupants,
+      'rentalCount': rentalCount,
     };
   }
 

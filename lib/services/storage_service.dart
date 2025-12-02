@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
@@ -871,5 +872,97 @@ class StorageService {
       contentType: contentType,
       cacheControl: cacheControl,
     );
+  }
+
+  /// Upload group image (File for mobile)
+  Future<String> uploadGroupImage({
+    required File file,
+    required String groupId,
+    required String userId,
+  }) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final imagePath = 'groups/$groupId/image_$timestamp.jpg';
+
+      final ref = _storage.ref().child(imagePath);
+      log('📤 Uploading group image to: $imagePath');
+
+      const int maxAttempts = 3;
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          final uploadTask = ref.putFile(
+            file,
+            SettableMetadata(
+              contentType: 'image/jpeg',
+              cacheControl: 'public, max-age=31536000, immutable',
+            ),
+          );
+
+          final snapshot = await uploadTask.timeout(const Duration(minutes: 5));
+          return await snapshot.ref.getDownloadURL();
+        } catch (e) {
+          if (attempt == maxAttempts) rethrow;
+          await Future.delayed(Duration(seconds: attempt));
+        }
+      }
+      throw Exception('Upload failed after $maxAttempts attempts');
+    } catch (e) {
+      throw Exception('Failed to upload group image: $e');
+    }
+  }
+
+  /// Upload group image (bytes for web)
+  Future<String> uploadGroupImageBytes({
+    required Uint8List bytes,
+    required String groupId,
+    required String userId,
+  }) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final imagePath = 'groups/$groupId/image_$timestamp.jpg';
+
+      final ref = _storage.ref().child(imagePath);
+      log('📤 Uploading group image to: $imagePath');
+
+      // Detect content type
+      String contentType = 'image/jpeg';
+      if (bytes.length >= 4) {
+        if (bytes[0] == 0x89 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x4E &&
+            bytes[3] == 0x47) {
+          contentType = 'image/png';
+        } else if (bytes[0] == 0xFF && bytes[1] == 0xD8) {
+          contentType = 'image/jpeg';
+        } else if (bytes[0] == 0x52 &&
+            bytes[1] == 0x49 &&
+            bytes[2] == 0x46 &&
+            bytes[3] == 0x46) {
+          contentType = 'image/webp';
+        }
+      }
+
+      const int maxAttempts = 3;
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          final uploadTask = ref.putData(
+            bytes,
+            SettableMetadata(
+              contentType: contentType,
+              cacheControl: 'public, max-age=31536000, immutable',
+            ),
+          );
+
+          final snapshot = await uploadTask.timeout(const Duration(minutes: 5));
+          return await snapshot.ref.getDownloadURL();
+        } catch (e) {
+          if (attempt == maxAttempts) rethrow;
+          await Future.delayed(Duration(seconds: attempt));
+        }
+      }
+      throw Exception('Upload failed after $maxAttempts attempts');
+    } catch (e) {
+      throw Exception('Failed to upload group image: $e');
+    }
   }
 }

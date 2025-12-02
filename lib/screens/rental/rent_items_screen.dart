@@ -1311,6 +1311,38 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                                     ],
                                   ],
                                 ),
+                                const SizedBox(height: 4),
+                                Builder(
+                                  builder: (context) {
+                                    final rentalCount =
+                                        (listing['rentalCount'] is int)
+                                        ? listing['rentalCount'] as int
+                                        : int.tryParse(
+                                                (listing['rentalCount'] ?? '0')
+                                                    .toString(),
+                                              ) ??
+                                              0;
+                                    return Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.history,
+                                          size: 13,
+                                          color: Colors.grey,
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          rentalCount > 0
+                                              ? 'Rented $rentalCount ${rentalCount == 1 ? "time" : "times"}'
+                                              : 'Not yet rented',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
                               ],
                             ),
                           ),

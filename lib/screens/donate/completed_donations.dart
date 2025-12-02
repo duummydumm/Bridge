@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/giveaway_listing_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import 'giveaway_rating_screen.dart';
 
 class CompletedDonationsScreen extends StatefulWidget {
   const CompletedDonationsScreen({super.key});
@@ -511,8 +512,23 @@ class _CompletedDonationsScreenState extends State<CompletedDonationsScreen> {
                   ],
                 ),
 
-                // Action Button
+                // Action Buttons
                 const SizedBox(height: 16),
+                if (giveaway.claimedBy != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _rateGiveaway(giveaway),
+                      icon: const Icon(Icons.star),
+                      label: const Text('Rate Donation'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber[700],
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                if (giveaway.claimedBy != null) const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -538,6 +554,42 @@ class _CompletedDonationsScreenState extends State<CompletedDonationsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _rateGiveaway(GiveawayListingModel giveaway) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    if (authProvider.user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to rate a giveaway'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GiveawayRatingScreen(
+          giveawayId: giveaway.id,
+          donorId: giveaway.donorId,
+          donorName: giveaway.donorName,
+          giveawayTitle: giveaway.title,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      // Refresh the screen or show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Thank you for your rating!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   String _formatDate(DateTime date) {

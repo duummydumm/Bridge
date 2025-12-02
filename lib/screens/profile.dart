@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../providers/user_provider.dart';
-import '../providers/auth_provider.dart';
 import '../models/user_model.dart';
 import '../models/rating_model.dart';
 import '../services/rating_service.dart';
@@ -202,11 +202,6 @@ class ProfileScreenState extends State<ProfileScreen> {
 
                       // Reviews & Ratings
                       _buildReviewsSection(),
-
-                      const SizedBox(height: 24),
-
-                      // Logout card moved from Settings
-                      _buildLogoutCard(),
                     ],
                   ),
                 ),
@@ -243,7 +238,7 @@ class ProfileScreenState extends State<ProfileScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF00897B).withOpacity(0.3),
+            color: const Color(0xFF00897B).withValues(alpha: 0.3),
             blurRadius: 20,
             offset: const Offset(0, 8),
             spreadRadius: 0,
@@ -263,7 +258,7 @@ class ProfileScreenState extends State<ProfileScreen> {
               height: 150,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
               ),
             ),
           ),
@@ -275,7 +270,7 @@ class ProfileScreenState extends State<ProfileScreen> {
               height: 120,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.08),
+                color: Colors.white.withValues(alpha: 0.08),
               ),
             ),
           ),
@@ -295,7 +290,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                       border: Border.all(color: Colors.white, width: 4),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
+                          color: Colors.black.withValues(alpha: 0.2),
                           blurRadius: 20,
                           spreadRadius: 2,
                         ),
@@ -339,7 +334,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: Colors.black.withValues(alpha: 0.1),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -381,7 +376,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
@@ -423,7 +418,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
@@ -457,10 +452,10 @@ class ProfileScreenState extends State<ProfileScreen> {
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.3),
+                      color: Colors.white.withValues(alpha: 0.3),
                       width: 1,
                     ),
                   ),
@@ -473,13 +468,9 @@ class ProfileScreenState extends State<ProfileScreen> {
                         size: 22,
                       ),
                       const SizedBox(width: 8),
-                      FutureBuilder<double>(
-                        future: _ratingService.getAverageRating(
-                          Provider.of<UserProvider>(context).currentUser?.uid ??
-                              '',
-                        ),
-                        builder: (context, snapshot) {
-                          final rating = snapshot.data ?? _averageRating;
+                      Builder(
+                        builder: (context) {
+                          final rating = _averageRating;
                           final showBadge = rating > 0;
 
                           return Row(
@@ -511,13 +502,13 @@ class ProfileScreenState extends State<ProfileScreen> {
                                         : null,
                                     color: rating >= 4.5
                                         ? null
-                                        : Colors.white.withOpacity(0.3),
+                                        : Colors.white.withValues(alpha: 0.3),
                                     borderRadius: BorderRadius.circular(12),
                                     boxShadow: rating >= 4.5
                                         ? [
                                             BoxShadow(
-                                              color: Colors.amber.withOpacity(
-                                                0.4,
+                                              color: Colors.amber.withValues(
+                                                alpha: 0.4,
                                               ),
                                               blurRadius: 8,
                                               offset: const Offset(0, 2),
@@ -551,12 +542,17 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildActionButtons() {
+    if (!kDebugMode) {
+      // Hide test-only action buttons in release builds
+      return const SizedBox.shrink();
+    }
+
     return Row(
       children: [
         Expanded(
           child: _buildActionButton(
             icon: Icons.chat_bubble_outline,
-            label: 'Leave Feedback',
+            label: 'Leave Feedback (Test)',
             onTap: () {
               // Test rating feature - navigate to rating screen
               // For testing: You'll need to enter a user ID
@@ -594,13 +590,13 @@ class ProfileScreenState extends State<ProfileScreen> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF00897B).withOpacity(0.1),
+                color: const Color(0xFF00897B).withValues(alpha: 0.1),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
                 spreadRadius: 0,
               ),
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -659,13 +655,13 @@ class ProfileScreenState extends State<ProfileScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF00897B).withOpacity(0.1),
+            color: const Color(0xFF00897B).withValues(alpha: 0.1),
             blurRadius: 12,
             offset: const Offset(0, 4),
             spreadRadius: 0,
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -680,13 +676,13 @@ class ProfileScreenState extends State<ProfileScreen> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  const Color(0xFF00897B).withOpacity(0.2),
-                  const Color(0xFF26A69A).withOpacity(0.1),
+                  const Color(0xFF00897B).withValues(alpha: 0.2),
+                  const Color(0xFF26A69A).withValues(alpha: 0.1),
                 ],
               ),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: const Color(0xFF00897B).withOpacity(0.3),
+                color: const Color(0xFF00897B).withValues(alpha: 0.3),
                 width: 1,
               ),
             ),
@@ -738,7 +734,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                       (isVerified
                               ? const Color(0xFF66BB6A)
                               : const Color(0xFFFFB74D))
-                          .withOpacity(0.3),
+                          .withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -777,13 +773,13 @@ class ProfileScreenState extends State<ProfileScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF00897B).withOpacity(0.1),
+            color: const Color(0xFF00897B).withValues(alpha: 0.1),
             blurRadius: 12,
             offset: const Offset(0, 4),
             spreadRadius: 0,
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -899,13 +895,13 @@ class ProfileScreenState extends State<ProfileScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF00897B).withOpacity(0.1),
+            color: const Color(0xFF00897B).withValues(alpha: 0.1),
             blurRadius: 12,
             offset: const Offset(0, 4),
             spreadRadius: 0,
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -995,6 +991,12 @@ class ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => _shareProfile(user),
                 color: const Color(0xFF607D8B),
               ),
+              _buildQuickLinkButton(
+                icon: Icons.settings,
+                label: 'Settings',
+                route: '/settings',
+                color: const Color(0xFF757575),
+              ),
             ],
           ),
         ],
@@ -1024,9 +1026,9 @@ class ProfileScreenState extends State<ProfileScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withOpacity(0.3), width: 1),
+            border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1109,13 +1111,16 @@ Check out my profile on Bridge App!
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [cardColor.withOpacity(0.15), cardColor.withOpacity(0.08)],
+            colors: [
+              cardColor.withValues(alpha: 0.15),
+              cardColor.withValues(alpha: 0.08),
+            ],
           ),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: cardColor.withOpacity(0.2), width: 1),
+          border: Border.all(color: cardColor.withValues(alpha: 0.2), width: 1),
           boxShadow: [
             BoxShadow(
-              color: cardColor.withOpacity(0.1),
+              color: cardColor.withValues(alpha: 0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -1156,13 +1161,13 @@ Check out my profile on Bridge App!
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF00897B).withOpacity(0.1),
+            color: const Color(0xFF00897B).withValues(alpha: 0.1),
             blurRadius: 12,
             offset: const Offset(0, 4),
             spreadRadius: 0,
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1227,7 +1232,7 @@ Check out my profile on Bridge App!
                   boxShadow: _averageRating > 0
                       ? [
                           BoxShadow(
-                            color: Colors.amber.withOpacity(0.3),
+                            color: Colors.amber.withValues(alpha: 0.3),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -1285,7 +1290,7 @@ Check out my profile on Bridge App!
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.amber.withOpacity(0.4),
+                                  color: Colors.amber.withValues(alpha: 0.4),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -1342,7 +1347,7 @@ Check out my profile on Bridge App!
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -1368,13 +1373,13 @@ Check out my profile on Bridge App!
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF00897B).withOpacity(0.1),
+            color: const Color(0xFF00897B).withValues(alpha: 0.1),
             blurRadius: 12,
             offset: const Offset(0, 4),
             spreadRadius: 0,
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1428,7 +1433,7 @@ Check out my profile on Bridge App!
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF00897B).withOpacity(0.1),
+                  color: const Color(0xFF00897B).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
@@ -1574,8 +1579,8 @@ Check out my profile on Bridge App!
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFF00897B).withOpacity(0.2),
-                  const Color(0xFF26A69A).withOpacity(0.1),
+                  const Color(0xFF00897B).withValues(alpha: 0.2),
+                  const Color(0xFF26A69A).withValues(alpha: 0.1),
                 ],
               ),
             ),
@@ -1644,118 +1649,6 @@ Check out my profile on Bridge App!
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildLogoutCard() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () async {
-          HapticFeedback.selectionClick();
-          final confirm = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: const Text(
-                'Logout',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              content: const Text(
-                'Are you sure you want to logout?',
-                style: TextStyle(fontSize: 15),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(color: Color(0xFF00897B), fontSize: 15),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text(
-                    'Logout',
-                    style: TextStyle(
-                      color: Colors.red,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-
-          if (confirm == true && context.mounted) {
-            final userProvider = Provider.of<UserProvider>(
-              context,
-              listen: false,
-            );
-            final authProvider = Provider.of<AuthProvider>(
-              context,
-              listen: false,
-            );
-            userProvider.clearUser();
-            await authProvider.logout();
-            if (context.mounted) {
-              Navigator.pushReplacementNamed(context, '/');
-            }
-          }
-        },
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.red.withOpacity(0.1),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-                spreadRadius: 0,
-              ),
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.logout_rounded,
-                  color: Colors.red,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              const Expanded(
-                child: Text(
-                  'Logout',
-                  style: TextStyle(
-                    fontSize: 17,
-                    color: Colors.red,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Colors.grey[400], size: 24),
-            ],
-          ),
-        ),
       ),
     );
   }

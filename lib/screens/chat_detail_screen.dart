@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
@@ -21,6 +22,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'user_public_profile_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_theme_provider.dart';
+import 'chat/conversation_info_screen.dart';
 
 class ChatDetailScreen extends StatefulWidget {
   final String conversationId;
@@ -54,12 +56,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   bool _isUserBlocked = false;
   bool _isUploadingImage = false;
   bool _isOtherUserTyping = false;
+  bool _isMuted = false;
   Timer? _typingTimer;
   MessageModel? _replyingToMessage;
   bool _isSearchMode = false;
   String _searchQuery = '';
   List<MessageModel> _searchResults = [];
   int _currentSearchIndex = -1;
+  ConversationModel? _conversation;
+  bool _isGroup = false;
 
   @override
   void initState() {
@@ -78,7 +83,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
       // Check if user is blocked
       _checkIfBlocked();
+
+      // Load mute status
+      _loadMuteStatus(chatProvider);
     });
+  }
+
+  Future<void> _loadMuteStatus(ChatProvider chatProvider) async {
+    try {
+      final conversation = await chatProvider.getConversation(
+        widget.conversationId,
+      );
+      if (conversation != null && mounted) {
+        setState(() {
+          _isMuted = conversation.isMutedByUser(widget.userId);
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading mute status: $e');
+    }
   }
 
   void _setupTypingIndicator(ChatProvider chatProvider) {
@@ -151,8 +174,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       }
 
       if (conversation != null) {
+        // Store conversation and check if it's a group
+        _conversation = conversation;
+
         // Get other participant ID
         _otherParticipantId = conversation.getOtherParticipant(widget.userId);
+
+        // Update mute status and group status
+        if (mounted) {
+          setState(() {
+            _isMuted = conversation!.isMutedByUser(widget.userId);
+            _isGroup = conversation.isGroup;
+          });
+        }
 
         if (_otherParticipantId != null && _otherParticipantId!.isNotEmpty) {
           // Check if blocked
@@ -316,192 +350,209 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final chatThemeProvider = Provider.of<ChatThemeProvider>(context);
     final themeData = chatThemeProvider.getThemeData(widget.conversationId);
 
-    return Scaffold(
-      backgroundColor: themeData.backgroundColor,
-      appBar: AppBar(
-        backgroundColor: themeData.primaryColor,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () async {
-            // Mark messages as read before leaving
-            final chatProvider = Provider.of<ChatProvider>(
-              context,
-              listen: false,
-            );
-            await chatProvider.markMessagesAsRead(
-              widget.conversationId,
-              widget.userId,
-            );
-            // Explicitly reload conversations to ensure badge updates
-            await chatProvider.loadConversations(widget.userId);
-            // Small delay to ensure UI updates before navigation
-            await Future.delayed(const Duration(milliseconds: 200));
-            if (mounted) {
-              Navigator.pop(context);
-            }
-          },
-        ),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.white.withOpacity(0.2),
-              child: Text(
-                widget.otherParticipantName.isNotEmpty
-                    ? widget.otherParticipantName[0].toUpperCase()
-                    : 'U',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+    return PopScope(
+      onPopInvoked: (didPop) async {
+        if (didPop) {
+          // Mark messages as read before leaving
+          final chatProvider = Provider.of<ChatProvider>(
+            context,
+            listen: false,
+          );
+          await chatProvider.markMessagesAsRead(
+            widget.conversationId,
+            widget.userId,
+          );
+          // Explicitly reload conversations to ensure badge updates
+          await chatProvider.loadConversations(widget.userId);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: themeData.backgroundColor,
+        appBar: AppBar(
+          backgroundColor: themeData.primaryColor,
+          elevation: 0,
+          automaticallyImplyLeading: true,
+          title: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.white.withOpacity(0.2),
+                child: Text(
+                  widget.otherParticipantName.isNotEmpty
+                      ? widget.otherParticipantName[0].toUpperCase()
+                      : 'U',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  InkWell(
-                    onTap: () {
-                      if (_otherParticipantId != null &&
-                          _otherParticipantId!.isNotEmpty) {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => UserPublicProfileScreen(
-                              userId: _otherParticipantId!,
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                    child: Text(
-                      widget.otherParticipantName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        decoration: TextDecoration.underline,
-                        decorationColor: Colors.white70,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  StreamBuilder<DateTime?>(
-                    stream: _otherParticipantId != null
-                        ? _firestoreService.getUserLastSeenStream(
-                            _otherParticipantId!,
-                          )
-                        : Stream.value(null),
-                    builder: (context, snapshot) {
-                      final lastSeen = snapshot.data ?? _otherUserLastSeen;
-                      final isOnline = _presenceService.isUserOnline(lastSeen);
-                      final statusText = _presenceService.getStatusText(
-                        lastSeen,
-                      );
-
-                      return Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            margin: const EdgeInsets.only(right: 6),
-                            decoration: BoxDecoration(
-                              color: isOnline ? Colors.green : Colors.grey,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          Text(
-                            statusText,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Only make title clickable for 1-on-1 chats, not groups
+                    _isGroup
+                        ? Text(
+                            widget.otherParticipantName,
                             style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : InkWell(
+                            onTap: () {
+                              if (_otherParticipantId != null &&
+                                  _otherParticipantId!.isNotEmpty) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => UserPublicProfileScreen(
+                                      userId: _otherParticipantId!,
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            child: Text(
+                              widget.otherParticipantName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                decoration: TextDecoration.underline,
+                                decorationColor: Colors.white70,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ],
-                      );
-                    },
-                  ),
-                ],
+                    // Only show online status for 1-on-1 chats, not groups
+                    if (!_isGroup)
+                      StreamBuilder<DateTime?>(
+                        stream: _otherParticipantId != null
+                            ? _firestoreService.getUserLastSeenStream(
+                                _otherParticipantId!,
+                              )
+                            : Stream.value(null),
+                        builder: (context, snapshot) {
+                          final lastSeen = snapshot.data ?? _otherUserLastSeen;
+                          final isOnline = _presenceService.isUserOnline(
+                            lastSeen,
+                          );
+                          final statusText = _presenceService.getStatusText(
+                            lastSeen,
+                          );
+
+                          return Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                margin: const EdgeInsets.only(right: 6),
+                                decoration: BoxDecoration(
+                                  color: isOnline ? Colors.green : Colors.grey,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              Text(
+                                statusText,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                  ],
+                ),
               ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: Icon(
+                _isSearchMode ? Icons.close : Icons.search,
+                color: Colors.white,
+              ),
+              onPressed: () {
+                setState(() {
+                  _isSearchMode = !_isSearchMode;
+                  if (!_isSearchMode) {
+                    _searchQuery = '';
+                    _searchResults = [];
+                    _currentSearchIndex = -1;
+                  }
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.more_vert, color: Colors.white),
+              onPressed: () {
+                // Show options menu
+                _showOptionsMenu();
+              },
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _isSearchMode ? Icons.close : Icons.search,
-              color: Colors.white,
+        body: Column(
+          children: [
+            // Offline Banner
+            const OfflineBannerWidget(),
+            // Search Bar (when in search mode)
+            if (_isSearchMode) _buildSearchBar(),
+            // Messages List
+            Expanded(
+              child:
+                  chatProvider.isLoadingMessages &&
+                      chatProvider.messages.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : _buildMessagesList(chatProvider, themeData),
             ),
-            onPressed: () {
-              setState(() {
-                _isSearchMode = !_isSearchMode;
-                if (!_isSearchMode) {
-                  _searchQuery = '';
-                  _searchResults = [];
-                  _currentSearchIndex = -1;
-                }
-              });
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
-            onPressed: () {
-              // Show options menu
-              _showOptionsMenu();
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Offline Banner
-          const OfflineBannerWidget(),
-          // Search Bar (when in search mode)
-          if (_isSearchMode) _buildSearchBar(),
-          // Messages List
-          Expanded(
-            child:
-                chatProvider.isLoadingMessages && chatProvider.messages.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : _buildMessagesList(chatProvider, themeData),
-          ),
-          // Typing Indicator
-          if (_isOtherUserTyping && !_isSearchMode)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.grey[600]!,
+            // Typing Indicator
+            if (_isOtherUserTyping && !_isSearchMode)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Colors.grey[600]!,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${widget.otherParticipantName} is typing...',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 14,
-                      fontStyle: FontStyle.italic,
+                    const SizedBox(width: 8),
+                    Text(
+                      '${widget.otherParticipantName} is typing...',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          // Reply Preview
-          if (_replyingToMessage != null && !_isSearchMode)
-            _buildReplyPreview(),
-          // Message Input Bar
-          _buildMessageInputBar(),
-        ],
+            // Reply Preview
+            if (_replyingToMessage != null && !_isSearchMode)
+              _buildReplyPreview(),
+            // Message Input Bar
+            _buildMessageInputBar(),
+          ],
+        ),
       ),
     );
   }
@@ -674,6 +725,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
             const SizedBox(width: 8),
           ],
+          // Show sender name in group chats
+          if (_isGroup && !isMe)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                message.senderName,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: isMe ? Colors.white70 : themeData.primaryColor,
+                ),
+              ),
+            ),
           Container(
             constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.7,
@@ -971,15 +1035,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               title: const Text('Conversation Info'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Show conversation info
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => ConversationInfoScreen(
+                      conversationId: widget.conversationId,
+                      userId: widget.userId,
+                      otherParticipantName: widget.otherParticipantName,
+                    ),
+                  ),
+                );
               },
             ),
             ListTile(
-              leading: const Icon(Icons.notifications_off),
-              title: const Text('Mute Notifications'),
+              leading: Icon(
+                _isMuted ? Icons.notifications_off : Icons.notifications,
+              ),
+              title: Text(
+                _isMuted ? 'Unmute Notifications' : 'Mute Notifications',
+              ),
+              subtitle: Text(
+                _isMuted
+                    ? 'Tap to receive notifications'
+                    : 'You won\'t receive notifications',
+              ),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Mute conversation
+                _toggleMute();
               },
             ),
             ListTile(
@@ -1732,6 +1813,93 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
+  Future<void> _copyMessageToClipboard(MessageModel message) async {
+    try {
+      String textToCopy = '';
+
+      // If message is a reply, include the reply context
+      if (message.replyToContent != null &&
+          message.replyToContent!.isNotEmpty) {
+        final replyContext = message.replyToSenderName != null
+            ? '${message.replyToSenderName}: ${message.replyToContent}'
+            : message.replyToContent!;
+        textToCopy = 'Replying to: $replyContext\n\n';
+      }
+
+      // Add the main message content
+      if (message.content.isNotEmpty) {
+        textToCopy += message.content;
+      }
+
+      // If message has an image, add image URL or indicator
+      if (message.imageUrl != null && message.imageUrl!.isNotEmpty) {
+        if (textToCopy.isNotEmpty) {
+          textToCopy += '\n\n';
+        }
+        // Include image URL so users can access it
+        textToCopy += '📷 Image: ${message.imageUrl}';
+      }
+
+      // If message is deleted, don't copy anything
+      if (message.isDeleted && message.deletedForEveryone) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cannot copy deleted message'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      // If there's nothing to copy (empty message with no image)
+      if (textToCopy.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Nothing to copy'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Copy to clipboard
+      await Clipboard.setData(ClipboardData(text: textToCopy.trim()));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('Message copied to clipboard')),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to copy: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   void _showMessageOptions(MessageModel message, bool isMe) {
     showModalBottomSheet(
       context: context,
@@ -1767,13 +1935,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               title: const Text('Copy'),
               onTap: () {
                 Navigator.pop(context);
-                // Copy to clipboard would go here
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Message copied to clipboard'),
-                    duration: Duration(seconds: 1),
-                  ),
-                );
+                _copyMessageToClipboard(message);
               },
             ),
           ],
@@ -1877,6 +2039,43 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
+      );
+    }
+  }
+
+  Future<void> _toggleMute() async {
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    final success = _isMuted
+        ? await chatProvider.unmuteConversation(
+            conversationId: widget.conversationId,
+            userId: widget.userId,
+          )
+        : await chatProvider.muteConversation(
+            conversationId: widget.conversationId,
+            userId: widget.userId,
+          );
+
+    if (success && mounted) {
+      setState(() {
+        _isMuted = !_isMuted;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isMuted
+                ? 'Conversation muted. You won\'t receive notifications.'
+                : 'Conversation unmuted. You will receive notifications.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to update mute status'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }

@@ -360,6 +360,297 @@ class ChatProvider extends ChangeNotifier {
     });
   }
 
+  // Mute a conversation
+  Future<bool> muteConversation({
+    required String conversationId,
+    required String userId,
+  }) async {
+    try {
+      await _chatService.muteConversation(
+        conversationId: conversationId,
+        userId: userId,
+      );
+
+      // Update local state
+      final conversationIndex = _conversations.indexWhere(
+        (c) => c.conversationId == conversationId,
+      );
+      if (conversationIndex != -1) {
+        final conversation = _conversations[conversationIndex];
+        final updatedMutedByUsers = List<String>.from(
+          conversation.mutedByUsers,
+        );
+        if (!updatedMutedByUsers.contains(userId)) {
+          updatedMutedByUsers.add(userId);
+        }
+
+        // Create updated conversation
+        final updatedConversation = ConversationModel(
+          conversationId: conversation.conversationId,
+          participants: conversation.participants,
+          participantNames: conversation.participantNames,
+          lastMessage: conversation.lastMessage,
+          lastMessageTime: conversation.lastMessageTime,
+          lastMessageSenderId: conversation.lastMessageSenderId,
+          hasUnreadMessages: conversation.hasUnreadMessages,
+          unreadCount: conversation.unreadCount,
+          unreadCountByUser: conversation.unreadCountByUser,
+          createdAt: conversation.createdAt,
+          updatedAt: conversation.updatedAt,
+          itemId: conversation.itemId,
+          itemTitle: conversation.itemTitle,
+          mutedByUsers: updatedMutedByUsers,
+        );
+
+        _conversations[conversationIndex] = updatedConversation;
+        notifyListeners();
+      }
+
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Unmute a conversation
+  Future<bool> unmuteConversation({
+    required String conversationId,
+    required String userId,
+  }) async {
+    try {
+      await _chatService.unmuteConversation(
+        conversationId: conversationId,
+        userId: userId,
+      );
+
+      // Update local state
+      final conversationIndex = _conversations.indexWhere(
+        (c) => c.conversationId == conversationId,
+      );
+      if (conversationIndex != -1) {
+        final conversation = _conversations[conversationIndex];
+        final updatedMutedByUsers = List<String>.from(conversation.mutedByUsers)
+          ..remove(userId);
+
+        // Create updated conversation
+        final updatedConversation = ConversationModel(
+          conversationId: conversation.conversationId,
+          participants: conversation.participants,
+          participantNames: conversation.participantNames,
+          lastMessage: conversation.lastMessage,
+          lastMessageTime: conversation.lastMessageTime,
+          lastMessageSenderId: conversation.lastMessageSenderId,
+          hasUnreadMessages: conversation.hasUnreadMessages,
+          unreadCount: conversation.unreadCount,
+          unreadCountByUser: conversation.unreadCountByUser,
+          createdAt: conversation.createdAt,
+          updatedAt: conversation.updatedAt,
+          itemId: conversation.itemId,
+          itemTitle: conversation.itemTitle,
+          mutedByUsers: updatedMutedByUsers,
+        );
+
+        _conversations[conversationIndex] = updatedConversation;
+        notifyListeners();
+      }
+
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Get conversation by ID
+  Future<ConversationModel?> getConversation(String conversationId) async {
+    try {
+      return await _chatService.getConversation(conversationId);
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return null;
+    }
+  }
+
+  // Create a group conversation
+  Future<String?> createGroupConversation({
+    required String adminId,
+    required String adminName,
+    required List<String> participantIds,
+    required Map<String, String> participantNames,
+    required String groupName,
+    String? groupImageUrl,
+  }) async {
+    try {
+      final conversationId = await _chatService.createGroupConversation(
+        adminId: adminId,
+        adminName: adminName,
+        participantIds: participantIds,
+        participantNames: participantNames,
+        groupName: groupName,
+        groupImageUrl: groupImageUrl,
+      );
+
+      // Refresh conversations list
+      await loadConversations(adminId);
+
+      return conversationId;
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return null;
+    }
+  }
+
+  // Add participant to group
+  Future<bool> addParticipantToGroup({
+    required String conversationId,
+    required String userId,
+    required String userName,
+    required String adminId,
+  }) async {
+    try {
+      await _chatService.addParticipantToGroup(
+        conversationId: conversationId,
+        userId: userId,
+        userName: userName,
+        adminId: adminId,
+      );
+
+      // Refresh conversations
+      await loadConversations(adminId);
+
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Remove participant from group
+  Future<bool> removeParticipantFromGroup({
+    required String conversationId,
+    required String userId,
+    required String adminId,
+  }) async {
+    try {
+      await _chatService.removeParticipantFromGroup(
+        conversationId: conversationId,
+        userId: userId,
+        adminId: adminId,
+      );
+
+      // Refresh conversations
+      await loadConversations(adminId);
+
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Update group name
+  Future<bool> updateGroupName({
+    required String conversationId,
+    required String newName,
+    required String adminId,
+  }) async {
+    try {
+      await _chatService.updateGroupName(
+        conversationId: conversationId,
+        newName: newName,
+        adminId: adminId,
+      );
+
+      // Refresh conversations
+      await loadConversations(adminId);
+
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Update group image
+  Future<bool> updateGroupImage({
+    required String conversationId,
+    required String? imageUrl,
+    required String adminId,
+  }) async {
+    try {
+      await _chatService.updateGroupImage(
+        conversationId: conversationId,
+        imageUrl: imageUrl,
+        adminId: adminId,
+      );
+
+      // Refresh conversations
+      await loadConversations(adminId);
+
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Transfer group admin
+  Future<bool> transferGroupAdmin({
+    required String conversationId,
+    required String newAdminId,
+    required String currentAdminId,
+  }) async {
+    try {
+      await _chatService.transferGroupAdmin(
+        conversationId: conversationId,
+        newAdminId: newAdminId,
+        currentAdminId: currentAdminId,
+      );
+
+      // Refresh conversations
+      await loadConversations(currentAdminId);
+
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Update group settings
+  Future<bool> updateGroupSettings({
+    required String conversationId,
+    required Map<String, dynamic> settings,
+    required String adminId,
+  }) async {
+    try {
+      await _chatService.updateGroupSettings(
+        conversationId: conversationId,
+        settings: settings,
+        adminId: adminId,
+      );
+
+      // Refresh conversations
+      await loadConversations(adminId);
+
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
   @override
   void dispose() {
     _conversationsSubscription?.cancel();

@@ -18,10 +18,12 @@ class ItemModel {
   final DateTime createdAt;
   final DateTime? lastUpdated;
 
-  // Optional: Rental details
+  // Optional: Rental / borrow details
   final String? currentBorrowerId;
   final DateTime? borrowedDate;
   final DateTime? returnDate;
+  final int
+  borrowCount; // How many times this item has been borrowed (all time)
 
   ItemModel({
     required this.itemId,
@@ -41,6 +43,7 @@ class ItemModel {
     this.currentBorrowerId,
     this.borrowedDate,
     this.returnDate,
+    this.borrowCount = 0,
   });
 
   factory ItemModel.fromMap(Map<String, dynamic> data, String documentId) {
@@ -83,6 +86,9 @@ class ItemModel {
       currentBorrowerId: data['currentBorrowerId'],
       borrowedDate: (data['borrowedDate'] as Timestamp?)?.toDate(),
       returnDate: (data['returnDate'] as Timestamp?)?.toDate(),
+      borrowCount: (data['borrowCount'] is int)
+          ? data['borrowCount'] as int
+          : int.tryParse((data['borrowCount'] ?? '0').toString()) ?? 0,
     );
   }
 
@@ -108,6 +114,7 @@ class ItemModel {
           ? Timestamp.fromDate(borrowedDate!)
           : null,
       'returnDate': returnDate != null ? Timestamp.fromDate(returnDate!) : null,
+      'borrowCount': borrowCount,
     };
   }
 

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/trade_item_model.dart';
+import '../../models/trade_offer_model.dart';
 import '../../services/firestore_service.dart';
 import '../../services/storage_service.dart';
 import '../../providers/user_provider.dart';
@@ -33,6 +34,16 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
   bool _loading = true;
   String? _error;
 
+  // Edit / counter-offer support
+  bool _initialized = false;
+  String? _offerId;
+  TradeOfferModel? _existingOffer;
+  String? _existingOfferedImageUrl;
+  bool _isCounter = false;
+  String? _counterToUserId;
+  String? _counterToUserName;
+  String? _parentOfferId;
+
   // Form controllers
   final _itemNameController = TextEditingController();
   final _itemDescriptionController = TextEditingController();
@@ -58,6 +69,9 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map && args['tradeItemId'] is String) {
       // Check if this is a matched trade (pre-filled data)
@@ -81,7 +95,31 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
           }
         }
       }
-      _loadTradeItem(args['tradeItemId'] as String);
+
+      // Check if we're editing an existing offer
+      if (args['offerId'] is String) {
+        _offerId = args['offerId'] as String;
+      }
+
+      // Counter-offer mode (listing owner responding back)
+      if (args['isCounter'] == 'true') {
+        _isCounter = true;
+        if (args['counterToUserId'] is String) {
+          _counterToUserId = args['counterToUserId'] as String;
+        }
+        if (args['counterToUserName'] is String) {
+          _counterToUserName = args['counterToUserName'] as String;
+        }
+        if (args['parentOfferId'] is String) {
+          _parentOfferId = args['parentOfferId'] as String;
+        }
+      }
+
+      _loadTradeItem(args['tradeItemId'] as String).then((_) {
+        if (_offerId != null) {
+          _loadExistingOffer(_offerId!);
+        }
+      });
     } else if (_loading) {
       setState(() {
         _error = 'Missing tradeItemId in route arguments';
@@ -116,6 +154,28 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
     }
   }
 
+  Future<void> _loadExistingOffer(String offerId) async {
+    try {
+      final data = await _firestore.getTradeOffer(offerId);
+      if (data == null) return;
+
+      final offer = TradeOfferModel.fromMap(data, offerId);
+
+      // Only pending offers can be edited
+      if (!offer.isPending) return;
+
+      setState(() {
+        _existingOffer = offer;
+        _itemNameController.text = offer.offeredItemName;
+        _itemDescriptionController.text = offer.offeredItemDescription ?? '';
+        _messageController.text = offer.message ?? '';
+        _existingOfferedImageUrl = offer.offeredItemImageUrl;
+      });
+    } catch (_) {
+      // Silent fail – editing is best-effort
+    }
+  }
+
   Future<void> _pickImage() async {
     try {
       final dynamic pickedImage = await _picker.pickImage(
@@ -141,6 +201,12 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
   void _removeImage() {
     setState(() {
       _selectedImage = null;
+    });
+  }
+
+  void _removeExistingImage() {
+    setState(() {
+      _existingOfferedImageUrl = null;
     });
   }
 
@@ -243,6 +309,57 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
     );
   }
 
+  Widget _buildExistingImagePreview() {
+    if (_existingOfferedImageUrl == null || _existingOfferedImageUrl!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Stack(
+      children: [
+        Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+            color: Colors.grey[100],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              _existingOfferedImageUrl!,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  color: Colors.grey[300],
+                  child: const Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.red,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        Positioned(
+          top: 4,
+          right: 4,
+          child: GestureDetector(
+            onTap: _removeExistingImage,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close, color: Colors.white, size: 16),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<Uint8List> _compressImage(
     dynamic image, {
     int targetBytes = 600 * 1024,
@@ -312,8 +429,10 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
       return;
     }
 
-    // Prevent users from making offers on their own listings
-    if (_tradeItem!.offeredBy == currentUser.uid) {
+    // Prevent users from making offers on their own listings (only for new offers, not counters)
+    if (_offerId == null &&
+        !_isCounter &&
+        _tradeItem!.offeredBy == currentUser.uid) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('You cannot make an offer on your own listing'),
@@ -359,8 +478,8 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
     try {
       _progressText.value = 'Uploading image…';
 
-      // Upload image if selected
-      String? imageUrl;
+      // Upload image if selected; otherwise keep existing image (for edit mode)
+      String? imageUrl = _existingOfferedImageUrl;
       if (_selectedImage != null) {
         try {
           final tempOfferId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -421,7 +540,9 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
         }
       }
 
-      _progressText.value = 'Creating offer…';
+      _progressText.value = _offerId == null
+          ? 'Creating offer…'
+          : 'Updating offer…';
 
       // Get the listing owner's info
       final listingOwnerData = await _firestore.getUser(_tradeItem!.offeredBy);
@@ -429,76 +550,121 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
           ? '${listingOwnerData['firstName']} ${listingOwnerData['lastName']}'
           : 'Unknown User';
 
-      // Create trade offer
-      final offerData = {
-        'tradeItemId': _tradeItem!.id,
-        'fromUserId': currentUser.uid,
-        'fromUserName': currentUser.fullName,
-        'toUserId': _tradeItem!.offeredBy,
-        'toUserName': listingOwnerName,
-        'offeredItemName': _itemNameController.text.trim(),
-        'offeredItemImageUrl': imageUrl,
-        'offeredItemDescription': _itemDescriptionController.text.trim(),
-        'originalOfferedItemName': _tradeItem!.offeredItemName,
-        'originalOfferedItemImageUrl': _tradeItem!.offeredImageUrls.isNotEmpty
-            ? _tradeItem!.offeredImageUrls.first
-            : null,
-        'message': _messageController.text.trim().isNotEmpty
-            ? _messageController.text.trim()
-            : null,
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-      };
+      if (_offerId != null &&
+          _existingOffer != null &&
+          _existingOffer!.isPending) {
+        // Edit existing pending offer
+        await _firestore.updateTradeOffer(_offerId!, {
+          'offeredItemName': _itemNameController.text.trim(),
+          'offeredItemImageUrl': imageUrl,
+          'offeredItemDescription': _itemDescriptionController.text.trim(),
+          'message': _messageController.text.trim().isNotEmpty
+              ? _messageController.text.trim()
+              : null,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
 
-      await _firestore.createTradeOffer(offerData);
-
-      // After creating the trade offer, seed a chat so both parties can communicate
-      try {
-        final chatProvider = Provider.of<ChatProvider>(context, listen: false);
-
-        // Get item title
-        final itemTitle = _tradeItem!.offeredItemName;
-
-        // Get image URL
-        String? imageUrl;
-        if (_tradeItem!.offeredImageUrls.isNotEmpty) {
-          imageUrl = _tradeItem!.offeredImageUrls.first;
-        }
-
-        // Create or get conversation
-        final conversationId = await chatProvider.createOrGetConversation(
-          userId1: currentUser.uid,
-          userId1Name: currentUser.fullName,
-          userId2: _tradeItem!.offeredBy,
-          userId2Name: listingOwnerName,
-          itemId: _tradeItem!.id,
-          itemTitle: itemTitle,
-        );
-
-        if (conversationId != null) {
-          // Seed default message with optional first image of the item
-          final String content = 'I want to offer your trade: $itemTitle';
-          await chatProvider.sendMessage(
-            conversationId: conversationId,
-            senderId: currentUser.uid,
-            senderName: currentUser.fullName,
-            content: content,
-            imageUrl: imageUrl,
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Trade offer updated successfully!'),
+              backgroundColor: Colors.green,
+            ),
           );
+          Navigator.pop(context); // Return to previous screen
         }
-      } catch (_) {
-        // best-effort; failure to seed chat shouldn't block the offer
-      }
+      } else {
+        // Create new trade offer (normal or counter)
+        final toUserId =
+            _isCounter &&
+                _counterToUserId != null &&
+                _counterToUserId!.isNotEmpty
+            ? _counterToUserId!
+            : _tradeItem!.offeredBy;
+        final toUserName =
+            _isCounter &&
+                _counterToUserName != null &&
+                _counterToUserName!.isNotEmpty
+            ? _counterToUserName!
+            : listingOwnerName;
 
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Trade offer submitted successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context); // Return to previous screen
+        final offerData = {
+          'tradeItemId': _tradeItem!.id,
+          'fromUserId': currentUser.uid,
+          'fromUserName': currentUser.fullName,
+          'toUserId': toUserId,
+          'toUserName': toUserName,
+          'offeredItemName': _itemNameController.text.trim(),
+          'offeredItemImageUrl': imageUrl,
+          'offeredItemDescription': _itemDescriptionController.text.trim(),
+          'originalOfferedItemName': _tradeItem!.offeredItemName,
+          'originalOfferedItemImageUrl': _tradeItem!.offeredImageUrls.isNotEmpty
+              ? _tradeItem!.offeredImageUrls.first
+              : null,
+          'message': _messageController.text.trim().isNotEmpty
+              ? _messageController.text.trim()
+              : null,
+          if (_isCounter) 'isCounter': true,
+          if (_isCounter && _parentOfferId != null)
+            'parentOfferId': _parentOfferId,
+          'status': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+        };
+
+        await _firestore.createTradeOffer(offerData);
+
+        // After creating the trade offer, seed a chat so both parties can communicate
+        try {
+          final chatProvider = Provider.of<ChatProvider>(
+            context,
+            listen: false,
+          );
+
+          // Get item title
+          final itemTitle = _tradeItem!.offeredItemName;
+
+          // Get image URL
+          String? listingImageUrl;
+          if (_tradeItem!.offeredImageUrls.isNotEmpty) {
+            listingImageUrl = _tradeItem!.offeredImageUrls.first;
+          }
+
+          // Create or get conversation
+          final conversationId = await chatProvider.createOrGetConversation(
+            userId1: currentUser.uid,
+            userId1Name: currentUser.fullName,
+            userId2: toUserId,
+            userId2Name: toUserName,
+            itemId: _tradeItem!.id,
+            itemTitle: itemTitle,
+          );
+
+          if (conversationId != null) {
+            // Seed default message with optional first image of the item
+            final String content = 'I want to offer your trade: $itemTitle';
+            await chatProvider.sendMessage(
+              conversationId: conversationId,
+              senderId: currentUser.uid,
+              senderName: currentUser.fullName,
+              content: content,
+              imageUrl: listingImageUrl,
+            );
+          }
+        } catch (_) {
+          // best-effort; failure to seed chat shouldn't block the offer
+        }
+
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Trade offer submitted successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context); // Return to previous screen
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -815,7 +981,12 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          if (_selectedImage == null)
+                          if (_selectedImage != null)
+                            _buildImagePreview()
+                          else if (_existingOfferedImageUrl != null &&
+                              _existingOfferedImageUrl!.isNotEmpty)
+                            _buildExistingImagePreview()
+                          else
                             OutlinedButton.icon(
                               onPressed: _pickImage,
                               icon: const Icon(Icons.add_photo_alternate),
@@ -831,9 +1002,7 @@ class _MakeTradeOfferScreenState extends State<MakeTradeOfferScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                            )
-                          else
-                            _buildImagePreview(),
+                            ),
                         ],
                       ),
                     ),

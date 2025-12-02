@@ -125,6 +125,14 @@ class _AccountManagementTabState extends State<AccountManagementTab> {
                     value: 'Unverified',
                     child: Text('Unverified'),
                   ),
+                  DropdownMenuItem(
+                    value: 'High-risk',
+                    child: Text('High-risk users'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Top lenders',
+                    child: Text('Top lenders'),
+                  ),
                 ],
                 onChanged: (value) =>
                     setState(() => _selectedFilter = value ?? 'All Accounts'),
@@ -197,6 +205,18 @@ class _AccountManagementTabState extends State<AccountManagementTab> {
                         return (data['isVerified'] ?? false) == true;
                       case 'Unverified':
                         return (data['isVerified'] ?? false) == false;
+                      case 'High-risk':
+                        final violationCount =
+                            (data['violationCount'] ?? 0) as int;
+                        final reputationScore =
+                            (data['reputationScore'] ?? 0.0).toDouble();
+                        // High-risk definition: multiple violations OR very low reputation
+                        return violationCount >= 3 || reputationScore <= 3.0;
+                      case 'Top lenders':
+                        final reputationScore =
+                            (data['reputationScore'] ?? 0.0).toDouble();
+                        // Top lenders: strong reputation (4.5+) and at least one rating recorded
+                        return reputationScore >= 4.5;
                       default:
                         return true;
                     }

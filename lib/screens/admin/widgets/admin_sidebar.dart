@@ -24,6 +24,7 @@ class AdminSidebar extends StatelessWidget {
       (Icons.notifications_outlined, 'Notifications'),
       (Icons.emergency_outlined, 'Calamity Events'),
       (Icons.article_outlined, 'Activity Logs'),
+      (Icons.feedback_outlined, 'Feedback'),
     ];
 
     return Container(

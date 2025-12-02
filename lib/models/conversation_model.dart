@@ -14,6 +14,12 @@ class ConversationModel {
   final DateTime? updatedAt;
   final String? itemId; // Optional: link to item being discussed
   final String? itemTitle; // For display in conversation header
+  final List<String> mutedByUsers; // User IDs who have muted this conversation
+  final bool isGroup; // Whether this is a group chat
+  final String? groupName; // Name of the group (for group chats)
+  final String? groupAdmin; // User ID of the group admin (for group chats)
+  final String? groupImageUrl; // Optional group image URL
+  final Map<String, dynamic>? groupSettings; // Group settings/permissions
 
   ConversationModel({
     required this.conversationId,
@@ -29,6 +35,12 @@ class ConversationModel {
     this.updatedAt,
     this.itemId,
     this.itemTitle,
+    this.mutedByUsers = const [],
+    this.isGroup = false,
+    this.groupName,
+    this.groupAdmin,
+    this.groupImageUrl,
+    this.groupSettings,
   });
 
   factory ConversationModel.fromMap(
@@ -56,6 +68,9 @@ class ConversationModel {
       });
     }
 
+    // Parse muted by users
+    final mutedByUsers = List<String>.from(data['mutedByUsers'] ?? []);
+
     return ConversationModel(
       conversationId: documentId,
       participants: List<String>.from(data['participants'] ?? []),
@@ -71,6 +86,14 @@ class ConversationModel {
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
       itemId: data['itemId'],
       itemTitle: data['itemTitle'],
+      mutedByUsers: mutedByUsers,
+      isGroup: data['isGroup'] ?? false,
+      groupName: data['groupName'],
+      groupAdmin: data['groupAdmin'],
+      groupImageUrl: data['groupImageUrl'],
+      groupSettings: data['groupSettings'] != null
+          ? Map<String, dynamic>.from(data['groupSettings'])
+          : null,
     );
   }
 
@@ -88,6 +111,12 @@ class ConversationModel {
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
       'itemId': itemId,
       'itemTitle': itemTitle,
+      'mutedByUsers': mutedByUsers,
+      'isGroup': isGroup,
+      'groupName': groupName,
+      'groupAdmin': groupAdmin,
+      'groupImageUrl': groupImageUrl,
+      'groupSettings': groupSettings,
     };
   }
 
@@ -117,4 +146,25 @@ class ConversationModel {
 
   // Check if conversation involves an item
   bool get isItemDiscussion => itemId != null && itemId!.isNotEmpty;
+
+  // Check if conversation is muted by a specific user
+  bool isMutedByUser(String userId) {
+    return mutedByUsers.contains(userId);
+  }
+
+  // Get display name for the conversation
+  String getDisplayName(String currentUserId) {
+    if (isGroup && groupName != null && groupName!.isNotEmpty) {
+      return groupName!;
+    }
+    return getOtherParticipantName(currentUserId);
+  }
+
+  // Check if user is group admin
+  bool isGroupAdmin(String userId) {
+    return isGroup && groupAdmin == userId;
+  }
+
+  // Get participant count for display
+  int get participantCount => participants.length;
 }

@@ -206,6 +206,18 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
+    // Feedback collection - users can submit feedback, admins can read/manage
+    match /feedback/{feedbackId} {
+      // Users can read their own feedback
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Admins can read all feedback
+      allow read: if isAdmin();
+      // Authenticated users can create feedback
+      allow create: if isAuthenticated();
+      // Only admins can update or delete feedback
+      allow update, delete: if isAdmin();
+    }
+    
     // Ratings collection (user reviews and ratings)
     match /ratings/{ratingId} {
       // All authenticated users can read ratings (public reviews)
@@ -258,6 +270,15 @@ service cloud.firestore {
       allow create, update: if isAuthenticated() && request.auth.uid == userId;
       // Users can delete their own FCM token
       allow delete: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Trade disputes collection
+    match /trade_disputes/{disputeId} {
+      // TEMP: allow any authenticated user to create/read trade disputes.
+      // We still store openedByUserId/otherUserId in documents for future tightening.
+      allow create: if isAuthenticated();
+      allow get, list, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
     
     // Default: deny all other collections unless explicitly allowed

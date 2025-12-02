@@ -519,6 +519,28 @@ class _IncomingTradeOffersScreenState extends State<IncomingTradeOffersScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pushNamed(
+                            context,
+                            '/trade/make-offer',
+                            arguments: {
+                              'tradeItemId': offer['tradeItemId'],
+                              'isCounter': 'true',
+                              'counterToUserId': offer['fromUserId'],
+                              'counterToUserName': offer['fromUserName'],
+                              'parentOfferId': offer['id'],
+                            },
+                          );
+                        },
+                        icon: const Icon(Icons.swap_horiz, size: 18),
+                        label: const Text('Counter'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _primaryColor,
+                          side: const BorderSide(color: _primaryColor),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       ElevatedButton.icon(
                         onPressed: () => _acceptOffer(
                           offer['id'] as String,

@@ -30,6 +30,8 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
   List<String> _barangays = [];
   bool _isFilterExpanded = false;
   List<TradeItemModel> _userTradeItems = []; // User's own listings for matching
+  int _pageSize = 50;
+  static const int _pageIncrement = 50;
 
   final List<String> _categories = [
     'All',
@@ -130,14 +132,14 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
     Query<Map<String, dynamic>> tradeFeedQuery = FirebaseFirestore.instance
         .collection('trade_items')
         .where('status', isEqualTo: 'Open')
-        .limit(50);
+        .limit(_pageSize);
 
     // My Trades Query - User's own trade items
     final myTradesQuery = currentUserId.isNotEmpty
         ? FirebaseFirestore.instance
               .collection('trade_items')
               .where('offeredBy', isEqualTo: currentUserId)
-              .limit(50)
+              .limit(_pageSize)
         : null;
 
     return Scaffold(
@@ -253,10 +255,22 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
             ),
             ListTile(
               leading: const Icon(Icons.send_outlined),
-              title: const Text('Your Offers'),
+              title: const Text('Pending Offers'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/trade/pending-requests');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.outbox_outlined),
+              title: const Text('Your Trade Offers'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(
+                  context,
+                  '/trade/history',
+                  arguments: {'filter': 'outgoing'},
+                );
               },
             ),
             ListTile(
@@ -273,6 +287,14 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/trade/history');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.gavel_outlined),
+              title: const Text('Disputed Trades'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/trade/disputed-trades');
               },
             ),
             ListTile(
@@ -576,23 +598,56 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
                   ),
                 );
               }
-              return ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: filteredDocs.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 16),
-                itemBuilder: (context, index) {
-                  final doc = filteredDocs[index];
-                  final data = doc.data();
-                  final tradeItemId = doc.id;
-                  final tradeItem = TradeItemModel.fromMap(data, tradeItemId);
-                  // Hide offer button for my own listings
-                  final auth = Provider.of<AuthProvider>(
-                    context,
-                    listen: false,
-                  );
-                  final isMine = auth.user?.uid == tradeItem.offeredBy;
-                  return _buildTradeItemCard(tradeItem, showMakeOffer: !isMine);
-                },
+              return Column(
+                children: [
+                  Expanded(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filteredDocs.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 16),
+                      itemBuilder: (context, index) {
+                        final doc = filteredDocs[index];
+                        final data = doc.data();
+                        final tradeItemId = doc.id;
+                        final tradeItem = TradeItemModel.fromMap(
+                          data,
+                          tradeItemId,
+                        );
+                        // Hide offer button for my own listings
+                        final auth = Provider.of<AuthProvider>(
+                          context,
+                          listen: false,
+                        );
+                        final isMine = auth.user?.uid == tradeItem.offeredBy;
+                        return _buildTradeItemCard(
+                          tradeItem,
+                          showMakeOffer: !isMine,
+                        );
+                      },
+                    ),
+                  ),
+                  if (docs.length >= _pageSize)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _pageSize += _pageIncrement;
+                            });
+                          },
+                          icon: const Icon(Icons.more_horiz),
+                          label: const Text('Load more items'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _primaryColor,
+                            side: BorderSide(color: _primaryColor),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               );
             },
           ),
@@ -860,17 +915,44 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
             ),
           );
         }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: filteredDocs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 16),
-          itemBuilder: (context, index) {
-            final doc = filteredDocs[index];
-            final data = doc.data();
-            final tradeItemId = doc.id;
-            final tradeItem = TradeItemModel.fromMap(data, tradeItemId);
-            return _buildTradeItemCard(tradeItem, showMakeOffer: false);
-          },
+        return Column(
+          children: [
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: filteredDocs.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 16),
+                itemBuilder: (context, index) {
+                  final doc = filteredDocs[index];
+                  final data = doc.data();
+                  final tradeItemId = doc.id;
+                  final tradeItem = TradeItemModel.fromMap(data, tradeItemId);
+                  return _buildTradeItemCard(tradeItem, showMakeOffer: false);
+                },
+              ),
+            ),
+            if (docs.length >= _pageSize)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _pageSize += _pageIncrement;
+                      });
+                    },
+                    icon: const Icon(Icons.more_horiz),
+                    label: const Text('Load more my trades'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _primaryColor,
+                      side: BorderSide(color: _primaryColor),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
@@ -1339,7 +1421,9 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
                                       ? Colors.grey
                                       : _primaryColor,
                                   foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),
                                   ),
@@ -1352,8 +1436,10 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
                                         };
                                         // If this is a match, pass the matched user trade item data
                                         if (match != null &&
-                                            match.matchedUserTradeItem != null) {
-                                          final matchedItem = match.matchedUserTradeItem!;
+                                            match.matchedUserTradeItem !=
+                                                null) {
+                                          final matchedItem =
+                                              match.matchedUserTradeItem!;
                                           args['matchedItemName'] =
                                               matchedItem.offeredItemName;
                                           args['matchedItemDescription'] =
@@ -1386,6 +1472,8 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
                   ],
                 )
               else
+              // Only show buttons if item is not traded
+              if (tradeItem.status != TradeStatus.traded)
                 Row(
                   children: [
                     Expanded(
@@ -1427,6 +1515,33 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
                       ),
                     ),
                   ],
+                )
+              else
+                // Show message when item is traded
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        color: Colors.green[700],
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'This item has been traded',
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
             ],
           ),

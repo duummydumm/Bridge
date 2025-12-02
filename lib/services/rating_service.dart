@@ -5,6 +5,7 @@ class RatingService {
   final FirestoreService _firestoreService = FirestoreService();
 
   /// Submit a rating/feedback for another user
+  /// NOTE: A valid transactionId is required to prevent fake profile-only reviews.
   Future<String?> submitRating({
     required String ratedUserId,
     required String raterUserId,
@@ -16,18 +17,23 @@ class RatingService {
     required String role,
   }) async {
     try {
-      // Check if rating already exists for this transaction
-      if (transactionId != null) {
-        final existing = await _firestoreService.hasExistingRating(
-          raterUserId: raterUserId,
-          ratedUserId: ratedUserId,
-          transactionId: transactionId,
+      // Require a non-null, non-empty transactionId
+      if (transactionId == null || transactionId.isEmpty) {
+        throw Exception(
+          'A completed transaction is required before leaving a review.',
         );
-        if (existing) {
-          throw Exception(
-            'You have already rated this user for this transaction.',
-          );
-        }
+      }
+
+      // Check if rating already exists for this transaction
+      final existing = await _firestoreService.hasExistingRating(
+        raterUserId: raterUserId,
+        ratedUserId: ratedUserId,
+        transactionId: transactionId,
+      );
+      if (existing) {
+        throw Exception(
+          'You have already rated this user for this transaction.',
+        );
       }
 
       final ratingData = {

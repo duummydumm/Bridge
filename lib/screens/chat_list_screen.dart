@@ -60,6 +60,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.group_add),
+            onPressed: () {
+              Navigator.of(context).pushNamed('/chat/create-group');
+            },
+            tooltip: 'New Group',
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () async {
               if (authProvider.isAuthenticated && authProvider.user != null) {
@@ -190,10 +197,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Widget _buildConversationTile(ConversationModel conversation, String userId) {
-    final otherParticipantName = conversation.getOtherParticipantName(userId);
+    final isGroup = conversation.isGroup;
+    final displayName = conversation.getDisplayName(userId);
     final unreadCount = conversation.getUnreadCountForUser(userId);
     final hasUnread = conversation.hasUnreadForUser(userId);
     final isYou = conversation.lastMessageSenderId == userId;
+    final isMuted = conversation.isMutedByUser(userId);
 
     return InkWell(
       onTap: () {
@@ -203,7 +212,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           MaterialPageRoute(
             builder: (context) => ChatDetailScreen(
               conversationId: conversation.conversationId,
-              otherParticipantName: otherParticipantName,
+              otherParticipantName: displayName,
               userId: userId,
             ),
           ),
@@ -225,16 +234,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 CircleAvatar(
                   radius: 28,
                   backgroundColor: const Color(0xFF00897B).withOpacity(0.1),
-                  child: Text(
-                    otherParticipantName.isNotEmpty
-                        ? otherParticipantName[0].toUpperCase()
-                        : 'U',
-                    style: const TextStyle(
-                      color: Color(0xFF00897B),
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: isGroup
+                      ? const Icon(
+                          Icons.group,
+                          color: Color(0xFF00897B),
+                          size: 28,
+                        )
+                      : Text(
+                          displayName.isNotEmpty
+                              ? displayName[0].toUpperCase()
+                              : 'U',
+                          style: const TextStyle(
+                            color: Color(0xFF00897B),
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
                 if (hasUnread)
                   Positioned(
@@ -262,17 +277,39 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          otherParticipantName,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: hasUnread
-                                ? FontWeight.bold
-                                : FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                displayName,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: hasUnread
+                                      ? FontWeight.bold
+                                      : FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (isGroup) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.group,
+                                size: 14,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${conversation.participantCount}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       if (hasUnread && unreadCount > 0) ...[
@@ -293,6 +330,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                        ),
+                      ],
+                      if (isMuted) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.notifications_off,
+                          size: 16,
+                          color: Colors.grey[500],
                         ),
                       ],
                       const SizedBox(width: 4),

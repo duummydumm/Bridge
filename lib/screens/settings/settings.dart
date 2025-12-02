@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../providers/theme_provider.dart';
 import 'verification_screen.dart';
 import 'privacy_policy.dart';
@@ -9,6 +12,7 @@ import 'help_center.dart';
 import 'change_password_screen.dart';
 import 'theme_settings_screen.dart';
 import 'notification_settings_screen.dart';
+import 'send_feedback_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -64,6 +68,75 @@ class SettingsScreen extends StatelessWidget {
                     );
                   },
                 ),
+                const Divider(height: 1),
+                _buildSettingsItem(
+                  context: context,
+                  icon: Icons.logout_rounded,
+                  title: 'Logout',
+                  subtitle: 'Sign out of your account',
+                  isDestructive: true,
+                  onTap: () async {
+                    HapticFeedback.selectionClick();
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        title: const Text(
+                          'Logout',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        content: const Text(
+                          'Are you sure you want to logout?',
+                          style: TextStyle(fontSize: 15),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(
+                                color: Color(0xFF00897B),
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text(
+                              'Logout',
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (confirm == true && context.mounted) {
+                      final userProvider = Provider.of<UserProvider>(
+                        context,
+                        listen: false,
+                      );
+                      final authProvider = Provider.of<AuthProvider>(
+                        context,
+                        listen: false,
+                      );
+                      userProvider.clearUser();
+                      await authProvider.logout();
+                      if (context.mounted) {
+                        Navigator.pushReplacementNamed(context, '/');
+                      }
+                    }
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 24),
@@ -88,14 +161,6 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     );
                   },
-                ),
-                const Divider(height: 1),
-                _buildSettingsItem(
-                  context: context,
-                  icon: Icons.language_outlined,
-                  title: 'Language',
-                  subtitle: 'English',
-                  onTap: () {},
                 ),
                 const Divider(height: 1),
                 Consumer<ThemeProvider>(
@@ -146,7 +211,14 @@ class SettingsScreen extends StatelessWidget {
                   icon: Icons.feedback_outlined,
                   title: 'Send Feedback',
                   subtitle: 'Share your thoughts',
-                  onTap: () {},
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SendFeedbackScreen(),
+                      ),
+                    );
+                  },
                 ),
                 const Divider(height: 1),
                 _buildSettingsItem(

@@ -299,6 +299,14 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                 );
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.analytics_outlined),
+              title: const Text('Analytics Dashboard'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/giveaway/analytics');
+              },
+            ),
             // Divider between Giveaway and Calamity sections
             const Divider(),
             // Calamity Donations Section

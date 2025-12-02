@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../chat_detail_screen.dart';
 import 'trade_offer_detail_screen.dart';
 
 class AcceptedTradesScreen extends StatefulWidget {
@@ -163,9 +166,102 @@ class _AcceptedTradesScreenState extends State<AcceptedTradesScreen> {
 
     // Determine if this is an incoming or outgoing offer
     final isIncoming = offer['toUserId'] == currentUserId;
-    final otherUserName = isIncoming
-        ? (offer['fromUserName'] ?? 'Unknown')
-        : (offer['toUserName'] ?? 'Unknown');
+    final rawOtherUserName = isIncoming
+        ? (offer['fromUserName'] ?? '')
+        : (offer['toUserName'] ?? '');
+
+    Future<void> startChat() async {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+      if (authProvider.user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to message the other user'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final currentUserName =
+          userProvider.currentUser?.fullName.isNotEmpty == true
+          ? userProvider.currentUser!.fullName
+          : (authProvider.user!.email ?? 'You');
+
+      // Determine other participant
+      final String otherUserId = isIncoming
+          ? (offer['fromUserId'] ?? '')
+          : (offer['toUserId'] ?? '');
+      final String otherUserName = rawOtherUserName.isNotEmpty
+          ? rawOtherUserName
+          : 'User';
+
+      if (otherUserId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not determine the other user for this trade'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        final conversationId = await chatProvider.createOrGetConversation(
+          userId1: currentUserId,
+          userId1Name: currentUserName,
+          userId2: otherUserId,
+          userId2Name: otherUserName,
+          itemId: offer['tradeItemId'] as String?,
+          itemTitle:
+              (offer['originalOfferedItemName'] ?? offer['offeredItemName'])
+                  as String?,
+        );
+
+        if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop();
+
+        if (conversationId == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to start conversation'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              conversationId: conversationId,
+              otherParticipantName: otherUserName,
+              userId: currentUserId,
+            ),
+          ),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error starting chat: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+
+    final displayOtherUserName = rawOtherUserName.isNotEmpty
+        ? rawOtherUserName
+        : 'User';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -209,9 +305,7 @@ class _AcceptedTradesScreenState extends State<AcceptedTradesScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isIncoming
-                              ? 'Trade with: $otherUserName'
-                              : 'Trade with: $otherUserName',
+                          'Trade with: $displayOtherUserName',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -340,6 +434,20 @@ class _AcceptedTradesScreenState extends State<AcceptedTradesScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: startChat,
+                  icon: const Icon(Icons.message),
+                  label: const Text('Message User'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _primaryColor,
+                    side: const BorderSide(color: _primaryColor),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
               ),
             ],
           ),

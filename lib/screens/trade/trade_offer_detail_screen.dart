@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/firestore_service.dart';
 import '../../services/report_block_service.dart';
+import '../../services/rating_service.dart';
 import '../../models/trade_offer_model.dart';
+import '../../models/rating_model.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/chat_provider.dart';
+import '../chat_detail_screen.dart';
+import '../submit_rating_screen.dart';
 
 class TradeOfferDetailScreen extends StatefulWidget {
   final String offerId;
@@ -24,9 +29,11 @@ class TradeOfferDetailScreen extends StatefulWidget {
 class _TradeOfferDetailScreenState extends State<TradeOfferDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final ReportBlockService _reportBlockService = ReportBlockService();
+  final RatingService _ratingService = RatingService();
   bool _isLoading = true;
   Map<String, dynamic>? _offer;
   String? _error;
+  bool _hasSubmittedRating = false;
 
   // BRIDGE Trade theme color
   static const Color _primaryColor = Color(0xFF2A7A9E);
@@ -52,8 +59,30 @@ class _TradeOfferDetailScreenState extends State<TradeOfferDetailScreen> {
         });
         return;
       }
+
+      bool hasRating = false;
+      try {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final currentUserId = authProvider.user?.uid;
+        if (currentUserId != null) {
+          final offerModel = TradeOfferModel.fromMap(offer, widget.offerId);
+          // Determine other user for rating purposes
+          final otherUserId = currentUserId == offerModel.fromUserId
+              ? offerModel.toUserId
+              : offerModel.fromUserId;
+          hasRating = await _ratingService.hasRated(
+            raterUserId: currentUserId,
+            ratedUserId: otherUserId,
+            transactionId: widget.offerId,
+          );
+        }
+      } catch (_) {
+        hasRating = false;
+      }
+
       setState(() {
         _offer = offer;
+        _hasSubmittedRating = hasRating;
         _isLoading = false;
       });
     } catch (e) {
@@ -271,6 +300,383 @@ class _TradeOfferDetailScreenState extends State<TradeOfferDetailScreen> {
         return 'grey';
       default:
         return 'grey';
+    }
+  }
+
+  /// Start or open a chat with the other party in this trade offer
+  Future<void> _startChatWithOtherUser(TradeOfferModel offer) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    if (authProvider.user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to message the other user'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final currentUserId = authProvider.user!.uid;
+    final currentUserName =
+        userProvider.currentUser?.fullName.isNotEmpty == true
+        ? userProvider.currentUser!.fullName
+        : (authProvider.user!.email ?? 'You');
+
+    // Determine other participant based on who is viewing
+    late final String otherUserId;
+    late final String otherUserName;
+    if (currentUserId == offer.fromUserId) {
+      otherUserId = offer.toUserId;
+      otherUserName = offer.toUserName;
+    } else {
+      otherUserId = offer.fromUserId;
+      otherUserName = offer.fromUserName;
+    }
+
+    if (otherUserId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not determine the other user for this trade'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Show a small loading dialog while creating / fetching the conversation
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final conversationId = await chatProvider.createOrGetConversation(
+        userId1: currentUserId,
+        userId1Name: currentUserName,
+        userId2: otherUserId,
+        userId2Name: otherUserName,
+        itemId: offer.tradeItemId,
+        itemTitle: offer.originalOfferedItemName,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // close loading
+
+      if (conversationId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to start conversation'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatDetailScreen(
+            conversationId: conversationId,
+            otherParticipantName: otherUserName,
+            userId: currentUserId,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error starting chat: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Navigate to the counter-offer flow as the listing owner
+  Future<void> _startCounterOffer(TradeOfferModel offer) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    if (authProvider.user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to make a counter-offer'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Only the listing owner (offer.toUserId) should be able to counter
+    if (authProvider.user!.uid != offer.toUserId) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Only the listing owner can make a counter-offer'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.pushNamed(
+      context,
+      '/trade/make-offer',
+      arguments: {
+        'tradeItemId': offer.tradeItemId,
+        'isCounter': 'true',
+        'counterToUserId': offer.fromUserId,
+        'counterToUserName': offer.fromUserName,
+        'parentOfferId': offer.id,
+      },
+    );
+  }
+
+  /// Start the post-trade rating flow for the other user
+  Future<void> _startRating(TradeOfferModel offer) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    if (authProvider.user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to leave a rating'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final currentUserId = authProvider.user!.uid;
+    // Determine who we are rating
+    late final String otherUserId;
+    late final String otherUserName;
+    late final String role;
+
+    if (currentUserId == offer.fromUserId) {
+      otherUserId = offer.toUserId;
+      otherUserName = offer.toUserName;
+      role = 'trade_offer_initiator';
+    } else if (currentUserId == offer.toUserId) {
+      otherUserId = offer.fromUserId;
+      otherUserName = offer.fromUserName;
+      role = 'trade_listing_owner';
+    } else {
+      // Not a party in this trade
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Only participants in this trade can leave a rating'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => SubmitRatingScreen(
+          ratedUserId: otherUserId,
+          ratedUserName: otherUserName,
+          context: RatingContext.trade,
+          transactionId: offer.id,
+          role: role,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      setState(() {
+        _hasSubmittedRating = true;
+      });
+    }
+  }
+
+  /// Open a dispute about a completed trade
+  Future<void> _startDispute(TradeOfferModel offer) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    if (authProvider.user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to report a trade issue'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final currentUserId = authProvider.user!.uid;
+    final currentUserName = authProvider.user!.email ?? 'You';
+
+    // Only parties in the trade can open a dispute
+    late final String otherUserId;
+    late final String otherUserName;
+    late final String role;
+
+    if (currentUserId == offer.fromUserId) {
+      otherUserId = offer.toUserId;
+      otherUserName = offer.toUserName;
+      role = 'trade_offer_initiator';
+    } else if (currentUserId == offer.toUserId) {
+      otherUserId = offer.fromUserId;
+      otherUserName = offer.fromUserName;
+      role = 'trade_listing_owner';
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Only participants in this trade can open a dispute'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    String selectedReason = 'item_not_as_described';
+    final TextEditingController descriptionController = TextEditingController();
+
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report Trade Issue'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'What went wrong with this trade?',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  title: const Text('Item not received'),
+                  value: 'item_not_received',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Item significantly different / damaged'),
+                  value: 'item_not_as_described',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Suspected fraud or unsafe behavior'),
+                  value: 'fraud_or_safety',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Other issue'),
+                  value: 'other',
+                  groupValue: selectedReason,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedReason = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Describe the issue (required)',
+                    hintText: 'Provide details to help admins review this case',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 4,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (descriptionController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Please provide a short description of the issue',
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(context, true);
+              },
+              child: const Text('Submit', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _firestoreService.createTradeDispute({
+        'offerId': offer.id,
+        'tradeItemId': offer.tradeItemId,
+        'itemTitle': offer.originalOfferedItemName,
+        'openedByUserId': currentUserId,
+        'openedByUserName': currentUserName,
+        'otherUserId': otherUserId,
+        'otherUserName': otherUserName,
+        'reason': selectedReason,
+        'description': descriptionController.text.trim(),
+        'status': 'open',
+        'role': role,
+        'createdAt': DateTime.now(),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Your trade issue has been recorded. Our team may review this case.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error creating dispute: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -584,6 +990,20 @@ class _TradeOfferDetailScreenState extends State<TradeOfferDetailScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _startCounterOffer(offer),
+                icon: const Icon(Icons.swap_horiz),
+                label: const Text('Make Counter Offer'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _primaryColor,
+                  side: const BorderSide(color: _primaryColor),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
           ],
           // Mark as Completed button for approved trades
           if (offer.isApproved && !widget.canAcceptDecline) ...[
@@ -602,7 +1022,55 @@ class _TradeOfferDetailScreenState extends State<TradeOfferDetailScreen> {
               ),
             ),
           ],
+          // Dispute button for completed trades
+          if (offer.isCompleted) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _startDispute(offer),
+                icon: const Icon(Icons.gavel),
+                label: const Text('Report Trade Issue'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ],
+          // Rating button for completed trades (one per user)
+          if (offer.isCompleted && !_hasSubmittedRating) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _startRating(offer),
+                icon: const Icon(Icons.star_rate),
+                label: const Text('Rate Your Trading Partner'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _primaryColor,
+                  side: const BorderSide(color: _primaryColor),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
+          // Message button (for any status)
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _startChatWithOtherUser(offer),
+              icon: const Icon(Icons.message),
+              label: const Text('Message User'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _primaryColor,
+                side: const BorderSide(color: _primaryColor),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
+          ),
         ],
       ),
     );

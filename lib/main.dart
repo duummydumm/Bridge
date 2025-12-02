@@ -8,8 +8,11 @@ import 'package:bridge_app/screens/onboardingscreen/onboarding_screen.dart';
 import 'package:bridge_app/screens/borrow/borrow_items_screen.dart';
 import 'package:bridge_app/screens/my_listings_screen.dart';
 import 'package:bridge_app/screens/chat_list_screen.dart';
+import 'package:bridge_app/screens/chat/create_group_screen.dart';
 import 'package:bridge_app/screens/notifications_screen.dart';
+import 'screens/all_activity_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
@@ -30,6 +33,7 @@ import 'providers/trade_item_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/notification_preferences_provider.dart';
 import 'providers/chat_theme_provider.dart';
+import 'providers/locale_provider.dart';
 import 'screens/admin/admin_home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/local_notifications_service.dart';
@@ -49,6 +53,8 @@ import 'screens/trade/history_trade.dart';
 import 'screens/donate/giveaways_screen.dart';
 import 'screens/donate/add_giveaway_screen.dart';
 import 'screens/donate/giveaway_detail_screen.dart';
+import 'screens/donate/donor_analytics_screen.dart';
+import 'screens/donate/giveaway_rating_screen.dart';
 import 'screens/donate/calamity_events_screen.dart';
 import 'screens/donate/calamity_event_detail_screen.dart';
 import 'screens/donate/my_calamity_donations_screen.dart';
@@ -56,6 +62,8 @@ import 'screens/admin/calamity_events_admin_screen.dart';
 import 'screens/admin/calamity_event_detail_admin_screen.dart';
 import 'providers/giveaway_provider.dart';
 import 'providers/calamity_provider.dart';
+import 'providers/giveaway_rating_provider.dart';
+import 'providers/donor_analytics_provider.dart';
 import 'screens/auth/verify_email.dart';
 import 'services/email_service.dart';
 import 'screens/pending_requests_screen.dart';
@@ -69,6 +77,7 @@ import 'screens/borrow/disputed_returns_screen.dart';
 import 'screens/rental/rental_pending_request.dart';
 import 'screens/rental/disputed_rentals_screen.dart';
 import 'screens/trade/trade_pending_request.dart';
+import 'screens/trade/disputed_trades_screen.dart';
 import 'screens/borrow/borrowed_items_detail_screen.dart';
 import 'screens/due_soon_items_detail_screen.dart';
 import 'screens/my_lenders_detail_screen.dart';
@@ -102,9 +111,9 @@ void main() async {
   // Initialize local notifications (skip on web)
   if (!kIsWeb) {
     await LocalNotificationsService().initialize();
-    // Initialize FCM for push notifications
-    await FCMService().initialize();
   }
+  // Initialize FCM for push notifications (works on both mobile and web)
+  await FCMService().initialize();
 
   // Configure EmailJS
   // Get these from https://dashboard.emailjs.com/
@@ -156,16 +165,26 @@ class BridgeApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TradeItemProvider()),
         ChangeNotifierProvider(create: (_) => GiveawayProvider()),
         ChangeNotifierProvider(create: (_) => CalamityProvider()),
+        ChangeNotifierProvider(create: (_) => GiveawayRatingProvider()),
+        ChangeNotifierProvider(create: (_) => DonorAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
           create: (_) => NotificationPreferencesProvider(),
         ),
         ChangeNotifierProvider(create: (_) => ChatThemeProvider()),
+        ChangeNotifierProvider(create: (_) => LocaleProvider()),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) {
+      child: Consumer2<ThemeProvider, LocaleProvider>(
+        builder: (context, themeProvider, localeProvider, _) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
+            locale: localeProvider.locale,
+            supportedLocales: const [Locale('en'), Locale('fil')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
             theme: ThemeProvider.lightTheme,
             darkTheme: ThemeProvider.darkTheme,
             themeMode: themeProvider.themeModeForMaterial,
@@ -209,10 +228,14 @@ class BridgeApp extends StatelessWidget {
                   ProtectedRoute(child: const RentItemsScreen()),
               '/chat': (context) =>
                   ProtectedRoute(child: const ChatListScreen()),
+              '/chat/create-group': (context) =>
+                  ProtectedRoute(child: const CreateGroupScreen()),
               '/notifications': (context) =>
                   ProtectedRoute(child: const NotificationsScreen()),
               '/pending-requests': (context) =>
                   ProtectedRoute(child: const PendingRequestsScreen()),
+              '/activity/all': (context) =>
+                  ProtectedRoute(child: const AllActivityScreen()),
               '/borrow/pending-requests': (context) =>
                   ProtectedRoute(child: const BorrowPendingRequestScreen()),
               '/borrow/approved': (context) =>
@@ -233,6 +256,8 @@ class BridgeApp extends StatelessWidget {
                   ProtectedRoute(child: const RentalPendingRequestScreen()),
               '/trade/pending-requests': (context) =>
                   ProtectedRoute(child: const TradePendingRequestScreen()),
+              '/trade/disputed-trades': (context) =>
+                  ProtectedRoute(child: const DisputedTradesScreen()),
               '/borrowed-items-detail': (context) =>
                   ProtectedRoute(child: const BorrowedItemsDetailScreen()),
               '/due-soon-items-detail': (context) =>
@@ -276,12 +301,30 @@ class BridgeApp extends StatelessWidget {
               },
               '/trade/accepted-trades': (context) =>
                   ProtectedRoute(child: const AcceptedTradesScreen()),
-              '/trade/history': (context) =>
-                  ProtectedRoute(child: const TradeHistoryScreen()),
+              '/trade/history': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+                final filter = args is Map ? args['filter'] as String? : null;
+                return ProtectedRoute(
+                  child: TradeHistoryScreen(initialFilter: filter),
+                );
+              },
               // Giveaway screens
               '/giveaway': (context) => const GiveawaysScreen(),
               '/giveaway/add': (context) => const AddGiveawayScreen(),
               '/giveaway/detail': (context) => const GiveawayDetailScreen(),
+              '/giveaway/analytics': (context) =>
+                  ProtectedRoute(child: const DonorAnalyticsScreen()),
+              '/giveaway/rating': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments as Map?;
+                return ProtectedRoute(
+                  child: GiveawayRatingScreen(
+                    giveawayId: args?['giveawayId'] as String? ?? '',
+                    donorId: args?['donorId'] as String? ?? '',
+                    donorName: args?['donorName'] as String? ?? '',
+                    giveawayTitle: args?['giveawayTitle'] as String? ?? '',
+                  ),
+                );
+              },
               // Calamity Donation screens
               '/calamity': (context) => const CalamityEventsScreen(),
               '/calamity/detail': (context) {

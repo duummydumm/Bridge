@@ -27,11 +27,21 @@ class AuthProvider extends ChangeNotifier {
       _user = user;
 
       // Clear FCM token for previous user if they logged out
+      // Note: This may fail if user is already logged out, but that's okay
+      // The logout() method handles clearing the token before logout
       if (previousUser != null && user == null) {
         debugPrint(
-          'User logged out, clearing FCM token for: ${previousUser.uid}',
+          'User logged out, attempting to clear FCM token for: ${previousUser.uid}',
         );
-        await FCMService().clearTokenForUser(previousUser.uid);
+        try {
+          await FCMService().clearTokenForUser(previousUser.uid);
+        } catch (e) {
+          // If this fails, it's likely because the user is already logged out
+          // and doesn't have permission. This is expected and not critical.
+          debugPrint(
+            'Note: Could not clear FCM token in authStateChanges (user already logged out): $e',
+          );
+        }
       }
 
       // Update FCM token when user changes (login/switch account)
@@ -61,9 +71,21 @@ class AuthProvider extends ChangeNotifier {
     required String password,
   }) async {
     try {
+      // If already loading, wait a bit to avoid race conditions
+      if (_isLoading) {
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+
       _setLoading(true);
       _clearError();
       notifyListeners(); // Notify immediately to show loading indicator
+
+      // Ensure we're not still logged in from a previous session
+      final currentUser = _authService.currentUser;
+      if (currentUser != null && _user == null) {
+        // Auth state is inconsistent, wait for it to sync
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
 
       final credential = await _authService.loginWithEmail(
         email: email,
@@ -120,20 +142,29 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     try {
       _setLoading(true);
-      final userId = _user?.uid;
-      await _authService.logout();
+      _clearError(); // Clear any previous errors
+      notifyListeners(); // Notify to update UI immediately
 
-      // Clear FCM token for the user who logged out
+      final userId = _user?.uid;
+      
+      // Clear FCM token BEFORE logging out (while user is still authenticated)
       if (userId != null) {
         await FCMService().clearTokenForUser(userId);
       }
 
+      await _authService.logout();
+
+      // Wait a brief moment to ensure authStateChanges listener has processed
+      await Future.delayed(const Duration(milliseconds: 100));
+
       _user = null;
+      _clearError(); // Ensure error is cleared
       _setLoading(false);
       notifyListeners();
     } catch (e) {
       _setError(e.toString());
       _setLoading(false);
+      _user = null; // Ensure user is cleared even on error
       notifyListeners();
     }
   }

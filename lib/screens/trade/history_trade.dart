@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../chat_detail_screen.dart';
 import 'trade_offer_detail_screen.dart';
 
 class TradeHistoryScreen extends StatefulWidget {
-  const TradeHistoryScreen({super.key});
+  final String? initialFilter; // 'all', 'incoming', or 'outgoing'
+
+  const TradeHistoryScreen({super.key, this.initialFilter});
 
   @override
   State<TradeHistoryScreen> createState() => _TradeHistoryScreenState();
@@ -19,6 +24,9 @@ class _TradeHistoryScreenState extends State<TradeHistoryScreen>
   bool _isLoading = true;
   List<Map<String, dynamic>> _allOffers = [];
   late TabController _tabController;
+  String _searchQuery = '';
+  late String _userFilter; // all, incoming, outgoing
+  DateTimeRange? _dateRange;
 
   // BRIDGE Trade theme color
   static const Color _primaryColor = Color(0xFF2A7A9E);
@@ -26,6 +34,7 @@ class _TradeHistoryScreenState extends State<TradeHistoryScreen>
   @override
   void initState() {
     super.initState();
+    _userFilter = widget.initialFilter ?? 'all';
     _tabController = TabController(length: 3, vsync: this);
     _loadOffers();
   }
@@ -127,9 +136,14 @@ class _TradeHistoryScreenState extends State<TradeHistoryScreen>
       appBar: AppBar(
         backgroundColor: _primaryColor,
         elevation: 0,
-        title: const Text(
-          'Trade History',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        title: Text(
+          widget.initialFilter == 'outgoing'
+              ? 'Your Trade Offers'
+              : 'Trade History',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         bottom: TabBar(
           controller: _tabController,
@@ -146,17 +160,24 @@ class _TradeHistoryScreenState extends State<TradeHistoryScreen>
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
+          : Column(
               children: [
-                _buildOffersList(_allOffers, 'All Trades'),
-                _buildOffersList(
-                  _getOffersByStatus('completed'),
-                  'Completed Trades',
-                ),
-                _buildOffersList(
-                  _getOffersByStatus('declined'),
-                  'Declined Trades',
+                _buildFilters(),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildOffersList(_allOffers, 'All Trades'),
+                      _buildOffersList(
+                        _getOffersByStatus('completed'),
+                        'Completed Trades',
+                      ),
+                      _buildOffersList(
+                        _getOffersByStatus('declined'),
+                        'Declined Trades',
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -172,7 +193,9 @@ class _TradeHistoryScreenState extends State<TradeHistoryScreen>
     List<Map<String, dynamic>> offers,
     String emptyTitle,
   ) {
-    if (offers.isEmpty) {
+    final filtered = _applyFilters(offers);
+
+    if (filtered.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -201,13 +224,171 @@ class _TradeHistoryScreenState extends State<TradeHistoryScreen>
       onRefresh: _loadOffers,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: offers.length,
+        itemCount: filtered.length,
         itemBuilder: (context, index) {
-          final offer = offers[index];
+          final offer = filtered[index];
           return _buildOfferCard(offer);
         },
       ),
     );
+  }
+
+  Widget _buildFilters() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            decoration: InputDecoration(
+              hintText: 'Search by user or item...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        setState(() {
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.grey[100],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value.trim().toLowerCase();
+              });
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              // Incoming / Outgoing filter
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('All roles'),
+                      selected: _userFilter == 'all',
+                      onSelected: (_) {
+                        setState(() {
+                          _userFilter = 'all';
+                        });
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Incoming'),
+                      selected: _userFilter == 'incoming',
+                      onSelected: (_) {
+                        setState(() {
+                          _userFilter = 'incoming';
+                        });
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Outgoing'),
+                      selected: _userFilter == 'outgoing',
+                      onSelected: (_) {
+                        setState(() {
+                          _userFilter = 'outgoing';
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Date range filter
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final now = DateTime.now();
+                  final firstDate = DateTime(now.year - 1);
+                  final picked = await showDateRangePicker(
+                    context: context,
+                    firstDate: firstDate,
+                    lastDate: now,
+                    initialDateRange: _dateRange,
+                  );
+                  if (picked != null) {
+                    setState(() {
+                      _dateRange = picked;
+                    });
+                  }
+                },
+                icon: const Icon(Icons.date_range, size: 18),
+                label: Text(
+                  _dateRange == null
+                      ? 'Any date'
+                      : '${_formatDate(_dateRange!.start)} - ${_formatDate(_dateRange!.end)}',
+                  overflow: TextOverflow.ellipsis,
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _applyFilters(List<Map<String, dynamic>> offers) {
+    if (offers.isEmpty) return offers;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.user?.uid ?? '';
+
+    return offers.where((offer) {
+      // Role filter (incoming/outgoing)
+      if (_userFilter != 'all') {
+        final isIncoming = offer['toUserId'] == currentUserId;
+        if (_userFilter == 'incoming' && !isIncoming) return false;
+        if (_userFilter == 'outgoing' && isIncoming) return false;
+      }
+
+      // Date range filter
+      if (_dateRange != null) {
+        final createdAt =
+            (offer['createdAt'] as Timestamp?)?.toDate() ?? DateTime(0);
+        if (createdAt.isBefore(_dateRange!.start) ||
+            createdAt.isAfter(_dateRange!.end.add(const Duration(days: 1)))) {
+          return false;
+        }
+      }
+
+      // Search filter (user name or item title)
+      if (_searchQuery.isNotEmpty) {
+        final isIncoming = offer['toUserId'] == currentUserId;
+        final otherUserName =
+            (isIncoming
+                    ? (offer['fromUserName'] ?? '')
+                    : (offer['toUserName'] ?? ''))
+                .toString()
+                .toLowerCase();
+        final offeredName = (offer['offeredItemName'] ?? '')
+            .toString()
+            .toLowerCase();
+        final originalName = (offer['originalOfferedItemName'] ?? '')
+            .toString()
+            .toLowerCase();
+
+        final haystack = '$otherUserName $offeredName $originalName';
+        if (!haystack.contains(_searchQuery)) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
   }
 
   Widget _buildOfferCard(Map<String, dynamic> offer) {
@@ -223,6 +404,94 @@ class _TradeHistoryScreenState extends State<TradeHistoryScreen>
     final otherUserName = isIncoming
         ? (offer['fromUserName'] ?? 'Unknown')
         : (offer['toUserName'] ?? 'Unknown');
+
+    Future<void> startChat() async {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+      if (authProvider.user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to message the other user'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final currentUserName =
+          userProvider.currentUser?.fullName.isNotEmpty == true
+          ? userProvider.currentUser!.fullName
+          : (authProvider.user!.email ?? 'You');
+
+      final String otherUserId = isIncoming
+          ? (offer['fromUserId'] ?? '')
+          : (offer['toUserId'] ?? '');
+      final String otherName = (otherUserName as String).isNotEmpty
+          ? otherUserName
+          : 'User';
+
+      if (otherUserId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not determine the other user for this trade'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        final conversationId = await chatProvider.createOrGetConversation(
+          userId1: currentUserId,
+          userId1Name: currentUserName,
+          userId2: otherUserId,
+          userId2Name: otherName,
+          itemId: offer['tradeItemId'] as String?,
+          itemTitle:
+              (offer['originalOfferedItemName'] ?? offer['offeredItemName'])
+                  as String?,
+        );
+
+        if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop();
+
+        if (conversationId == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to start conversation'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              conversationId: conversationId,
+              otherParticipantName: otherName,
+              userId: currentUserId,
+            ),
+          ),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error starting chat: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -395,6 +664,20 @@ class _TradeHistoryScreenState extends State<TradeHistoryScreen>
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: startChat,
+                  icon: const Icon(Icons.message, size: 18),
+                  label: const Text('Message User'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _primaryColor,
+                    side: const BorderSide(color: _primaryColor),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
               ),
             ],
           ),

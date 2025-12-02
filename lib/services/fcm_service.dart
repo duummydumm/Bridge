@@ -27,12 +27,93 @@ class FCMService {
   /// Initialize FCM and get device token
   Future<void> initialize() async {
     if (_initialized) return;
-    if (kIsWeb) {
-      _initialized = true;
-      return;
-    }
 
     try {
+      if (kIsWeb) {
+        // Web-specific initialization
+        try {
+          // Request notification permissions for web
+          final settings = await _messaging.requestPermission(
+            alert: true,
+            badge: true,
+            sound: true,
+            provisional: false,
+          );
+
+          if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+            debugPrint('User granted notification permission (web)');
+          } else {
+            debugPrint(
+              'User declined or has not accepted notification permission (web)',
+            );
+            _initialized = true;
+            return;
+          }
+
+          // Get FCM token for web
+          // The service worker will be automatically registered by Firebase Messaging
+          final token = await _messaging.getToken();
+          if (token != null) {
+            _currentToken = token;
+            debugPrint('FCM Token (web): $token');
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              await _saveTokenForUser(token, user.uid);
+            } else {
+              debugPrint(
+                'No user logged in during initialization, cannot save token',
+              );
+            }
+          }
+
+          // Listen for token refresh on web
+          _messaging.onTokenRefresh.listen((newToken) {
+            _currentToken = newToken;
+            debugPrint('FCM Token refreshed (web): $newToken');
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              _saveTokenForUser(newToken, user.uid);
+            } else {
+              debugPrint(
+                'No user logged in during token refresh, cannot save token',
+              );
+            }
+          });
+
+          // Handle foreground messages on web
+          FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+            debugPrint(
+              'Received foreground message (web): ${message.messageId}',
+            );
+            debugPrint('Title: ${message.notification?.title}');
+            debugPrint('Body: ${message.notification?.body}');
+            // On web, notifications are handled by the browser's notification API
+            // The service worker handles background messages
+          });
+
+          // Handle notification taps when app is in background (web)
+          FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+            debugPrint('Notification opened app (web): ${message.messageId}');
+          });
+
+          // Check if app was opened from a notification (web)
+          final initialMessage = await _messaging.getInitialMessage();
+          if (initialMessage != null) {
+            debugPrint(
+              'App opened from notification (web): ${initialMessage.messageId}',
+            );
+          }
+
+          _initialized = true;
+        } catch (e) {
+          debugPrint('Error initializing FCM for web: $e');
+          _initialized =
+              true; // Mark as initialized even on error to prevent retry loops
+        }
+        return;
+      }
+
+      // Mobile-specific initialization
       // Request notification permissions
       final settings = await _messaging.requestPermission(
         alert: true,
@@ -52,7 +133,7 @@ class FCMService {
         return;
       }
 
-      // Set up background message handler
+      // Set up background message handler (mobile only)
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
       // Get FCM token

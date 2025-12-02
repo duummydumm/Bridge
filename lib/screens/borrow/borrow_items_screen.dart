@@ -17,7 +17,14 @@ import '../user_public_profile_screen.dart';
 import '../my_listings_screen.dart';
 
 class BorrowItemsScreen extends StatefulWidget {
-  const BorrowItemsScreen({super.key});
+  const BorrowItemsScreen({super.key, this.lenderIdFilter, this.lenderName});
+
+  /// When provided, only items from this lender will be shown.
+  /// Used for "View all listings from this user" flows.
+  final String? lenderIdFilter;
+
+  /// Optional name of the lender for UI purposes (e.g. title text).
+  final String? lenderName;
 
   @override
   State<BorrowItemsScreen> createState() => _BorrowItemsScreenState();
@@ -90,25 +97,39 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
     final userProvider = Provider.of<UserProvider>(context);
     final availableItems = _getFilteredItems(itemProvider, userProvider);
 
+    final bool isLenderFiltered = widget.lenderIdFilter != null;
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         backgroundColor: const Color(0xFF00897B),
         elevation: 0,
-        automaticallyImplyLeading: false,
-        leading: Builder(
-          builder: (BuildContext context) {
-            return IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () {
-                Scaffold.of(context).openDrawer();
-              },
-            );
-          },
-        ),
-        title: const Text(
-          'Borrow',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        automaticallyImplyLeading: !isLenderFiltered,
+        leading: isLenderFiltered
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+              )
+            : Builder(
+                builder: (BuildContext context) {
+                  return IconButton(
+                    icon: const Icon(Icons.menu, color: Colors.white),
+                    onPressed: () {
+                      Scaffold.of(context).openDrawer();
+                    },
+                  );
+                },
+              ),
+        title: Text(
+          isLenderFiltered
+              ? (widget.lenderName != null
+                    ? 'Listings by ${widget.lenderName}'
+                    : 'User Listings')
+              : 'Borrow',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         actions: [
           IconButton(
@@ -122,184 +143,190 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
           ),
         ],
       ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF00897B),
-                    const Color(0xFF26A69A),
-                    const Color(0xFF4DD0E1),
-                  ],
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisAlignment: MainAxisAlignment.center,
+      drawer: isLenderFiltered
+          ? null
+          : Drawer(
+              child: ListView(
+                padding: EdgeInsets.zero,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.shopping_cart_outlined,
-                          color: Colors.white,
-                          size: 28,
-                        ),
+                  DrawerHeader(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          const Color(0xFF00897B),
+                          const Color(0xFF26A69A),
+                          const Color(0xFF4DD0E1),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'Borrow Menu',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Manage your borrow activities',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.9),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
                     ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.shopping_cart_outlined,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              'Borrow Menu',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Manage your borrow activities',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text(
+                      'Borrower',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black54,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.pending_outlined),
+                    title: const Text('Pending Requests'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/borrow/pending-requests');
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.check_circle_outline),
+                    title: const Text('Approved Requests'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/borrow/approved');
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.shopping_cart_outlined),
+                    title: const Text('Currently Borrowed'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(
+                        context,
+                        '/borrow/currently-borrowed',
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.assignment_turned_in_outlined),
+                    title: const Text('Returned Items'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/borrow/returned-items');
+                    },
+                  ),
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text(
+                      'Lender',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black54,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.upload_outlined),
+                    title: const Text('Items Currently Lent Out'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/borrow/currently-lent');
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.pending_actions),
+                    title: const Text('Pending Return Confirmation'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/borrow/pending-returns');
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.gavel_outlined),
+                    title: const Text('Disputed Returns'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/borrow/disputed-returns');
+                    },
+                  ),
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text(
+                      'Listings',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black54,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.inventory_2_outlined),
+                    title: const Text('My Borrow Listings'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              const MyListingsScreen(initialTab: 0),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.people_alt_outlined),
+                    title: const Text('My Lenders'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/my-lenders-detail');
+                    },
                   ),
                 ],
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text(
-                'Borrower',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black54,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.pending_outlined),
-              title: const Text('Pending Requests'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/borrow/pending-requests');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.check_circle_outline),
-              title: const Text('Approved Requests'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/borrow/approved');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.shopping_cart_outlined),
-              title: const Text('Currently Borrowed'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/borrow/currently-borrowed');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.assignment_turned_in_outlined),
-              title: const Text('Returned Items'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/borrow/returned-items');
-              },
-            ),
-            const Divider(),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text(
-                'Lender',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black54,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.upload_outlined),
-              title: const Text('Items Currently Lent Out'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/borrow/currently-lent');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.pending_actions),
-              title: const Text('Pending Return Confirmation'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/borrow/pending-returns');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.gavel_outlined),
-              title: const Text('Disputed Returns'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/borrow/disputed-returns');
-              },
-            ),
-            const Divider(),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text(
-                'Listings',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black54,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.inventory_2_outlined),
-              title: const Text('My Borrow Listings'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const MyListingsScreen(initialTab: 0),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.people_alt_outlined),
-              title: const Text('My Lenders'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/my-lenders-detail');
-              },
-            ),
-          ],
-        ),
-      ),
       body: VerificationGuard(
         child: Column(
           children: [
@@ -469,8 +496,17 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
   ]) {
     var items = itemProvider.items.where((item) => item.isAvailable).toList();
 
+    // If this screen is being used to show only a specific lender's items,
+    // apply that filter first so other filters operate on the correct subset.
+    if (widget.lenderIdFilter != null) {
+      items = items
+          .where((item) => item.lenderId == widget.lenderIdFilter)
+          .toList();
+    }
+
     // Filter out items that belong to the current user (don't show own items in borrow screen)
-    if (userProvider?.currentUser != null) {
+    // Only apply this when not explicitly viewing a specific lender's inventory.
+    if (widget.lenderIdFilter == null && userProvider?.currentUser != null) {
       final currentUserId = userProvider!.currentUser!.uid;
       items = items.where((item) => item.lenderId != currentUserId).toList();
     }
@@ -785,24 +821,54 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    // Category
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        item.category,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.orange.shade800,
-                          fontWeight: FontWeight.w600,
+                    // Category + times borrowed
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            item.category,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.orange.shade800,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              const Icon(
+                                Icons.history,
+                                size: 14,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  item.borrowCount > 0
+                                      ? 'Borrowed ${item.borrowCount} ${item.borrowCount == 1 ? "time" : "times"}'
+                                      : 'Not yet borrowed',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[700],
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     // Request Button
@@ -994,24 +1060,54 @@ class _BorrowItemsScreenState extends State<BorrowItemsScreen> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    // Category
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        item.category,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.orange.shade800,
-                          fontWeight: FontWeight.w600,
+                    // Category + times borrowed
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            item.category,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.orange.shade800,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              const Icon(
+                                Icons.history,
+                                size: 12,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  item.borrowCount > 0
+                                      ? 'Borrowed ${item.borrowCount} ${item.borrowCount == 1 ? "time" : "times"}'
+                                      : 'Not yet borrowed',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[700],
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
