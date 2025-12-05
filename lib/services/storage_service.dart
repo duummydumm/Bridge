@@ -965,4 +965,94 @@ class StorageService {
       throw Exception('Failed to upload group image: $e');
     }
   }
+
+  /// Upload report evidence image
+  /// Path: reports/{reportId}/evidence_{timestamp}.{ext}
+  Future<String> uploadReportEvidenceImage({
+    required dynamic file, // Supports both File and XFile
+    required String reportId,
+    required String userId,
+  }) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final imagePath = 'reports/$reportId/evidence_$timestamp.jpg';
+
+      final ref = _storage.ref().child(imagePath);
+      log('📤 Uploading report evidence image to: $imagePath');
+
+      const int maxAttempts = 3;
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          UploadTask uploadTask;
+
+          if (kIsWeb) {
+            if (file is XFile) {
+              final bytes = await file.readAsBytes();
+              uploadTask = ref.putData(
+                bytes,
+                SettableMetadata(
+                  contentType: 'image/jpeg',
+                  cacheControl: 'public, max-age=31536000, immutable',
+                ),
+              );
+            } else {
+              throw Exception('Invalid file type for web platform');
+            }
+          } else {
+            if (file is XFile) {
+              final bytes = await file.readAsBytes();
+              String contentType = 'image/jpeg';
+              if (bytes.length >= 4) {
+                if (bytes[0] == 0x89 &&
+                    bytes[1] == 0x50 &&
+                    bytes[2] == 0x4E &&
+                    bytes[3] == 0x47) {
+                  contentType = 'image/png';
+                } else if (bytes[0] == 0xFF && bytes[1] == 0xD8) {
+                  contentType = 'image/jpeg';
+                } else if (bytes[0] == 0x52 &&
+                    bytes[1] == 0x49 &&
+                    bytes[2] == 0x46 &&
+                    bytes[3] == 0x46) {
+                  contentType = 'image/webp';
+                }
+              }
+              uploadTask = ref.putData(
+                bytes,
+                SettableMetadata(
+                  contentType: contentType,
+                  cacheControl: 'public, max-age=31536000, immutable',
+                ),
+              );
+            } else if (file is File) {
+              uploadTask = ref.putFile(
+                file,
+                SettableMetadata(
+                  contentType: 'image/jpeg',
+                  cacheControl: 'public, max-age=31536000, immutable',
+                ),
+              );
+            } else {
+              throw Exception(
+                'Invalid file type for mobile platform. Expected XFile or File, got ${file.runtimeType}',
+              );
+            }
+          }
+
+          final snapshot = await uploadTask.timeout(const Duration(minutes: 5));
+          final downloadUrl = await snapshot.ref.getDownloadURL();
+          log('✅ Report evidence image uploaded successfully');
+          return downloadUrl;
+        } catch (e) {
+          if (attempt == maxAttempts) rethrow;
+          log('⚠️ Upload attempt $attempt failed, retrying... Error: $e');
+          await Future.delayed(Duration(milliseconds: 400 * attempt));
+        }
+      }
+
+      throw Exception('Upload failed after $maxAttempts attempts');
+    } catch (e) {
+      throw Exception('Failed to upload report evidence image: $e');
+    }
+  }
 }

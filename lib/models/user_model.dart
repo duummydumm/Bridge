@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 enum UserRole { borrower, lender, both }
 
@@ -52,10 +52,16 @@ class UserModel {
     // Normalize role: handle both lowercase and original values
     final roleString = (data['role'] ?? 'both').toString().toLowerCase();
 
-    // Debug: Print the role from database for troubleshooting
-    debugPrint(
-      '🔍 Loading user role from database: "$roleString" (original: ${data['role']})',
-    );
+    // Debug: Only print in debug mode and when there's an unexpected role value
+    // (removed verbose logging that was causing spam after login)
+    if (kDebugMode &&
+        roleString != 'borrower' &&
+        roleString != 'lender' &&
+        roleString != 'both') {
+      debugPrint(
+        '🔍 Unexpected user role from database: "$roleString" (original: ${data['role']})',
+      );
+    }
 
     // Parse the actual role from database
     UserRole userRole;

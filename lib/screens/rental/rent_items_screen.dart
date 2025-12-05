@@ -137,10 +137,28 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
 
     // Filter by barangay
     if (_selectedBarangay != null && _selectedBarangay!.isNotEmpty) {
+      final selected = _selectedBarangay!.toLowerCase();
       filtered = filtered.where((doc) {
         final listing = doc.data();
+
+        // Primary source of truth: owner's registered barangay from their
+        // user profile (denormalized onto the rental listing).
+        final ownerBarangay = (listing['ownerBarangay'] ?? '')
+            .toString()
+            .toLowerCase();
+
+        // Backwards compatibility: older listings and UI may still rely on
+        // free-text `location` or `address`, so we keep these checks as a
+        // fallback to avoid hiding legacy data.
         final location = (listing['location'] ?? '').toString().toLowerCase();
-        return location.contains(_selectedBarangay!.toLowerCase());
+        final address = (listing['address'] ?? '').toString().toLowerCase();
+
+        final matchesOwnerBarangay =
+            ownerBarangay.isNotEmpty && ownerBarangay == selected;
+
+        return matchesOwnerBarangay ||
+            location.contains(selected) ||
+            address.contains(selected);
       }).toList();
     }
 
@@ -202,6 +220,35 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
           'Rent',
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add, color: Colors.white),
+            onPressed: () {
+              // Check verification status
+              final userProvider = Provider.of<UserProvider>(
+                context,
+                listen: false,
+              );
+              final isVerified = userProvider.currentUser?.isVerified ?? false;
+
+              if (!isVerified) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text(
+                      'Your account is pending admin verification. You can browse items but cannot post or transact yet.',
+                    ),
+                    backgroundColor: Colors.orange.shade700,
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+                return;
+              }
+
+              Navigator.pushNamed(context, '/rental/listing-editor');
+            },
+            tooltip: 'Create Listing',
+          ),
+        ],
       ),
       drawer: Drawer(
         child: ListView(

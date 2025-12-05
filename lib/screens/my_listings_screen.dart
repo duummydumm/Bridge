@@ -18,6 +18,8 @@ import '../services/local_notifications_service.dart';
 import '../services/rating_service.dart';
 import '../screens/submit_rating_screen.dart';
 import '../models/rating_model.dart';
+import '../providers/giveaway_provider.dart';
+import '../models/giveaway_listing_model.dart';
 import 'rental/rental_request_detail_screen.dart';
 import 'rental/active_rental_detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -81,6 +83,10 @@ class _MyListingsScreenState extends State<MyListingsScreen>
           context,
           listen: false,
         ).loadMyTradeItems(userId);
+        Provider.of<GiveawayProvider>(
+          context,
+          listen: false,
+        ).loadMyGiveaways(userId);
         // Cache rentals future to avoid rebuild-triggered refetches
         setState(() {
           _myRentalsFuture = FirestoreService().getRentalListingsByOwner(
@@ -102,6 +108,7 @@ class _MyListingsScreenState extends State<MyListingsScreen>
     final itemProvider = Provider.of<ItemProvider>(context);
     final rentalListingProvider = Provider.of<RentalListingProvider>(context);
     final tradeItemProvider = Provider.of<TradeItemProvider>(context);
+    final giveawayProvider = Provider.of<GiveawayProvider>(context);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final userId = userProvider.currentUser?.uid ?? authProvider.user?.uid;
@@ -598,10 +605,6 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                   List<ItemModel> lend = data
                       .where((e) => (e.type).toLowerCase() == 'lend')
                       .toList();
-                  // Trade items live in a separate collection; use its provider
-                  List<ItemModel> donate = data
-                      .where((e) => (e.type).toLowerCase() == 'donate')
-                      .toList();
 
                   Widget buildList(List<ItemModel> list) {
                     if (list.isEmpty) {
@@ -792,13 +795,124 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                     );
                   }
 
+                  Widget buildDonateGiveaways() {
+                    if (giveawayProvider.isLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final List<GiveawayListingModel> giveaways =
+                        giveawayProvider.myGiveaways;
+                    if (giveaways.isEmpty) {
+                      return ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          const SizedBox(height: 80),
+                          Center(
+                            child: Text(
+                              'No giveaways here yet',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: giveaways.length,
+                      itemBuilder: (context, index) {
+                        final g = giveaways[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            title: Text(
+                              g.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 4),
+                                Text(
+                                  g.description,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: [
+                                    Chip(
+                                      label: Text(g.statusDisplay),
+                                      backgroundColor:
+                                          Colors.blueGrey.withOpacity(0.12),
+                                      labelStyle: const TextStyle(
+                                        color: Color(0xFF546E7A),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                      ),
+                                    ),
+                                    Chip(
+                                      label: Text(g.category),
+                                      backgroundColor:
+                                          const Color(0xFFE0F2F1),
+                                      labelStyle: const TextStyle(
+                                        color: Color(0xFF00796B),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/giveaway/detail',
+                                arguments: {'giveawayId': g.id},
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    );
+                  }
+
                   return TabBarView(
                     controller: _tabController,
                     children: [
                       buildList(lend),
                       buildRentalListings(),
                       buildTradeList(),
-                      buildList(donate),
+                      buildDonateGiveaways(),
                     ],
                   );
                 },

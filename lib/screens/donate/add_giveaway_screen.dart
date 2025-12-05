@@ -273,11 +273,9 @@ class _AddGiveawayScreenState extends State<AddGiveawayScreen> {
 
       _progressText.value = 'Saving giveaway…';
 
-      final location =
-          currentUser.barangay.isNotEmpty || currentUser.city.isNotEmpty
-          ? '${currentUser.barangay}, ${currentUser.city}'
-          : currentUser.city.isNotEmpty
-          ? currentUser.city
+      // Use user's full address for giveaway location
+      final location = currentUser.fullAddress.isNotEmpty
+          ? currentUser.fullAddress
           : 'Location not set';
 
       final giveawayId = await giveawayProvider.createGiveaway(
@@ -331,12 +329,9 @@ class _AddGiveawayScreenState extends State<AddGiveawayScreen> {
   Widget build(BuildContext context) {
     final userProvider = context.watch<UserProvider>();
     final currentUser = userProvider.currentUser;
-    final location =
-        currentUser != null &&
-            (currentUser.barangay.isNotEmpty || currentUser.city.isNotEmpty)
-        ? '${currentUser.barangay}, ${currentUser.city}'
-        : currentUser?.city.isNotEmpty == true
-        ? currentUser!.city
+    // Display the full address under "Pickup Location"
+    final location = currentUser?.fullAddress.isNotEmpty == true
+        ? currentUser!.fullAddress
         : 'Location not set';
 
     return Scaffold(

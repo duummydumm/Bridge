@@ -17,6 +17,7 @@ import '../services/report_block_service.dart';
 import '../services/storage_service.dart';
 import '../services/chat_service.dart';
 import '../reusable_widgets/offline_banner_widget.dart';
+import '../reusable_widgets/report_dialog.dart';
 import '../providers/connectivity_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'user_public_profile_screen.dart';
@@ -725,19 +726,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
             const SizedBox(width: 8),
           ],
-          // Show sender name in group chats
-          if (_isGroup && !isMe)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                message.senderName,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: isMe ? Colors.white70 : themeData.primaryColor,
-                ),
-              ),
-            ),
           Container(
             constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.7,
@@ -812,35 +800,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     ),
                   ),
                 ],
-                if (!isMe)
-                  GestureDetector(
-                    onTap: () {
-                      if (!isMe &&
-                          _otherParticipantId != null &&
-                          _otherParticipantId!.isNotEmpty) {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => UserPublicProfileScreen(
-                              userId: _otherParticipantId!,
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                    child: Text(
-                      message.senderName,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: isMe ? Colors.white70 : themeData.primaryColor,
-                        decoration: TextDecoration.underline,
-                        decorationColor: isMe
-                            ? Colors.white70
-                            : themeData.primaryColor,
-                      ),
+                // Show sender name at the top of the bubble for group chats
+                if (_isGroup && !isMe) ...[
+                  Text(
+                    message.senderName,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: themeData.primaryColor,
                     ),
                   ),
-                if (!isMe) const SizedBox(height: 4),
+                  const SizedBox(height: 4),
+                ],
                 if (message.imageUrl != null &&
                     message.imageUrl!.isNotEmpty) ...[
                   GestureDetector(
@@ -1238,160 +1209,43 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void _reportUser() {
     if (_otherParticipantId == null) return;
 
-    String selectedReason = 'spam';
-    final TextEditingController descriptionController = TextEditingController();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
 
-    showDialog(
+    if (authProvider.user == null) return;
+
+    ReportDialog.showReportUserDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Report User'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Please select a reason for reporting:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                RadioListTile<String>(
-                  title: const Text('Spam'),
-                  value: 'spam',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Harassment'),
-                  value: 'harassment',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Inappropriate Content'),
-                  value: 'inappropriate_content',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Fraud'),
-                  value: 'fraud',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Other'),
-                  value: 'other',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Additional details (optional)',
-                    hintText: 'Please provide more information...',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                // Store parent context before closing dialog
-                final parentContext = context;
-                Navigator.pop(parentContext);
+      reportedUserId: _otherParticipantId!,
+      reportedUserName: widget.otherParticipantName,
+      contextType: 'chat',
+      contextId: widget.conversationId,
+      onSubmit:
+          ({
+            required String reason,
+            String? description,
+            List<String>? evidenceImageUrls,
+          }) async {
+            final reporterName =
+                userProvider.currentUser?.fullName ??
+                authProvider.user!.email ??
+                'Unknown';
 
-                final authProvider = Provider.of<AuthProvider>(
-                  parentContext,
-                  listen: false,
-                );
-                final userProvider = Provider.of<UserProvider>(
-                  parentContext,
-                  listen: false,
-                );
-
-                if (authProvider.user == null || _otherParticipantId == null)
-                  return;
-
-                final reporterName =
-                    userProvider.currentUser?.fullName ??
-                    authProvider.user!.email ??
-                    'Unknown';
-
-                try {
-                  await _reportBlockService.reportUser(
-                    reporterId: authProvider.user!.uid,
-                    reporterName: reporterName,
-                    reportedUserId: _otherParticipantId!,
-                    reportedUserName: widget.otherParticipantName,
-                    reason: selectedReason,
-                    description: descriptionController.text.trim().isNotEmpty
-                        ? descriptionController.text.trim()
-                        : null,
-                    contextType: 'chat',
-                    contextId: widget.conversationId,
-                  );
-
-                  if (mounted) {
-                    ScaffoldMessenger.of(parentContext).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'User has been reported successfully. Thank you for keeping the community safe.',
-                        ),
-                        backgroundColor: Colors.green,
-                        duration: Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(parentContext).showSnackBar(
-                      SnackBar(
-                        content: Text('Error reporting user: $e'),
-                        backgroundColor: Colors.red,
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text(
-                'Report',
-                style: TextStyle(color: Colors.orange),
-              ),
-            ),
-          ],
-        ),
-      ),
+            await _reportBlockService.reportUser(
+              reporterId: authProvider.user!.uid,
+              reporterName: reporterName,
+              reportedUserId: _otherParticipantId!,
+              reportedUserName: widget.otherParticipantName,
+              reason: reason,
+              description: description,
+              contextType: 'chat',
+              contextId: widget.conversationId,
+              evidenceImageUrls: evidenceImageUrls,
+            );
+          },
+      successMessage:
+          'User has been reported successfully. Thank you for keeping the community safe.',
+      errorMessage: 'Error reporting user',
     );
   }
 

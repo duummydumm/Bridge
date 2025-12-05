@@ -1,5 +1,5 @@
-import 'package:bridge_app/screens/my_listings_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:bridge_app/screens/my_listings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
@@ -275,9 +275,10 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
             ),
             ListTile(
               leading: const Icon(Icons.inventory),
-              title: const Text('My Donation Listings'),
+              title: const Text('My Giveaways'),
               onTap: () {
                 Navigator.pop(context);
+                // Open My Listings screen focused on the Donate (giveaways) tab
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -606,7 +607,59 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                   ),
                 );
               }
-              final docs = snapshot.data!.docs;
+              // Start with all active giveaways from Firestore
+              var docs = snapshot.data!.docs;
+
+              // Hide the current user's own giveaways from the Available tab
+              if (currentUserId.isNotEmpty) {
+                docs = docs
+                    .where(
+                      (doc) =>
+                          (doc.data()['donorId'] ?? '').toString() !=
+                          currentUserId,
+                    )
+                    .toList();
+              }
+
+              // Determine if user applied any search / filters
+              final bool hasFilters =
+                  _searchController.text.isNotEmpty ||
+                  _selectedCategory != 'All' ||
+                  (_selectedBarangay != null && _selectedBarangay!.isNotEmpty);
+
+              // If after removing own giveaways there is nothing and no filters,
+              // show a friendly "no giveaways available" message.
+              if (docs.isEmpty && !hasFilters) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.card_giftcard,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No giveaways available',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Be the first to share something with the community!',
+                        style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              // Apply search/filters on the remaining docs
               final filteredDocs = _filterGiveaways(docs);
               if (filteredDocs.isEmpty) {
                 return Center(
@@ -616,7 +669,9 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                       Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
                       const SizedBox(height: 16),
                       Text(
-                        'No giveaways match your search',
+                        hasFilters
+                            ? 'No giveaways match your filters'
+                            : 'No giveaways available',
                         style: TextStyle(
                           fontSize: 18,
                           color: Colors.grey[600],

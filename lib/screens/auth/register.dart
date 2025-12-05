@@ -10,6 +10,8 @@ import 'dart:io';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/firestore_service.dart';
+// import '../../services/ping_service.dart'; // Old Render backend wake-up (no longer used with Cloud Functions)
+import '../../services/verification_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -68,9 +70,15 @@ class _RegisterScreenState extends State<RegisterScreen>
   late Animation<double> _successScaleAnimation;
   late Animation<double> _successRotationAnimation;
 
+  // OTP / email verification service (EmailJS + Firestore)
+  final VerificationService _verificationService = VerificationService();
+
   @override
   void initState() {
     super.initState();
+    // Old behavior (Render backend): wake backend early so OTP/email services
+    // were ready by the time user submits.
+    // PingService.wakeBackend();
     _loadBarangays();
 
     // Initialize animations
@@ -590,7 +598,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         debugPrint('Error creating activity log for registration: $e');
       }
 
-      // Send email verification and navigate to verification screen
+      // Send OTP email (via EmailJS) and navigate to verification screen
       if (mounted) {
         // Trigger success animation
         _successController.forward();
@@ -601,13 +609,23 @@ class _RegisterScreenState extends State<RegisterScreen>
         bool emailSent = false;
 
         try {
-          await Provider.of<AuthProvider>(
-            context,
-            listen: false,
-          ).sendEmailVerification();
+          // Build a friendly display name for the OTP email
+          String userName =
+              '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'
+                  .trim();
+          if (userName.isEmpty) {
+            userName = _emailController.text.trim().split('@').first;
+          }
+
+          // Directly create OTP + send email via VerificationService
+          await _verificationService.createVerificationOTP(
+            userId: uid,
+            email: _emailController.text.trim(),
+            userName: userName,
+          );
           emailSent = true;
         } catch (e) {
-          debugPrint('Registration: Failed to send verification email: $e');
+          debugPrint('Registration: Failed to send OTP verification email: $e');
         }
 
         // Navigate to verification screen

@@ -157,14 +157,21 @@ class _NotificationsTabView extends StatelessWidget {
     BuildContext context,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
-    if (docs.isEmpty) {
+    // Exclude chat/message notifications from this screen; they are handled
+    // separately by the chat UI and FCM handlers.
+    final filteredDocs = docs.where((d) {
+      final t = (d.data()['type'] as String?) ?? '';
+      return t != 'chat_message' && t != 'message';
+    }).toList();
+
+    if (filteredDocs.isEmpty) {
       return const Center(child: Text('No notifications'));
     }
     return ListView.separated(
-      itemCount: docs.length,
+      itemCount: filteredDocs.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, index) {
-        final data = docs[index].data();
+        final data = filteredDocs[index].data();
         final type = data['type'] as String? ?? '';
         final fromName = data['fromUserName'] as String? ?? 'Someone';
         final itemTitle = data['itemTitle'] as String? ?? 'an item';
@@ -243,10 +250,58 @@ class _NotificationsTabView extends StatelessWidget {
               'Rental is now active for "$itemTitle"';
         } else if (type == 'rent_return_initiated') {
           final renterName = data['renterName'] as String?;
-          title = renterName != null
-              ? '$renterName initiated return for "$itemTitle"'
-              : data['message'] as String? ??
+          final rentType = (data['rentType'] as String? ?? 'item')
+              .toString()
+              .toLowerCase();
+
+          // Generate rent type-specific notification title
+          String notificationTitle;
+          if (renterName != null) {
+            switch (rentType) {
+              case 'apartment':
+                notificationTitle = '$renterName ended rental for "$itemTitle"';
+                break;
+              case 'boardinghouse':
+              case 'boarding_house':
+                notificationTitle = '$renterName moved out from "$itemTitle"';
+                break;
+              case 'commercial':
+              case 'commercialspace':
+              case 'commercial_space':
+                notificationTitle = '$renterName ended lease for "$itemTitle"';
+                break;
+              default:
+                notificationTitle =
+                    '$renterName initiated return for "$itemTitle"';
+            }
+          } else {
+            // Fallback to message or default based on rent type
+            switch (rentType) {
+              case 'apartment':
+                notificationTitle =
+                    data['message'] as String? ??
+                    'Rental ended for "$itemTitle". Please verify the apartment.';
+                break;
+              case 'boardinghouse':
+              case 'boarding_house':
+                notificationTitle =
+                    data['message'] as String? ??
+                    'Move out for "$itemTitle". Please verify the room/space.';
+                break;
+              case 'commercial':
+              case 'commercialspace':
+              case 'commercial_space':
+                notificationTitle =
+                    data['message'] as String? ??
+                    'Lease ended for "$itemTitle". Please verify the commercial space.';
+                break;
+              default:
+                notificationTitle =
+                    data['message'] as String? ??
                     'Return initiated for "$itemTitle". Please verify the item.';
+            }
+          }
+          title = notificationTitle;
         } else if (type == 'rent_return_verified') {
           final ownerName = data['ownerName'] as String?;
           title = ownerName != null
@@ -271,6 +326,8 @@ class _NotificationsTabView extends StatelessWidget {
           }
         } else if (type == 'verification_rejected') {
           title = data['title'] as String? ?? 'Account Verification Rejected';
+        } else if (type == 'verification_approved') {
+          title = data['title'] as String? ?? 'Account Verified Successfully';
         } else if (type == 'item_overdue') {
           final daysOverdue = data['daysOverdue'] as int? ?? 0;
           if (daysOverdue == 0) {
@@ -351,7 +408,7 @@ class _NotificationsTabView extends StatelessWidget {
             ? Theme.of(context).colorScheme.surfaceTint.withOpacity(0.08)
             : Colors.transparent;
         return Dismissible(
-          key: ValueKey(docs[index].id),
+          key: ValueKey(filteredDocs[index].id),
           background: Container(
             color: const Color(0xFF00897B),
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -409,7 +466,7 @@ class _NotificationsTabView extends StatelessWidget {
               try {
                 await FirebaseFirestore.instance
                     .collection('notifications')
-                    .doc(docs[index].id)
+                    .doc(filteredDocs[index].id)
                     .delete();
               } catch (_) {}
             }
@@ -447,6 +504,21 @@ class _NotificationsTabView extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.orange[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (type == 'verification_approved')
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        data['message'] as String? ??
+                            'Congratulations! Your account has been verified.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.green[700],
                           fontWeight: FontWeight.w500,
                         ),
                         maxLines: 2,
@@ -508,7 +580,9 @@ class _NotificationsTabView extends StatelessWidget {
                   : null,
               onTap: () async {
                 try {
-                  await FirestoreService().markNotificationRead(docs[index].id);
+                  await FirestoreService().markNotificationRead(
+                    filteredDocs[index].id,
+                  );
                 } catch (_) {}
 
                 if (type == 'borrow_request') {
@@ -729,6 +803,57 @@ class _NotificationsTabView extends StatelessWidget {
                       ),
                     );
                   }
+                } else if (type == 'verification_approved') {
+                  // Show verification success dialog
+                  if (context.mounted) {
+                    final message =
+                        data['message'] as String? ??
+                        'Congratulations! Your account has been verified. You can now post items, borrow, rent, and use all features of the app.';
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Row(
+                          children: [
+                            Icon(Icons.verified, color: Colors.green),
+                            SizedBox(width: 8),
+                            Text('Account Verified'),
+                          ],
+                        ),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.green[50],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.green[200]!),
+                              ),
+                              child: Text(
+                                message,
+                                style: TextStyle(color: Colors.green[900]),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'You can now access all features of the app!',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Got it!'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
                 }
               },
             ),
@@ -759,6 +884,7 @@ IconData _iconForType(String type) {
   if (type == 'calamity_donation') return Icons.emergency_outlined;
   if (type == 'calamity_event_created') return Icons.crisis_alert;
   if (type == 'verification_rejected') return Icons.warning_amber_rounded;
+  if (type == 'verification_approved') return Icons.verified;
   if (type == 'violation_issued') return Icons.warning_amber_rounded;
   if (type == 'report_resolved') return Icons.verified_user;
   if (type == 'account_suspended') return Icons.block;

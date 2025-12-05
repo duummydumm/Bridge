@@ -30,6 +30,15 @@ class _RentalBoardingHousesScreenState
         .where('rentType', whereIn: ['boardinghouse', 'boarding_house'])
         .limit(100);
 
+    // Query to get user's existing rental requests (only approved/active)
+    final existingRequestsQuery = currentUserId != null
+        ? FirebaseFirestore.instance
+              .collection('rental_requests')
+              .where('renterId', isEqualTo: currentUserId)
+              .where('status', whereIn: ['ownerapproved', 'active'])
+              .snapshots()
+        : null;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Boarding Houses'),
@@ -50,112 +59,141 @@ class _RentalBoardingHousesScreenState
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: listingsQuery.snapshots(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.hotel_outlined,
-                          size: 64,
-                          color: Colors.grey[400],
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: existingRequestsQuery,
+                  builder: (context, requestsSnapshot) {
+                    // Build set of listing IDs that user already has requests for
+                    final Set<String> requestedListingIds = {};
+                    if (requestsSnapshot.hasData &&
+                        requestsSnapshot.data != null) {
+                      for (final doc in requestsSnapshot.data!.docs) {
+                        final listingId = doc.data()['listingId'] as String?;
+                        if (listingId != null) {
+                          requestedListingIds.add(listingId);
+                        }
+                      }
+                    }
+
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.hotel_outlined,
+                              size: 64,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No boarding houses available',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No boarding houses available',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
+                      );
+                    }
+
+                    // Optionally filter out listings owned by the current user
+                    var docs = snapshot.data!.docs;
+                    if (currentUserId != null) {
+                      docs = docs.where((doc) {
+                        final data = doc.data();
+                        final ownerId = (data['ownerId'] ?? '').toString();
+                        return ownerId != currentUserId;
+                      }).toList();
+                    }
+
+                    // Filter out listings where user already has an
+                    // approved/active rental (currently renting).
+                    if (currentUserId != null &&
+                        requestedListingIds.isNotEmpty) {
+                      docs = docs.where((doc) {
+                        final listingId = doc.id;
+                        return !requestedListingIds.contains(listingId);
+                      }).toList();
+                    }
+
+                    // Filter by selected barangay/location
+                    if (_selectedBarangay != null &&
+                        _selectedBarangay!.isNotEmpty) {
+                      final selectedLower = _selectedBarangay!.toLowerCase();
+                      docs = docs.where((doc) {
+                        final data = doc.data();
+                        final location = (data['location'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        final address = (data['address'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        return location.contains(selectedLower) ||
+                            address.contains(selectedLower);
+                      }).toList();
+                    }
+
+                    if (docs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.search_off,
+                              size: 64,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No boarding houses to rent in this location',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    // 2-column grid with compact preview cards
+                    return GridView.builder(
+                      padding: const EdgeInsets.all(12),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisExtent: 260,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                // Optionally filter out listings owned by the current user
-                var docs = snapshot.data!.docs;
-                if (currentUserId != null) {
-                  docs = docs.where((doc) {
-                    final data = doc.data();
-                    final ownerId = (data['ownerId'] ?? '').toString();
-                    return ownerId != currentUserId;
-                  }).toList();
-                }
-
-                // Filter by selected barangay/location
-                if (_selectedBarangay != null &&
-                    _selectedBarangay!.isNotEmpty) {
-                  final selectedLower = _selectedBarangay!.toLowerCase();
-                  docs = docs.where((doc) {
-                    final data = doc.data();
-                    final location = (data['location'] ?? '')
-                        .toString()
-                        .toLowerCase();
-                    final address = (data['address'] ?? '')
-                        .toString()
-                        .toLowerCase();
-                    return location.contains(selectedLower) ||
-                        address.contains(selectedLower);
-                  }).toList();
-                }
-
-                if (docs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.search_off,
-                          size: 64,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No boarding houses to rent in this location',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                // 2-column grid with compact preview cards
-                return GridView.builder(
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisExtent: 260,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                  ),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final listing = docs[index].data();
-                    final listingId = docs[index].id;
-                    final title = (listing['title'] ?? 'Boarding House')
-                        .toString();
-                    final address =
-                        (listing['address'] ?? listing['location'] ?? '')
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        final listing = docs[index].data();
+                        final listingId = docs[index].id;
+                        final title = (listing['title'] ?? 'Boarding House')
                             .toString();
-                    final pricePerMonth = (listing['pricePerMonth'] as num?)
-                        ?.toDouble();
-                    final imageUrl = (listing['imageUrl'] as String?)?.trim();
+                        final address =
+                            (listing['address'] ?? listing['location'] ?? '')
+                                .toString();
+                        final pricePerMonth = (listing['pricePerMonth'] as num?)
+                            ?.toDouble();
+                        final imageUrl = (listing['imageUrl'] as String?)
+                            ?.trim();
 
-                    return _BoardingHouseCard(
-                      listingId: listingId,
-                      title: title,
-                      address: address,
-                      pricePerMonth: pricePerMonth,
-                      imageUrl: imageUrl,
+                        return _BoardingHouseCard(
+                          listingId: listingId,
+                          title: title,
+                          address: address,
+                          pricePerMonth: pricePerMonth,
+                          imageUrl: imageUrl,
+                        );
+                      },
                     );
                   },
                 );

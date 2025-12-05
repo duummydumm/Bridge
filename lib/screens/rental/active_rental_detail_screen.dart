@@ -13,7 +13,12 @@ import '../../services/firestore_service.dart';
 import '../../services/report_block_service.dart';
 import '../../services/storage_service.dart';
 import '../../models/rental_payment_model.dart';
+import '../../models/rating_model.dart';
+import '../../models/rental_request_model.dart';
+import '../../services/rating_service.dart';
+import '../../reusable_widgets/report_dialog.dart';
 import '../chat_detail_screen.dart';
+import '../submit_rating_screen.dart';
 
 class ActiveRentalDetailScreen extends StatefulWidget {
   final String requestId;
@@ -28,6 +33,7 @@ class ActiveRentalDetailScreen extends StatefulWidget {
 class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final ReportBlockService _reportBlockService = ReportBlockService();
+  final RatingService _ratingService = RatingService();
   final StorageService _storageService = StorageService();
   final ImagePicker _imagePicker = ImagePicker();
   Map<String, dynamic>? _requestData;
@@ -584,6 +590,25 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
     }
   }
 
+  String _getVerifyButtonText() {
+    if (_requestData == null) return 'Verify Return';
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Verify Property';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Verify Property';
+      case 'commercial':
+      case 'commercialspace':
+      case 'commercial_space':
+        return 'Verify Property';
+      default:
+        return 'Verify Return';
+    }
+  }
+
   Future<Map<String, dynamic>?> _showConditionVerificationModal() async {
     String? selectedCondition;
     final notesController = TextEditingController();
@@ -963,11 +988,7 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-          isPropertyRental
-              ? 'Verify ${_getReturnActionText().replaceAll("Initiate ", "")}?'
-              : 'Verify Return?',
-        ),
+        title: Text('${_getVerifyButtonText()}?'),
         content: Text(
           isPropertyRental
               ? 'Have you verified that the property is in good condition? This will complete the rental.'
@@ -984,7 +1005,7 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
               backgroundColor: Colors.green,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Verify Return'),
+            child: Text(_getVerifyButtonText()),
           ),
         ],
       ),
@@ -1049,6 +1070,8 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
           );
           // Reload request to show updated status
           _loadRequest();
+          // Prompt for rating after successful verification
+          await _promptForRating(widget.requestId);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1069,6 +1092,95 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
+    }
+  }
+
+  Future<void> _promptForRating(String requestId) async {
+    try {
+      // Get rental request details
+      final requestData = await _firestoreService.getRentalRequest(requestId);
+      if (requestData == null) return;
+
+      final request = RentalRequestModel.fromMap(requestData, requestId);
+
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final currentUser = authProvider.user;
+
+      if (currentUser == null) return;
+
+      // Determine who to rate based on current user
+      final isOwner = currentUser.uid == request.ownerId;
+      final ratedUserId = isOwner ? request.renterId : request.ownerId;
+      final ratedUserName = isOwner ? 'Renter' : 'Owner';
+
+      // Check if already rated
+      final hasRated = await _ratingService.hasRated(
+        raterUserId: currentUser.uid,
+        ratedUserId: ratedUserId,
+        transactionId: requestId,
+      );
+
+      if (hasRated) {
+        // Already rated, skip prompt
+        return;
+      }
+
+      // Get rated user's name if available
+      String? ratedUserNameFull;
+      try {
+        final ratedUserData = await _firestoreService.getUser(ratedUserId);
+        if (ratedUserData != null) {
+          ratedUserNameFull =
+              '${ratedUserData['firstName']} ${ratedUserData['lastName']}';
+        }
+      } catch (e) {
+        // Silent fail, use default
+      }
+
+      // Show rating dialog
+      if (!mounted) return;
+
+      final shouldRate = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Rate Your Experience'),
+          content: Text(
+            'How was your rental experience with ${ratedUserNameFull ?? ratedUserName}?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Maybe Later'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00897B),
+              ),
+              child: const Text('Rate Now'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldRate == true && mounted) {
+        // Navigate to rating screen
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SubmitRatingScreen(
+              ratedUserId: ratedUserId,
+              ratedUserName: ratedUserNameFull ?? ratedUserName,
+              context: RatingContext.rental,
+              transactionId: requestId,
+              role: isOwner ? 'owner' : 'renter',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Silent fail - don't interrupt user flow
+      debugPrint('Error prompting for rating: $e');
     }
   }
 
@@ -1952,9 +2064,12 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _verifyReturn,
                   icon: const Icon(Icons.verified, size: 20),
-                  label: const Text(
-                    'Verify Return',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  label: Text(
+                    _getVerifyButtonText(),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
@@ -2272,164 +2387,59 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
   void _reportRental() {
     if (_requestData == null) return;
 
-    String selectedReason = 'spam';
-    final TextEditingController descriptionController = TextEditingController();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+
+    if (authProvider.user == null) return;
+
     final itemTitle = _requestData!['itemTitle'] as String? ?? 'Rental Item';
     final ownerName = _requestData!['ownerName'] as String? ?? 'Owner';
     final ownerId = _requestData!['ownerId'] as String?;
 
-    showDialog(
+    if (ownerId == null) return;
+
+    ReportDialog.showReportContentDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Report Rental'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Please select a reason for reporting:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                RadioListTile<String>(
-                  title: const Text('Spam'),
-                  value: 'spam',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Inappropriate Content'),
-                  value: 'inappropriate_content',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Fraud'),
-                  value: 'fraud',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Other'),
-                  value: 'other',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Additional details (optional)',
-                    hintText: 'Please provide more information...',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                // Store parent context before closing dialog
-                final parentContext = context;
-                Navigator.pop(parentContext);
+      contentType: 'rental',
+      onSubmit:
+          ({
+            required String reason,
+            String? description,
+            List<String>? evidenceImageUrls,
+          }) async {
+            final reporterName =
+                userProvider.currentUser?.fullName ??
+                authProvider.user!.email ??
+                'Unknown';
 
-                final authProvider = Provider.of<AuthProvider>(
-                  parentContext,
-                  listen: false,
-                );
-                final userProvider = Provider.of<UserProvider>(
-                  parentContext,
-                  listen: false,
-                );
-
-                if (authProvider.user == null || ownerId == null) return;
-
-                final reporterName =
-                    userProvider.currentUser?.fullName ??
-                    authProvider.user!.email ??
-                    'Unknown';
-
-                try {
-                  await _reportBlockService.reportContent(
-                    reporterId: authProvider.user!.uid,
-                    reporterName: reporterName,
-                    contentType: 'rental',
-                    contentId: widget.requestId,
-                    contentTitle: itemTitle,
-                    ownerId: ownerId,
-                    ownerName: ownerName,
-                    reason: selectedReason,
-                    description: descriptionController.text.trim().isNotEmpty
-                        ? descriptionController.text.trim()
-                        : null,
-                  );
-
-                  if (mounted) {
-                    ScaffoldMessenger.of(parentContext).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Rental has been reported successfully. Thank you for keeping the community safe.',
-                        ),
-                        backgroundColor: Colors.green,
-                        duration: Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(parentContext).showSnackBar(
-                      SnackBar(
-                        content: Text('Error reporting rental: $e'),
-                        backgroundColor: Colors.red,
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text(
-                'Report',
-                style: TextStyle(color: Colors.orange),
-              ),
-            ),
-          ],
-        ),
-      ),
+            await _reportBlockService.reportContent(
+              reporterId: authProvider.user!.uid,
+              reporterName: reporterName,
+              contentType: 'rental',
+              contentId: widget.requestId,
+              contentTitle: itemTitle,
+              ownerId: ownerId,
+              ownerName: ownerName,
+              reason: reason,
+              description: description,
+              evidenceImageUrls: evidenceImageUrls,
+            );
+          },
+      successMessage:
+          'Rental has been reported successfully. Thank you for keeping the community safe.',
+      errorMessage: 'Error reporting rental',
     );
   }
 
   void _reportOtherParty() {
     if (_requestData == null) return;
 
-    String selectedReason = 'spam';
-    final TextEditingController descriptionController = TextEditingController();
-
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
     final currentUserId = authProvider.user?.uid;
+
+    if (currentUserId == null) return;
+
     final ownerId = _requestData!['ownerId'] as String?;
     final renterId = _requestData!['renterId'] as String?;
     final ownerName = _requestData!['ownerName'] as String? ?? 'Owner';
@@ -2453,152 +2463,38 @@ class _ActiveRentalDetailScreenState extends State<ActiveRentalDetailScreen> {
 
     if (reportedUserId == null) return;
 
-    showDialog(
+    ReportDialog.showReportUserDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Report User'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Please select a reason for reporting:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                RadioListTile<String>(
-                  title: const Text('Spam'),
-                  value: 'spam',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Harassment'),
-                  value: 'harassment',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Inappropriate Content'),
-                  value: 'inappropriate_content',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Fraud'),
-                  value: 'fraud',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Other'),
-                  value: 'other',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Additional details (optional)',
-                    hintText: 'Please provide more information...',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                // Store parent context before closing dialog
-                final parentContext = context;
-                Navigator.pop(parentContext);
+      reportedUserId: reportedUserId,
+      reportedUserName: reportedUserName,
+      contextType: 'rental',
+      contextId: widget.requestId,
+      onSubmit:
+          ({
+            required String reason,
+            String? description,
+            List<String>? evidenceImageUrls,
+          }) async {
+            final reporterName =
+                userProvider.currentUser?.fullName ??
+                authProvider.user!.email ??
+                'Unknown';
 
-                final userProvider = Provider.of<UserProvider>(
-                  parentContext,
-                  listen: false,
-                );
-
-                if (authProvider.user == null) return;
-
-                final reporterName =
-                    userProvider.currentUser?.fullName ??
-                    authProvider.user!.email ??
-                    'Unknown';
-
-                try {
-                  await _reportBlockService.reportUser(
-                    reporterId: authProvider.user!.uid,
-                    reporterName: reporterName,
-                    reportedUserId: reportedUserId!,
-                    reportedUserName: reportedUserName,
-                    reason: selectedReason,
-                    description: descriptionController.text.trim().isNotEmpty
-                        ? descriptionController.text.trim()
-                        : null,
-                    contextType: 'rental',
-                    contextId: widget.requestId,
-                  );
-
-                  if (mounted) {
-                    ScaffoldMessenger.of(parentContext).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'User has been reported successfully. Thank you for keeping the community safe.',
-                        ),
-                        backgroundColor: Colors.green,
-                        duration: Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(parentContext).showSnackBar(
-                      SnackBar(
-                        content: Text('Error reporting user: $e'),
-                        backgroundColor: Colors.red,
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text(
-                'Report',
-                style: TextStyle(color: Colors.orange),
-              ),
-            ),
-          ],
-        ),
-      ),
+            await _reportBlockService.reportUser(
+              reporterId: authProvider.user!.uid,
+              reporterName: reporterName,
+              reportedUserId: reportedUserId!,
+              reportedUserName: reportedUserName,
+              reason: reason,
+              description: description,
+              contextType: 'rental',
+              contextId: widget.requestId,
+              evidenceImageUrls: evidenceImageUrls,
+            );
+          },
+      successMessage:
+          'User has been reported successfully. Thank you for keeping the community safe.',
+      errorMessage: 'Error reporting user',
     );
   }
 }

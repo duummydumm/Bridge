@@ -5,7 +5,8 @@ enum AppThemeMode { light, dark, system }
 
 class ThemeProvider extends ChangeNotifier {
   static const String _themeKey = 'app_theme_mode';
-  AppThemeMode _themeMode = AppThemeMode.system;
+  // Default to light mode instead of following the system theme
+  AppThemeMode _themeMode = AppThemeMode.light;
   bool _isInitialized = false;
 
   AppThemeMode get themeMode => _themeMode;
@@ -18,12 +19,14 @@ class ThemeProvider extends ChangeNotifier {
   Future<void> _loadTheme() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final themeIndex = prefs.getInt(_themeKey) ?? AppThemeMode.system.index;
+      // If no preference is saved yet, default to light mode
+      final themeIndex = prefs.getInt(_themeKey) ?? AppThemeMode.light.index;
       _themeMode = AppThemeMode.values[themeIndex];
       _isInitialized = true;
       notifyListeners();
     } catch (e) {
-      _themeMode = AppThemeMode.system;
+      // On error, also fall back to light mode
+      _themeMode = AppThemeMode.light;
       _isInitialized = true;
       notifyListeners();
     }

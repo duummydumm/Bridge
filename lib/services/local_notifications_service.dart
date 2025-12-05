@@ -69,6 +69,26 @@ class LocalNotificationsService {
           description: 'Notifications for new borrow requests',
           importance: Importance.high,
         );
+    const AndroidNotificationChannel rentalRequestsChannel =
+        AndroidNotificationChannel(
+          'rental_requests',
+          'Rental Requests',
+          description: 'Notifications for new rental requests',
+          importance: Importance.high,
+        );
+    const AndroidNotificationChannel rentalChannel = AndroidNotificationChannel(
+      'rental_reminders',
+      'Rental Reminders',
+      description: 'Reminders for rental periods',
+      importance: Importance.high,
+    );
+    const AndroidNotificationChannel rentalOverdueChannel =
+        AndroidNotificationChannel(
+          'rental_overdue_reminders',
+          'Rental Overdue Reminders',
+          description: 'Reminders for overdue rentals',
+          importance: Importance.max,
+        );
     await _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -84,6 +104,21 @@ class LocalNotificationsService {
           AndroidFlutterLocalNotificationsPlugin
         >()
         ?.createNotificationChannel(borrowRequestsChannel);
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(rentalRequestsChannel);
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(rentalChannel);
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(rentalOverdueChannel);
 
     _initialized = true;
   }

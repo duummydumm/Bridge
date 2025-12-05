@@ -7,7 +7,10 @@ import '../../providers/chat_provider.dart';
 import '../../providers/rental_request_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../models/rental_request_model.dart';
+import '../../models/rating_model.dart';
+import '../../services/rating_service.dart';
 import '../chat_detail_screen.dart';
+import '../submit_rating_screen.dart';
 
 class RentalRequestDetailScreen extends StatefulWidget {
   final String requestId;
@@ -21,6 +24,7 @@ class RentalRequestDetailScreen extends StatefulWidget {
 
 class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final RatingService _ratingService = RatingService();
   Map<String, dynamic>? _requestData;
   bool _isLoading = true;
   bool _isProcessing = false;
@@ -1315,7 +1319,7 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
                   child: ElevatedButton.icon(
                     onPressed: _verifyReturn,
                     icon: const Icon(Icons.verified),
-                    label: const Text('Verify Return'),
+                    label: Text(_getVerifyButtonText()),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
@@ -1539,6 +1543,25 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
     }
   }
 
+  String _getVerifyButtonText() {
+    if (_requestData == null) return 'Verify Return';
+    final rentType = (_requestData!['rentType'] as String? ?? 'item')
+        .toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Verify Property';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Verify Property';
+      case 'commercial':
+      case 'commercialspace':
+      case 'commercial_space':
+        return 'Verify Property';
+      default:
+        return 'Verify Return';
+    }
+  }
+
   Future<void> _initiateReturn() async {
     if (_requestData == null) return;
 
@@ -1709,10 +1732,24 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Verify Return?'),
-        content: const Text(
-          'Have you received the item in good condition? '
-          'This will complete the rental.',
+        title: Text('${_getVerifyButtonText()}?'),
+        content: Text(
+          _requestData != null &&
+                  [
+                    'apartment',
+                    'boardinghouse',
+                    'boarding_house',
+                    'commercial',
+                    'commercialspace',
+                    'commercial_space',
+                  ].contains(
+                    (_requestData!['rentType'] as String? ?? 'item')
+                        .toLowerCase(),
+                  )
+              ? 'Have you verified that the property is in good condition? '
+                    'This will complete the rental.'
+              : 'Have you received the item in good condition? '
+                    'This will complete the rental.',
         ),
         actions: [
           TextButton(
@@ -1725,7 +1762,7 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
               backgroundColor: Colors.green,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Verify Return'),
+            child: Text(_getVerifyButtonText()),
           ),
         ],
       ),
@@ -1776,6 +1813,8 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
           );
           // Reload request to show updated status
           _loadRequest();
+          // Prompt for rating after successful verification
+          await _promptForRating(widget.requestId);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1796,6 +1835,95 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
+    }
+  }
+
+  Future<void> _promptForRating(String requestId) async {
+    try {
+      // Get rental request details
+      final requestData = await _firestoreService.getRentalRequest(requestId);
+      if (requestData == null) return;
+
+      final request = RentalRequestModel.fromMap(requestData, requestId);
+
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final currentUser = authProvider.user;
+
+      if (currentUser == null) return;
+
+      // Determine who to rate based on current user
+      final isOwner = currentUser.uid == request.ownerId;
+      final ratedUserId = isOwner ? request.renterId : request.ownerId;
+      final ratedUserName = isOwner ? 'Renter' : 'Owner';
+
+      // Check if already rated
+      final hasRated = await _ratingService.hasRated(
+        raterUserId: currentUser.uid,
+        ratedUserId: ratedUserId,
+        transactionId: requestId,
+      );
+
+      if (hasRated) {
+        // Already rated, skip prompt
+        return;
+      }
+
+      // Get rated user's name if available
+      String? ratedUserNameFull;
+      try {
+        final ratedUserData = await _firestoreService.getUser(ratedUserId);
+        if (ratedUserData != null) {
+          ratedUserNameFull =
+              '${ratedUserData['firstName']} ${ratedUserData['lastName']}';
+        }
+      } catch (e) {
+        // Silent fail, use default
+      }
+
+      // Show rating dialog
+      if (!mounted) return;
+
+      final shouldRate = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Rate Your Experience'),
+          content: Text(
+            'How was your rental experience with ${ratedUserNameFull ?? ratedUserName}?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Maybe Later'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00897B),
+              ),
+              child: const Text('Rate Now'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldRate == true && mounted) {
+        // Navigate to rating screen
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SubmitRatingScreen(
+              ratedUserId: ratedUserId,
+              ratedUserName: ratedUserNameFull ?? ratedUserName,
+              context: RatingContext.rental,
+              transactionId: requestId,
+              role: isOwner ? 'owner' : 'renter',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Silent fail - don't interrupt user flow
+      debugPrint('Error prompting for rating: $e');
     }
   }
 

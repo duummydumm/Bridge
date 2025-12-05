@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../providers/admin_provider.dart';
 import '../../../services/export_service.dart';
 
@@ -118,6 +119,11 @@ class _ReportsTabState extends State<ReportsTab> {
     final contextType = data['contextType'] ?? '';
     final createdAt = data['createdAt'] as Timestamp?;
     final resolvedAt = data['resolvedAt'] as Timestamp?;
+    final evidenceImageUrls =
+        (data['evidenceImageUrls'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
 
     showDialog(
       context: context,
@@ -175,6 +181,52 @@ class _ReportsTabState extends State<ReportsTab> {
               ],
               if (resolvedAt != null) ...[
                 _DetailRow('Resolved At', _formatDate(resolvedAt.toDate())),
+                const SizedBox(height: 8),
+              ],
+              if (evidenceImageUrls.isNotEmpty) ...[
+                const Text(
+                  'Evidence Images:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 150,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: evidenceImageUrls.length,
+                    itemBuilder: (context, index) {
+                      return Container(
+                        width: 150,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: CachedNetworkImage(
+                            imageUrl: evidenceImageUrls[index],
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(
+                              color: Colors.grey[300],
+                              child: const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Container(
+                              color: Colors.grey[300],
+                              child: const Icon(
+                                Icons.image_not_supported,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
               ],
             ],
           ),

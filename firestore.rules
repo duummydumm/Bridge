@@ -26,7 +26,19 @@ service cloud.firestore {
       // This allows queries like: where('email', isEqualTo: '...')
       allow list: if isAuthenticated();
       allow create: if isAuthenticated() && request.auth.uid == userId;
-      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      // Users can update their own document, or admins can update any
+      // Also allow updating reputationScore field for other users (calculated from ratings)
+      // This allows the rating system to update reputation scores when ratings are created/updated
+      allow update: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isAdmin() ||
+        // Allow updating reputationScore for any user (calculated from their ratings)
+        // Check that only reputationScore changed and it's a valid number (0-5 range)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reputationScore']) &&
+         request.resource.data.reputationScore is number &&
+         request.resource.data.reputationScore >= 0.0 &&
+         request.resource.data.reputationScore <= 5.0)
+      );
       allow delete: if isAdmin();
     }
     
@@ -224,8 +236,9 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       // Allow list queries for authenticated users
       allow list: if isAuthenticated();
-      // Verified users can create ratings
-      allow create: if isUserVerified();
+      // Authenticated users can create ratings (after completing transactions)
+      allow create: if isAuthenticated() && 
+                       request.resource.data.raterUserId == request.auth.uid;
       // Users can update their own ratings
       allow update: if isAuthenticated() && resource.data.raterUserId == request.auth.uid;
       // Users can delete their own ratings, or admins can delete any

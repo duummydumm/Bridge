@@ -1462,6 +1462,8 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                         final ownerId = userProvider.currentUser?.uid ?? '';
                         final ownerName =
                             userProvider.currentUser?.fullName ?? '';
+                        final ownerBarangay =
+                            userProvider.currentUser?.barangay ?? '';
 
                         if (ownerId.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -1623,6 +1625,9 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                                     _initialOccupantsCtrl.text.trim(),
                                   )
                                 : null,
+                            ownerBarangay: ownerBarangay.isNotEmpty
+                                ? ownerBarangay
+                                : null,
                           );
 
                           if (!mounted) return;
@@ -1684,6 +1689,7 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                             itemId: itemId,
                             ownerId: ownerId,
                             ownerName: ownerName,
+                            ownerBarangay: ownerBarangay,
                             title: _titleCtrl.text.trim(),
                             description: _descriptionCtrl.text.trim(),
                             condition: _selectedCondition,

@@ -3,8 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/firestore_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/rental_request_provider.dart';
+import '../../models/rating_model.dart';
+import '../../models/rental_request_model.dart';
+import '../../services/rating_service.dart';
 import 'package:provider/provider.dart';
 import 'active_rental_detail_screen.dart';
+import '../submit_rating_screen.dart';
 
 class ActiveRentalsListScreen extends StatefulWidget {
   final bool?
@@ -19,6 +23,7 @@ class ActiveRentalsListScreen extends StatefulWidget {
 
 class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final RatingService _ratingService = RatingService();
   List<Map<String, dynamic>> _activeRentals = [];
   bool _isLoading = true;
   bool _viewingAsOwner = false; // Track which view we're showing
@@ -228,6 +233,8 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
         return 'Active';
       case 'returninitiated':
         return 'Return Initiated';
+      case 'terminated':
+        return 'Terminated';
       default:
         return status;
     }
@@ -241,6 +248,8 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
         return Colors.green;
       case 'returninitiated':
         return Colors.orange;
+      case 'terminated':
+        return Colors.redAccent;
       default:
         return Colors.grey;
     }
@@ -258,6 +267,23 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
         return 'End Lease';
       default:
         return 'Initiate Return';
+    }
+  }
+
+  String _getVerifyButtonText(Map<String, dynamic> rental) {
+    final rentType = (rental['rentType'] as String? ?? 'item').toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Mark as Completed';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Mark as Completed';
+      case 'commercial':
+      case 'commercialspace':
+      case 'commercial_space':
+        return 'Mark as Completed';
+      default:
+        return 'Mark as Returned';
     }
   }
 
@@ -303,6 +329,55 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
         return 'Lease termination initiated successfully! Owner will verify.';
       default:
         return 'Return initiated successfully! Owner will verify.';
+    }
+  }
+
+  String _getOwnerTerminateDialogTitle(Map<String, dynamic> rental) {
+    final rentType = (rental['rentType'] as String? ?? 'item').toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Force End Rental?';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Force Move Out?';
+      case 'commercial':
+        return 'Force End Lease?';
+      default:
+        return 'End Rental?';
+    }
+  }
+
+  String _getOwnerTerminateDialogMessage(Map<String, dynamic> rental) {
+    final rentType = (rental['rentType'] as String? ?? 'item').toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Are you sure you want to forcibly end this apartment rental? '
+            'This should only be used for serious issues like non-payment or violations.';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Are you sure you want to forcibly move this renter out? '
+            'This should only be used for serious issues like non-payment or violations.';
+      case 'commercial':
+        return 'Are you sure you want to forcibly end this lease? '
+            'This should only be used for serious issues like non-payment or violations.';
+      default:
+        return 'Are you sure you want to end this rental? '
+            'This should only be used for serious issues like non-payment or violations.';
+    }
+  }
+
+  String _getOwnerTerminateSuccessMessage(Map<String, dynamic> rental) {
+    final rentType = (rental['rentType'] as String? ?? 'item').toLowerCase();
+    switch (rentType) {
+      case 'apartment':
+        return 'Apartment rental has been terminated.';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Boarding house rental has been terminated.';
+      case 'commercial':
+        return 'Commercial lease has been terminated.';
+      default:
+        return 'Rental has been terminated.';
     }
   }
 
@@ -398,13 +473,31 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
   }
 
   Future<void> _verifyReturn(String requestId) async {
+    // Find the rental data to get rent type
+    final rental = _activeRentals.firstWhere(
+      (r) => (r['id'] as String?) == requestId,
+      orElse: () => <String, dynamic>{},
+    );
+    final rentType = (rental['rentType'] as String? ?? 'item').toLowerCase();
+    final isPropertyRental = [
+      'apartment',
+      'boardinghouse',
+      'boarding_house',
+      'commercial',
+      'commercialspace',
+      'commercial_space',
+    ].contains(rentType);
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Mark as Returned?'),
-        content: const Text(
-          'Have you received the item in good condition? '
-          'This will complete the rental.',
+        title: Text('${_getVerifyButtonText(rental)}?'),
+        content: Text(
+          isPropertyRental
+              ? 'Have you verified that the property is in good condition? '
+                    'This will complete the rental.'
+              : 'Have you received the item in good condition? '
+                    'This will complete the rental.',
         ),
         actions: [
           TextButton(
@@ -417,7 +510,7 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
               backgroundColor: Colors.green,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Mark as Returned'),
+            child: Text(_getVerifyButtonText(rental)),
           ),
         ],
       ),
@@ -460,11 +553,210 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
           );
           // Reload list to show updated status
           _loadActiveRentals();
+          // Prompt for rating after successful verification
+          await _promptForRating(requestId);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
                 reqProvider.errorMessage ?? 'Failed to verify return',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _promptForRating(String requestId) async {
+    try {
+      // Get rental request details
+      final requestData = await _firestoreService.getRentalRequest(requestId);
+      if (requestData == null) return;
+
+      final request = RentalRequestModel.fromMap(requestData, requestId);
+
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final currentUser = authProvider.user;
+
+      if (currentUser == null) return;
+
+      // Determine who to rate based on current user
+      final isOwner = currentUser.uid == request.ownerId;
+      final ratedUserId = isOwner ? request.renterId : request.ownerId;
+      final ratedUserName = isOwner ? 'Renter' : 'Owner';
+
+      // Check if already rated
+      final hasRated = await _ratingService.hasRated(
+        raterUserId: currentUser.uid,
+        ratedUserId: ratedUserId,
+        transactionId: requestId,
+      );
+
+      if (hasRated) {
+        // Already rated, skip prompt
+        return;
+      }
+
+      // Get rated user's name if available
+      String? ratedUserNameFull;
+      try {
+        final ratedUserData = await _firestoreService.getUser(ratedUserId);
+        if (ratedUserData != null) {
+          ratedUserNameFull =
+              '${ratedUserData['firstName']} ${ratedUserData['lastName']}';
+        }
+      } catch (e) {
+        // Silent fail, use default
+      }
+
+      // Show rating dialog
+      if (!mounted) return;
+
+      final shouldRate = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Rate Your Experience'),
+          content: Text(
+            'How was your rental experience with ${ratedUserNameFull ?? ratedUserName}?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Maybe Later'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00897B),
+              ),
+              child: const Text('Rate Now'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldRate == true && mounted) {
+        // Navigate to rating screen
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SubmitRatingScreen(
+              ratedUserId: ratedUserId,
+              ratedUserName: ratedUserNameFull ?? ratedUserName,
+              context: RatingContext.rental,
+              transactionId: requestId,
+              role: isOwner ? 'owner' : 'renter',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Silent fail - don't interrupt user flow
+      debugPrint('Error prompting for rating: $e');
+    }
+  }
+
+  Future<void> _ownerTerminateRental(String requestId) async {
+    // Find the rental data
+    final rental = _activeRentals.firstWhere(
+      (r) => (r['id'] as String?) == requestId,
+      orElse: () => <String, dynamic>{},
+    );
+
+    final TextEditingController reasonController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(_getOwnerTerminateDialogTitle(rental)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_getOwnerTerminateDialogMessage(rental)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              decoration: const InputDecoration(
+                labelText: 'Reason (optional)',
+                hintText: 'e.g., Non-payment, repeated violations',
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Force End Rental'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final reqProvider = Provider.of<RentalRequestProvider>(
+        context,
+        listen: false,
+      );
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final currentUser = authProvider.user;
+
+      if (currentUser == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You must be logged in'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final success = await reqProvider.ownerTerminateRental(
+        requestId,
+        currentUser.uid,
+        reason: reasonController.text.trim().isEmpty
+            ? null
+            : reasonController.text.trim(),
+      );
+
+      if (mounted) {
+        if (success) {
+          final rental = _activeRentals.firstWhere(
+            (r) => (r['id'] as String?) == requestId,
+            orElse: () => <String, dynamic>{},
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_getOwnerTerminateSuccessMessage(rental)),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          _loadActiveRentals();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                reqProvider.errorMessage ?? 'Failed to terminate rental',
               ),
               backgroundColor: Colors.red,
             ),
@@ -789,11 +1081,33 @@ class _ActiveRentalsListScreenState extends State<ActiveRentalsListScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () => _verifyReturn(requestId),
                     icon: const Icon(Icons.check_circle, size: 18),
-                    label: const Text('Mark as Returned'),
+                    label: Text(_getVerifyButtonText(rental)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              // Force-terminate button for owners on active/approved rentals
+              if (_viewingAsOwner &&
+                  (status.toLowerCase() == 'active' ||
+                      status.toLowerCase() == 'ownerapproved')) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _ownerTerminateRental(requestId),
+                    icon: const Icon(Icons.warning_amber_rounded, size: 18),
+                    label: const Text('Force End Rental'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.redAccent,
+                      side: const BorderSide(color: Colors.redAccent),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),

@@ -38,6 +38,20 @@ class _MyCalamityDonationsScreenState extends State<MyCalamityDonationsScreen> {
     final userProvider = Provider.of<UserProvider>(context);
     final currentUser = userProvider.currentUser;
     final email = authProvider.user?.email ?? currentUser?.email ?? '';
+    final calamityProvider =
+        Provider.of<CalamityProvider>(context, listen: false);
+
+    // Safety net: if user email becomes available after initState
+    // and we still haven't loaded donations, trigger a load.
+    if (email.isNotEmpty &&
+        calamityProvider.calamityDonations.isEmpty &&
+        !calamityProvider.isLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final provider =
+            Provider.of<CalamityProvider>(context, listen: false);
+        provider.loadDonationsByDonor(email);
+      });
+    }
 
     if (email.isEmpty) {
       return Scaffold(

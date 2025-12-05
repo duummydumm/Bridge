@@ -95,12 +95,14 @@ class ChatService {
           .doc(conversationId)
           .collection('messages')
           .add(messageData);
+      final messageId = messageRef.id;
 
       // Update conversation with last message info
       await _db.collection('conversations').doc(conversationId).update({
         'lastMessage': content,
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastMessageSenderId': senderId,
+        'lastMessageId': messageId,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -134,9 +136,46 @@ class ChatService {
           'unreadCountByUser': unreadCountByUser,
           'unreadCount': totalUnread,
         });
+
+        // Create notifications for recipients (one-to-one and group chats)
+        try {
+          final isGroup = data['isGroup'] == true;
+          final groupName = data['groupName'] as String?;
+          final participantNames = Map<String, dynamic>.from(
+            data['participantNames'] ?? {},
+          );
+          final mutedByUsers = List<String>.from(
+            data['mutedByUsers'] ?? const [],
+          );
+
+          for (final participantId in participants) {
+            if (participantId == senderId) continue;
+            if (mutedByUsers.contains(participantId)) continue;
+
+            // Best-effort: create a notification document that Cloud Functions
+            // will use to send FCM push notifications.
+            await _db.collection('notifications').add({
+              'toUserId': participantId,
+              'type': 'chat_message',
+              'conversationId': conversationId,
+              'messageId': messageId,
+              'senderId': senderId,
+              'senderName': senderName,
+              'content': content,
+              'isGroup': isGroup,
+              if (isGroup) 'groupName': groupName,
+              'participantNameMap': participantNames,
+              'status': 'unread',
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          }
+        } catch (e) {
+          // Best-effort: chat should still work even if notification write fails
+          throw Exception('Error creating chat notifications: $e');
+        }
       }
 
-      return messageRef.id;
+      return messageId;
     } catch (e) {
       throw Exception('Error sending message: $e');
     }

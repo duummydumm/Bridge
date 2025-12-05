@@ -6,6 +6,7 @@ import '../../providers/giveaway_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../services/report_block_service.dart';
+import '../../reusable_widgets/report_dialog.dart';
 
 class GiveawayDetailScreen extends StatefulWidget {
   const GiveawayDetailScreen({super.key});
@@ -782,149 +783,36 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
       return;
     }
 
-    String selectedReason = 'spam';
-    final TextEditingController descriptionController = TextEditingController();
-
-    showDialog(
+    ReportDialog.showReportContentDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Report Giveaway'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Please select a reason for reporting:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                RadioListTile<String>(
-                  title: const Text('Spam'),
-                  value: 'spam',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Inappropriate Content'),
-                  value: 'inappropriate_content',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Fraud'),
-                  value: 'fraud',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('No Longer Available'),
-                  value: 'no_longer_available',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Other'),
-                  value: 'other',
-                  groupValue: selectedReason,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedReason = value!;
-                    });
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Additional details (optional)',
-                    hintText: 'Please provide more information...',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                // Store parent context before closing dialog
-                final parentContext = context;
-                Navigator.pop(parentContext);
+      contentType: 'giveaway',
+      onSubmit:
+          ({
+            required String reason,
+            String? description,
+            List<String>? evidenceImageUrls,
+          }) async {
+            final reporterName =
+                userProvider.currentUser?.fullName ??
+                authProvider.user!.email ??
+                'Unknown';
 
-                final reporterName =
-                    userProvider.currentUser?.fullName ??
-                    authProvider.user!.email ??
-                    'Unknown';
-
-                try {
-                  await _reportBlockService.reportContent(
-                    reporterId: authProvider.user!.uid,
-                    reporterName: reporterName,
-                    contentType: 'giveaway',
-                    contentId: _giveaway!.id,
-                    contentTitle: _giveaway!.title,
-                    ownerId: _giveaway!.donorId,
-                    ownerName: _giveaway!.donorName,
-                    reason: selectedReason,
-                    description: descriptionController.text.trim().isNotEmpty
-                        ? descriptionController.text.trim()
-                        : null,
-                  );
-
-                  if (mounted) {
-                    ScaffoldMessenger.of(parentContext).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Giveaway has been reported successfully. Thank you for keeping the community safe.',
-                        ),
-                        backgroundColor: Colors.green,
-                        duration: Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(parentContext).showSnackBar(
-                      SnackBar(
-                        content: Text('Error reporting giveaway: $e'),
-                        backgroundColor: Colors.red,
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text(
-                'Report',
-                style: TextStyle(color: Colors.orange),
-              ),
-            ),
-          ],
-        ),
-      ),
+            await _reportBlockService.reportContent(
+              reporterId: authProvider.user!.uid,
+              reporterName: reporterName,
+              contentType: 'giveaway',
+              contentId: _giveaway!.id,
+              contentTitle: _giveaway!.title,
+              ownerId: _giveaway!.donorId,
+              ownerName: _giveaway!.donorName,
+              reason: reason,
+              description: description,
+              evidenceImageUrls: evidenceImageUrls,
+            );
+          },
+      successMessage:
+          'Giveaway has been reported successfully. Thank you for keeping the community safe.',
+      errorMessage: 'Error reporting giveaway',
     );
   }
 

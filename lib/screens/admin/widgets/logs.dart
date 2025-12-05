@@ -22,6 +22,8 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
   String _selectedTimeRange = 'all';
   DateTime? _startDate;
   DateTime? _endDate;
+  DateTime? _customStartDate;
+  DateTime? _customEndDate;
   List<Map<String, dynamic>>? _searchResults;
 
   @override
@@ -34,6 +36,10 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
     setState(() {
       _selectedTimeRange = range;
       final now = DateTime.now();
+
+      // Clear custom dates when using preset ranges
+      _customStartDate = null;
+      _customEndDate = null;
 
       switch (range) {
         case 'today':
@@ -57,6 +63,125 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
     });
   }
 
+  Future<void> _showDateRangePicker(BuildContext context) async {
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Select Date Range'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: _customStartDate ?? DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: _customEndDate ?? DateTime.now(),
+                          );
+                          if (date != null) {
+                            setDialogState(() => _customStartDate = date);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_today, size: 16),
+                        label: Text(
+                          _customStartDate != null
+                              ? DateFormat('MMM dd, yyyy').format(_customStartDate!)
+                              : 'Start Date',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: _customEndDate ?? DateTime.now(),
+                            firstDate: _customStartDate ?? DateTime(2020),
+                            lastDate: DateTime.now(),
+                          );
+                          if (date != null) {
+                            setDialogState(() => _customEndDate = date);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_today, size: 16),
+                        label: Text(
+                          _customEndDate != null
+                              ? DateFormat('MMM dd, yyyy').format(_customEndDate!)
+                              : 'End Date',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_customStartDate != null || _customEndDate != null) ...[
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () {
+                      setDialogState(() {
+                        _customStartDate = null;
+                        _customEndDate = null;
+                      });
+                    },
+                    icon: const Icon(Icons.clear, size: 16),
+                    label: const Text('Clear dates'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                setState(() {
+                  // When custom dates are set, update the actual filter dates
+                  if (_customStartDate != null || _customEndDate != null) {
+                    _startDate = _customStartDate != null
+                        ? DateTime(
+                            _customStartDate!.year,
+                            _customStartDate!.month,
+                            _customStartDate!.day,
+                          )
+                        : null;
+                    _endDate = _customEndDate != null
+                        ? DateTime(
+                            _customEndDate!.year,
+                            _customEndDate!.month,
+                            _customEndDate!.day,
+                            23,
+                            59,
+                            59,
+                          )
+                        : null;
+                    _selectedTimeRange = 'custom';
+                  } else {
+                    // If cleared, reset to 'all'
+                    _startDate = null;
+                    _endDate = null;
+                    _selectedTimeRange = 'all';
+                  }
+                  _searchResults = null;
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _performSearch() async {
     final searchText = _searchController.text.trim();
     if (searchText.isEmpty) {
@@ -69,6 +194,17 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
       limit: 100,
     );
     setState(() => _searchResults = results);
+  }
+
+  String _getDateRangeText() {
+    if (_customStartDate != null && _customEndDate != null) {
+      return '${DateFormat('MMM dd').format(_customStartDate!)} - ${DateFormat('MMM dd, yyyy').format(_customEndDate!)}';
+    } else if (_customStartDate != null) {
+      return 'From ${DateFormat('MMM dd, yyyy').format(_customStartDate!)}';
+    } else if (_customEndDate != null) {
+      return 'Until ${DateFormat('MMM dd, yyyy').format(_customEndDate!)}';
+    }
+    return 'Custom Date';
   }
 
   Future<void> _exportLogs(BuildContext context) async {
@@ -247,6 +383,68 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
                 onTap: () => _updateTimeRange('all'),
               ),
 
+              // Custom Date Range Button
+              const SizedBox(width: 12),
+              InkWell(
+                onTap: () => _showDateRangePicker(context),
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient: _selectedTimeRange == 'custom'
+                        ? const LinearGradient(
+                            colors: [Color(0xFF00897B), Color(0xFF00695C)],
+                          )
+                        : null,
+                    color: _selectedTimeRange == 'custom' ? null : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _selectedTimeRange == 'custom'
+                          ? Colors.transparent
+                          : Colors.grey[300]!,
+                    ),
+                    boxShadow: _selectedTimeRange == 'custom'
+                        ? [
+                            BoxShadow(
+                              color: const Color(0xFF00897B).withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.date_range,
+                        size: 16,
+                        color: _selectedTimeRange == 'custom'
+                            ? Colors.white
+                            : Colors.black87,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _selectedTimeRange == 'custom' &&
+                                (_customStartDate != null ||
+                                    _customEndDate != null)
+                            ? _getDateRangeText()
+                            : 'Custom Date',
+                        style: TextStyle(
+                          color: _selectedTimeRange == 'custom'
+                              ? Colors.white
+                              : Colors.black87,
+                          fontWeight: _selectedTimeRange == 'custom'
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
               // Category Filter
               const SizedBox(width: 12),
               _buildDropdownFilter(
@@ -287,6 +485,45 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+
+          // Custom Date Range Indicator
+          if (_selectedTimeRange == 'custom' &&
+              (_customStartDate != null || _customEndDate != null))
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.filter_alt, color: Colors.blue, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Custom date range: ${_getDateRangeText()}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _customStartDate = null;
+                        _customEndDate = null;
+                        _startDate = null;
+                        _endDate = null;
+                        _selectedTimeRange = 'all';
+                        _searchResults = null;
+                      });
+                    },
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 16),
 
           // Logs List

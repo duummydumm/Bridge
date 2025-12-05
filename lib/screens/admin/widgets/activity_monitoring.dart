@@ -226,7 +226,7 @@ class _ActivityMonitoringTabState extends State<ActivityMonitoringTab> {
       if (snapshot == null) return;
 
       final csv = StringBuffer();
-      csv.writeln('Type,User,Item,Status,Date');
+      csv.writeln('Type,User,Item,RentType,Status,Date');
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
@@ -238,6 +238,10 @@ class _ActivityMonitoringTabState extends State<ActivityMonitoringTab> {
             data['claimantName'] ??
             'Unknown';
         final item = data['itemTitle'] ?? 'Item';
+        // For rentals, include rentType; for others, use empty string
+        final rentType = _selectedCategory == 1
+            ? (data['rentType'] ?? 'item').toString()
+            : '';
         final status = data['status'] ?? 'pending';
         final date = data['createdAt'] is Timestamp
             ? DateFormat(
@@ -245,7 +249,7 @@ class _ActivityMonitoringTabState extends State<ActivityMonitoringTab> {
               ).format((data['createdAt'] as Timestamp).toDate())
             : '';
 
-        csv.writeln('$type,$user,$item,$status,$date');
+        csv.writeln('$type,$user,$item,$rentType,$status,$date');
       }
 
       await Clipboard.setData(ClipboardData(text: csv.toString()));
@@ -1032,6 +1036,8 @@ class _RentalActivitiesSection extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final d = docs[index].data();
                   final itemTitle = (d['itemTitle'] ?? 'Item') as String;
+                  final rentType = (d['rentType'] ?? 'item') as String;
+                  final listingId = (d['listingId'] ?? '') as String;
                   final renterId = (d['renterId'] ?? '') as String;
                   final ownerId = (d['ownerId'] ?? '') as String;
                   final status = (d['status'] ?? 'pending') as String;
@@ -1041,6 +1047,8 @@ class _RentalActivitiesSection extends StatelessWidget {
 
                   return _RentalActivityCard(
                     itemTitle: itemTitle,
+                    rentType: rentType,
+                    listingId: listingId,
                     renterId: renterId,
                     ownerId: ownerId,
                     status: status,
@@ -1059,6 +1067,8 @@ class _RentalActivitiesSection extends StatelessWidget {
 // New widget to fetch and display user names
 class _RentalActivityCard extends StatelessWidget {
   final String itemTitle;
+  final String rentType;
+  final String listingId;
   final String renterId;
   final String ownerId;
   final String status;
@@ -1066,6 +1076,8 @@ class _RentalActivityCard extends StatelessWidget {
 
   const _RentalActivityCard({
     required this.itemTitle,
+    required this.rentType,
+    required this.listingId,
     required this.renterId,
     required this.ownerId,
     required this.status,
@@ -1112,6 +1124,41 @@ class _RentalActivityCard extends StatelessWidget {
     return {'renterName': renterName, 'ownerName': ownerName};
   }
 
+  Future<String> _fetchRentTypeFromListing() async {
+    // If rentType is already set and not default, use it
+    if (rentType.isNotEmpty && rentType.toLowerCase() != 'item') {
+      return rentType;
+    }
+
+    // Try to fetch from listing if rentType is missing or default
+    if (listingId.isNotEmpty) {
+      try {
+        final db = FirebaseFirestore.instance;
+        final listingDoc = await db
+            .collection('rental_listings')
+            .doc(listingId)
+            .get();
+        if (listingDoc.exists) {
+          final listingData = listingDoc.data();
+          final fetchedRentType = (listingData?['rentType'] ?? 'item')
+              .toString()
+              .toLowerCase();
+          // Normalize boardinghouse variations
+          if (fetchedRentType == 'boarding_house') {
+            return 'boardinghouse';
+          }
+          if (fetchedRentType.isNotEmpty && fetchedRentType != 'item') {
+            return fetchedRentType;
+          }
+        }
+      } catch (e) {
+        // If fetching fails, use stored rentType
+      }
+    }
+
+    return rentType; // Fallback to stored value
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, String>>(
@@ -1122,9 +1169,116 @@ class _RentalActivityCard extends StatelessWidget {
         final renterName = names['renterName']!;
         final ownerName = names['ownerName']!;
 
+        return FutureBuilder<String>(
+          future: _fetchRentTypeFromListing(),
+          builder: (context, rentTypeSnapshot) {
+            // Format rentType for display - only show if it's not the default "item"
+            String displaySubtitle = itemTitle;
+            final actualRentType = rentTypeSnapshot.data ?? rentType;
+
+            if (actualRentType.isNotEmpty &&
+                actualRentType.toLowerCase() != 'item') {
+              String formattedRentType =
+                  actualRentType[0].toUpperCase() + actualRentType.substring(1);
+              // Handle special cases
+              if (formattedRentType == 'Boardinghouse') {
+                formattedRentType = 'Boarding House';
+              } else if (formattedRentType == 'Commercial') {
+                formattedRentType = 'Commercial Space';
+              }
+              displaySubtitle = '$itemTitle ($formattedRentType)';
+            }
+
+            return _ActivityCard(
+              title: '$renterName → $ownerName',
+              subtitle: displaySubtitle,
+              status: status,
+              timestamp: timestamp,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// New widget to fetch and display donor name
+class _GiveawayActivityCard extends StatelessWidget {
+  final String itemTitle;
+  final String giveawayId;
+  final String claimantName;
+  final String donorId;
+  final String status;
+  final DateTime? timestamp;
+
+  const _GiveawayActivityCard({
+    required this.itemTitle,
+    required this.giveawayId,
+    required this.claimantName,
+    required this.donorId,
+    required this.status,
+    required this.timestamp,
+  });
+
+  Future<Map<String, String>> _fetchDonorNameAndTitle() async {
+    final db = FirebaseFirestore.instance;
+    String donorName = 'Donor';
+    String giveawayTitle = itemTitle;
+
+    try {
+      // Fetch donor name
+      if (donorId.isNotEmpty) {
+        final donorDoc = await db.collection('users').doc(donorId).get();
+        if (donorDoc.exists) {
+          final donorData = donorDoc.data();
+          final firstName = donorData?['firstName'] ?? '';
+          final lastName = donorData?['lastName'] ?? '';
+          final fullName = '$firstName $lastName'.trim();
+          if (fullName.isNotEmpty) {
+            donorName = fullName;
+          }
+        }
+      }
+
+      // Fetch giveaway title from listing if itemTitle is default or missing
+      if ((giveawayTitle.isEmpty || giveawayTitle == 'Item') &&
+          giveawayId.isNotEmpty) {
+        try {
+          final giveawayDoc = await db
+              .collection('giveaways')
+              .doc(giveawayId)
+              .get();
+          if (giveawayDoc.exists) {
+            final giveawayData = giveawayDoc.data();
+            final title = (giveawayData?['title'] ?? '').toString().trim();
+            if (title.isNotEmpty) {
+              giveawayTitle = title;
+            }
+          }
+        } catch (e) {
+          // If fetching fails, use stored itemTitle
+        }
+      }
+    } catch (e) {
+      // If fetching fails, use default name
+    }
+
+    return {'donorName': donorName, 'giveawayTitle': giveawayTitle};
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, String>>(
+      future: _fetchDonorNameAndTitle(),
+      builder: (context, snapshot) {
+        final data =
+            snapshot.data ?? {'donorName': 'Donor', 'giveawayTitle': itemTitle};
+        final donorName = data['donorName']!;
+        final giveawayTitle = data['giveawayTitle']!;
+
         return _ActivityCard(
-          title: '$renterName → $ownerName',
-          subtitle: itemTitle,
+          title: '$claimantName → $donorName',
+          subtitle: giveawayTitle,
           status: status,
           timestamp: timestamp,
         );
@@ -1293,8 +1447,10 @@ class _GiveawayActivitiesSection extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final d = docs[index].data();
                   final claimantName = (d['claimantName'] ?? 'User') as String;
-                  final donorName = (d['donorName'] ?? 'Donor') as String;
+                  final donorId = (d['donorId'] ?? '') as String;
+                  final giveawayId = (d['giveawayId'] ?? '') as String;
                   final status = (d['status'] ?? 'pending') as String;
+                  // Try to get title from claim request, but we'll fetch from listing if needed
                   final itemTitle =
                       (d['itemTitle'] ?? (d['giveawayTitle'] ?? 'Item'))
                           as String;
@@ -1302,9 +1458,11 @@ class _GiveawayActivitiesSection extends StatelessWidget {
                   final createdAt = d['createdAt'];
                   if (createdAt is Timestamp) ts = createdAt.toDate();
 
-                  return _ActivityCard(
-                    title: '$claimantName → $donorName',
-                    subtitle: itemTitle,
+                  return _GiveawayActivityCard(
+                    itemTitle: itemTitle,
+                    giveawayId: giveawayId,
+                    claimantName: claimantName,
+                    donorId: donorId,
                     status: status,
                     timestamp: ts,
                   );

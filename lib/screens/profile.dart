@@ -11,7 +11,6 @@ import '../services/rating_service.dart';
 import '../services/firestore_service.dart';
 import '../reusable_widgets/bottom_nav_bar_widget.dart';
 import 'all_reviews_screen.dart';
-import 'submit_rating_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -174,10 +173,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 20),
 
                       // Removed test barangay ID button
-
-                      // Action Buttons
-                      _buildActionButtons(),
-
+                      // Removed test feedback button
                       const SizedBox(height: 24),
 
                       // Account Role Section
@@ -541,93 +537,7 @@ class ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildActionButtons() {
-    if (!kDebugMode) {
-      // Hide test-only action buttons in release builds
-      return const SizedBox.shrink();
-    }
-
-    return Row(
-      children: [
-        Expanded(
-          child: _buildActionButton(
-            icon: Icons.chat_bubble_outline,
-            label: 'Leave Feedback (Test)',
-            onTap: () {
-              // Test rating feature - navigate to rating screen
-              // For testing: You'll need to enter a user ID
-              _showTestRatingDialog(context);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Test button removed
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool iconOnly = false,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            vertical: 16,
-            horizontal: iconOnly ? 12 : 16,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF00897B).withValues(alpha: 0.1),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-                spreadRadius: 0,
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: iconOnly
-              ? Icon(icon, color: const Color(0xFF00897B), size: 24)
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(icon, color: const Color(0xFF00897B), size: 22),
-                    if (label.isNotEmpty) ...[
-                      const SizedBox(width: 10),
-                      Flexible(
-                        child: Text(
-                          label,
-                          style: const TextStyle(
-                            color: Color(0xFF00897B),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-        ),
-      ),
-    );
-  }
+  // Test feedback button removed
 
   Widget _buildAccountRole(UserModel? user) {
     // Get role display text based on user's actual role
@@ -1500,6 +1410,7 @@ Check out my profile on Bridge App!
                       time: review.timeAgo,
                       rating: review.rating,
                       comment: review.feedback ?? 'No comment provided',
+                      context: review.context,
                     ),
                   ),
                 ),
@@ -1562,7 +1473,36 @@ Check out my profile on Bridge App!
     required String time,
     required int rating,
     required String comment,
+    required RatingContext context,
   }) {
+    // Get context label and color
+    String contextLabel;
+    Color contextColor;
+    IconData contextIcon;
+
+    switch (context) {
+      case RatingContext.rental:
+        contextLabel = 'Rent';
+        contextColor = const Color(0xFF26A69A);
+        contextIcon = Icons.home_outlined;
+        break;
+      case RatingContext.trade:
+        contextLabel = 'Trade';
+        contextColor = const Color(0xFFFFB74D);
+        contextIcon = Icons.swap_horiz;
+        break;
+      case RatingContext.borrow:
+        contextLabel = 'Borrow';
+        contextColor = const Color(0xFF42A5F5);
+        contextIcon = Icons.shopping_bag_outlined;
+        break;
+      case RatingContext.giveaway:
+        contextLabel = 'Giveaway';
+        contextColor = const Color(0xFF66BB6A);
+        contextIcon = Icons.card_giftcard;
+        break;
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       margin: const EdgeInsets.only(bottom: 12),
@@ -1603,26 +1543,68 @@ Check out my profile on Bridge App!
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1A1A),
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Row(
-                      children: List.generate(5, (index) {
-                        return Icon(
-                          Icons.star,
-                          size: 16,
-                          color: index < rating
-                              ? Colors.amber
-                              : Colors.grey[300],
-                        );
-                      }),
+                    const SizedBox(width: 8),
+                    // Context label
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: contextColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: contextColor.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(contextIcon, size: 12, color: contextColor),
+                          const SizedBox(width: 4),
+                          Text(
+                            contextLabel,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: contextColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                // Star rating row - wrapped to prevent overflow
+                Row(
+                  children: [
+                    Flexible(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: List.generate(5, (index) {
+                          return Icon(
+                            Icons.star,
+                            size: 16,
+                            color: index < rating
+                                ? Colors.amber
+                                : Colors.grey[300],
+                          );
+                        }),
+                      ),
                     ),
                   ],
                 ),
@@ -1649,156 +1631,6 @@ Check out my profile on Bridge App!
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  // Test/Demo function for rating feature
-  void _showTestRatingDialog(BuildContext context) {
-    final TextEditingController userIdController = TextEditingController();
-    final TextEditingController userNameController = TextEditingController();
-    RatingContext selectedContext = RatingContext.rental;
-    String selectedRole = 'renter';
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Test Rating Feature'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Enter details to test the rating feature:',
-                  style: TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: userIdController,
-                  decoration: const InputDecoration(
-                    labelText: 'User ID to Rate',
-                    hintText: 'Enter Firestore user ID',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: userNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'User Name (Optional)',
-                    hintText: 'Enter user name',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Select Context:',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                // Context Selection
-                DropdownButtonFormField<RatingContext>(
-                  value: selectedContext,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                  ),
-                  items: RatingContext.values.map((context) {
-                    return DropdownMenuItem(
-                      value: context,
-                      child: Text(context.name.toUpperCase()),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setDialogState(() {
-                        selectedContext = value;
-                        // Update role based on context
-                        switch (value) {
-                          case RatingContext.rental:
-                            selectedRole = 'renter';
-                            break;
-                          case RatingContext.trade:
-                            selectedRole = 'trader';
-                            break;
-                          case RatingContext.borrow:
-                            selectedRole = 'borrower';
-                            break;
-                          case RatingContext.giveaway:
-                            selectedRole = 'claimant';
-                            break;
-                        }
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Tip: Get a user ID from Firestore users collection',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Supported: Rental ✅ | Trade ⚠️ | Borrow ⚠️ | Giveaway ⚠️',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[600],
-                    fontStyle: FontStyle.italic,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const Text(
-                  '⚠️ = Manual testing only (not auto-integrated)',
-                  style: TextStyle(fontSize: 10, color: Colors.orange),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (userIdController.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please enter a user ID'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                  return;
-                }
-
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SubmitRatingScreen(
-                      ratedUserId: userIdController.text.trim(),
-                      ratedUserName: userNameController.text.trim().isEmpty
-                          ? null
-                          : userNameController.text.trim(),
-                      context: selectedContext,
-                      transactionId: null, // Optional for testing
-                      role: selectedRole,
-                    ),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00897B),
-              ),
-              child: const Text('Test Rating'),
-            ),
-          ],
-        ),
       ),
     );
   }

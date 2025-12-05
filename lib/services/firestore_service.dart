@@ -636,6 +636,379 @@ class FirestoreService {
     }
   }
 
+  /// Lender proposes compensation amount for disputed return
+  Future<bool> proposeDisputeCompensation({
+    required String requestId,
+    required String lenderId,
+    required double compensationAmount,
+    String? proposalNotes,
+  }) async {
+    try {
+      final request = await getBorrowRequestById(requestId);
+      if (request == null) {
+        throw Exception('Borrow request not found');
+      }
+
+      final currentStatus = request['status'] as String?;
+      if (currentStatus != 'return_disputed') {
+        throw Exception('Can only propose compensation for disputed returns');
+      }
+
+      final requestLenderId = request['lenderId'] as String?;
+      if (requestLenderId != lenderId) {
+        throw Exception('Only the lender can propose compensation');
+      }
+
+      final borrowerId = request['borrowerId'] as String?;
+      final itemTitle = request['itemTitle'] as String? ?? 'Item';
+      final lenderName = request['lenderName'] as String? ?? 'Lender';
+
+      await _db.collection('borrow_requests').doc(requestId).update({
+        'disputeResolution': {
+          'proposedAmount': compensationAmount,
+          'proposedBy': lenderId,
+          'proposedAt': FieldValue.serverTimestamp(),
+          'proposalNotes': proposalNotes,
+          'status':
+              'proposal_pending', // proposal_pending, accepted, rejected, resolved
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Send notification to borrower
+      if (borrowerId != null &&
+          borrowerId.isNotEmpty &&
+          borrowerId != lenderId) {
+        try {
+          await _db.collection('notifications').add({
+            'toUserId': borrowerId,
+            'type': 'dispute_compensation_proposed',
+            'itemId': request['itemId'],
+            'itemTitle': itemTitle,
+            'fromUserId': lenderId,
+            'fromUserName': lenderName,
+            'requestId': requestId,
+            'amount': compensationAmount,
+            'status': 'unread',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error creating compensation proposal notification: $e');
+        }
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error proposing dispute compensation: $e');
+      rethrow;
+    }
+  }
+
+  /// Borrower accepts the proposed compensation
+  Future<bool> acceptDisputeCompensation({
+    required String requestId,
+    required String borrowerId,
+  }) async {
+    try {
+      final request = await getBorrowRequestById(requestId);
+      if (request == null) {
+        throw Exception('Borrow request not found');
+      }
+
+      final currentStatus = request['status'] as String?;
+      if (currentStatus != 'return_disputed') {
+        throw Exception('Can only accept compensation for disputed returns');
+      }
+
+      final requestBorrowerId = request['borrowerId'] as String?;
+      if (requestBorrowerId != borrowerId) {
+        throw Exception('Only the borrower can accept compensation');
+      }
+
+      final disputeResolution =
+          request['disputeResolution'] as Map<String, dynamic>?;
+      if (disputeResolution == null ||
+          disputeResolution['status'] != 'proposal_pending') {
+        throw Exception('No pending compensation proposal found');
+      }
+
+      final lenderId = request['lenderId'] as String?;
+      final itemId = request['itemId'] as String?;
+      final itemTitle = request['itemTitle'] as String? ?? 'Item';
+      final borrowerName = request['borrowerName'] as String? ?? 'Borrower';
+      final proposedAmount = disputeResolution['proposedAmount'] as num? ?? 0.0;
+
+      if (itemId == null) {
+        throw Exception('Item ID not found in request');
+      }
+
+      final batch = _db.batch();
+      final requestRef = _db.collection('borrow_requests').doc(requestId);
+      final itemRef = _db.collection('items').doc(itemId);
+
+      // Update dispute resolution status
+      final updatedResolution = Map<String, dynamic>.from(disputeResolution);
+      updatedResolution['status'] = 'accepted';
+      updatedResolution['acceptedBy'] = borrowerId;
+      updatedResolution['acceptedAt'] = FieldValue.serverTimestamp();
+
+      // Mark as resolved and returned
+      batch.update(requestRef, {
+        'status': 'returned',
+        'disputeResolution': updatedResolution,
+        'actualReturnDate': FieldValue.serverTimestamp(),
+        'returnConfirmedBy': lenderId,
+        'returnConfirmedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Mark item as available
+      batch.update(itemRef, {
+        'status': 'available',
+        'currentBorrowerId': null,
+        'returnDate': null,
+        'lastUpdated': FieldValue.serverTimestamp(),
+        'borrowCount': FieldValue.increment(1),
+      });
+
+      await batch.commit();
+
+      // Cancel return reminders
+      try {
+        final localNotificationsService = LocalNotificationsService();
+        await localNotificationsService.cancelReturnReminders(itemId);
+        await localNotificationsService.cancelOverdueReminders(itemId);
+      } catch (e) {
+        debugPrint('Error cancelling reminders: $e');
+      }
+
+      // Send notification to lender
+      if (lenderId != null && lenderId.isNotEmpty && lenderId != borrowerId) {
+        try {
+          await _db.collection('notifications').add({
+            'toUserId': lenderId,
+            'type': 'dispute_compensation_accepted',
+            'itemId': itemId,
+            'itemTitle': itemTitle,
+            'fromUserId': borrowerId,
+            'fromUserName': borrowerName,
+            'requestId': requestId,
+            'amount': proposedAmount,
+            'status': 'unread',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error creating acceptance notification: $e');
+        }
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error accepting dispute compensation: $e');
+      rethrow;
+    }
+  }
+
+  /// Borrower rejects the proposed compensation
+  Future<bool> rejectDisputeCompensation({
+    required String requestId,
+    required String borrowerId,
+    String? rejectionReason,
+  }) async {
+    try {
+      final request = await getBorrowRequestById(requestId);
+      if (request == null) {
+        throw Exception('Borrow request not found');
+      }
+
+      final currentStatus = request['status'] as String?;
+      if (currentStatus != 'return_disputed') {
+        throw Exception('Can only reject compensation for disputed returns');
+      }
+
+      final requestBorrowerId = request['borrowerId'] as String?;
+      if (requestBorrowerId != borrowerId) {
+        throw Exception('Only the borrower can reject compensation');
+      }
+
+      final disputeResolution =
+          request['disputeResolution'] as Map<String, dynamic>?;
+      if (disputeResolution == null ||
+          disputeResolution['status'] != 'proposal_pending') {
+        throw Exception('No pending compensation proposal found');
+      }
+
+      final lenderId = request['lenderId'] as String?;
+      final itemTitle = request['itemTitle'] as String? ?? 'Item';
+      final borrowerName = request['borrowerName'] as String? ?? 'Borrower';
+
+      // Update dispute resolution status
+      final updatedResolution = Map<String, dynamic>.from(disputeResolution);
+      updatedResolution['status'] = 'rejected';
+      updatedResolution['rejectedBy'] = borrowerId;
+      updatedResolution['rejectedAt'] = FieldValue.serverTimestamp();
+      if (rejectionReason != null && rejectionReason.isNotEmpty) {
+        updatedResolution['rejectionReason'] = rejectionReason;
+      }
+
+      await _db.collection('borrow_requests').doc(requestId).update({
+        'disputeResolution': updatedResolution,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Send notification to lender
+      if (lenderId != null && lenderId.isNotEmpty && lenderId != borrowerId) {
+        try {
+          await _db.collection('notifications').add({
+            'toUserId': lenderId,
+            'type': 'dispute_compensation_rejected',
+            'itemId': request['itemId'],
+            'itemTitle': itemTitle,
+            'fromUserId': borrowerId,
+            'fromUserName': borrowerName,
+            'requestId': requestId,
+            'rejectionReason': rejectionReason,
+            'status': 'unread',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error creating rejection notification: $e');
+        }
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error rejecting dispute compensation: $e');
+      rethrow;
+    }
+  }
+
+  /// Record agreed compensation payment (after acceptance)
+  Future<bool> recordDisputeCompensationPayment({
+    required String requestId,
+    required String lenderId,
+    required double amount,
+    String? paymentMethod,
+    String? paymentNotes,
+  }) async {
+    try {
+      final request = await getBorrowRequestById(requestId);
+      if (request == null) {
+        throw Exception('Borrow request not found');
+      }
+
+      final requestLenderId = request['lenderId'] as String?;
+      if (requestLenderId != lenderId) {
+        throw Exception('Only the lender can record payment');
+      }
+
+      final disputeResolution =
+          request['disputeResolution'] as Map<String, dynamic>?;
+      if (disputeResolution == null ||
+          disputeResolution['status'] != 'accepted') {
+        throw Exception(
+          'Compensation must be accepted before recording payment',
+        );
+      }
+
+      final borrowerId = request['borrowerId'] as String?;
+      final itemTitle = request['itemTitle'] as String? ?? 'Item';
+      final lenderName = request['lenderName'] as String? ?? 'Lender';
+
+      // Update dispute resolution with payment info
+      final updatedResolution = Map<String, dynamic>.from(disputeResolution);
+      updatedResolution['status'] = 'resolved';
+      updatedResolution['paymentRecorded'] = true;
+      updatedResolution['paymentAmount'] = amount;
+      updatedResolution['paymentMethod'] = paymentMethod;
+      updatedResolution['paymentNotes'] = paymentNotes;
+      updatedResolution['paymentRecordedAt'] = FieldValue.serverTimestamp();
+      updatedResolution['paymentRecordedBy'] = lenderId;
+
+      await _db.collection('borrow_requests').doc(requestId).update({
+        'disputeResolution': updatedResolution,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Send notification to borrower
+      if (borrowerId != null &&
+          borrowerId.isNotEmpty &&
+          borrowerId != lenderId) {
+        try {
+          await _db.collection('notifications').add({
+            'toUserId': borrowerId,
+            'type': 'dispute_payment_recorded',
+            'itemId': request['itemId'],
+            'itemTitle': itemTitle,
+            'fromUserId': lenderId,
+            'fromUserName': lenderName,
+            'requestId': requestId,
+            'amount': amount,
+            'status': 'unread',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error creating payment recorded notification: $e');
+        }
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error recording dispute compensation payment: $e');
+      rethrow;
+    }
+  }
+
+  /// Get disputed returns for a lender (items they disputed)
+  Future<List<Map<String, dynamic>>> getDisputedReturnsForLender(
+    String lenderId,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('borrow_requests')
+          .where('lenderId', isEqualTo: lenderId)
+          .where('status', isEqualTo: 'return_disputed')
+          .get();
+
+      final disputedReturns = <Map<String, dynamic>>[];
+
+      for (final doc in snap.docs) {
+        final requestData = doc.data();
+        final itemId = requestData['itemId'] as String?;
+
+        if (itemId == null) continue;
+
+        // Get item details
+        try {
+          final itemDoc = await _db.collection('items').doc(itemId).get();
+          if (itemDoc.exists) {
+            final itemData = itemDoc.data() as Map<String, dynamic>;
+            final combined = Map<String, dynamic>.from(requestData);
+            combined['id'] = doc.id;
+            combined.addAll(itemData);
+            combined['itemId'] = itemId;
+            disputedReturns.add(combined);
+          } else {
+            // If item doesn't exist, still include request data
+            final combined = Map<String, dynamic>.from(requestData);
+            combined['id'] = doc.id;
+            disputedReturns.add(combined);
+          }
+        } catch (e) {
+          debugPrint('Error fetching item for disputed return: $e');
+          // Still add request data even if item fetch fails
+          final combined = Map<String, dynamic>.from(requestData);
+          combined['id'] = doc.id;
+          disputedReturns.add(combined);
+        }
+      }
+
+      return disputedReturns;
+    } catch (e) {
+      throw Exception('Error getting disputed returns for lender: $e');
+    }
+  }
+
   /// Get pending returns for a lender (items waiting for return confirmation)
   Future<List<Map<String, dynamic>>> getPendingReturnsForLender(
     String lenderId,
@@ -853,6 +1226,18 @@ class FirestoreService {
     } catch (e) {
       throw Exception('Error getting user: $e');
     }
+  }
+
+  // Stream to watch user document for real-time updates
+  Stream<Map<String, dynamic>?> getUserStream(String uid) {
+    return _db.collection('users').doc(uid).snapshots().map((snapshot) {
+      if (snapshot.exists) {
+        final data = snapshot.data() as Map<String, dynamic>;
+        data['id'] = snapshot.id;
+        return data;
+      }
+      return null;
+    });
   }
 
   // Check if a user with the given email already exists
@@ -1691,33 +2076,49 @@ extension FirestoreServiceRentals on FirestoreService {
       }
     }
 
-    // Ensure we always store a human-friendly title for the rented thing
-    // so "Your Activity" and other UIs can display the correct name
-    if ((payload['itemTitle'] == null ||
-        (payload['itemTitle'] as String?)?.trim().isEmpty == true)) {
-      String? derivedTitle;
-      try {
-        // Prefer the rental listing title (works for apartments, boarding houses, commercial, etc.)
-        if (listingId != null) {
-          final listing = await getRentalListing(listingId);
-          derivedTitle = (listing?['title'] as String?)?.trim();
+    // Ensure we always store a human-friendly title and rentType for the rented thing
+    // so "Your Activity" and other UIs can display the correct name and type
+    String? derivedTitle;
+    String? rentType;
+    try {
+      // Get rental listing to extract title and rentType
+      if (listingId != null) {
+        final listing = await getRentalListing(listingId);
+        derivedTitle = (listing?['title'] as String?)?.trim();
+        // Extract rentType from listing (item, apartment, commercial, boardinghouse, etc.)
+        rentType = (listing?['rentType'] ?? 'item').toString().toLowerCase();
+        // Normalize boardinghouse variations
+        if (rentType == 'boarding_house') {
+          rentType = 'boardinghouse';
         }
-
-        // Fallback to the underlying item title for item-based rentals
-        if (derivedTitle == null || derivedTitle.isEmpty) {
-          final itemId = payload['itemId'] as String?;
-          if (itemId != null) {
-            final item = await getItem(itemId);
-            derivedTitle = (item?['title'] as String?)?.trim();
-          }
-        }
-      } catch (_) {
-        // Best-effort only; we'll still create the request even if this fails
       }
 
+      // Fallback to the underlying item title for item-based rentals
+      if (derivedTitle == null || derivedTitle.isEmpty) {
+        final itemId = payload['itemId'] as String?;
+        if (itemId != null) {
+          final item = await getItem(itemId);
+          derivedTitle = (item?['title'] as String?)?.trim();
+        }
+      }
+    } catch (_) {
+      // Best-effort only; we'll still create the request even if this fails
+    }
+
+    // Store title and rentType in the request
+    if (payload['itemTitle'] == null ||
+        (payload['itemTitle'] as String?)?.trim().isEmpty == true) {
       payload['itemTitle'] = (derivedTitle == null || derivedTitle.isEmpty)
           ? 'Rental Item'
           : derivedTitle;
+    }
+
+    // Always store rentType if we got it from the listing
+    if (rentType != null && rentType.isNotEmpty) {
+      payload['rentType'] = rentType;
+    } else {
+      // Default to 'item' if we couldn't determine the type
+      payload['rentType'] = 'item';
     }
 
     // Convert dates
@@ -2101,13 +2502,20 @@ extension FirestoreServiceRentals on FirestoreService {
             }
             renterName ??= 'Renter';
 
+            // Get rent type for notification message
+            final rentType = (currentRequest['rentType'] as String? ?? 'item')
+                .toString()
+                .toLowerCase();
+            final notificationMessage = _getReturnInitiatedMessage(rentType);
+
             await _db.collection('notifications').add({
               'toUserId': ownerId,
               'type': 'rent_return_initiated',
               'itemTitle': itemTitle,
               'requestId': id,
               'renterName': renterName,
-              'message': 'Renter has initiated return. Please verify the item.',
+              'rentType': rentType, // Store rent type for notification display
+              'message': notificationMessage,
               'status': 'unread',
               'createdAt': FieldValue.serverTimestamp(),
             });
@@ -2645,6 +3053,10 @@ extension FirestoreServiceRentals on FirestoreService {
       final ownerId = request['ownerId'] as String?;
       final itemTitle = request['itemTitle'] as String? ?? 'Rental Item';
       final renterName = request['renterName'] as String? ?? 'Renter';
+      final rentType = (request['rentType'] as String? ?? 'item')
+          .toString()
+          .toLowerCase();
+      final notificationMessage = _getReturnInitiatedMessage(rentType);
 
       if (ownerId != null && ownerId.isNotEmpty && ownerId != renterId) {
         try {
@@ -2656,6 +3068,8 @@ extension FirestoreServiceRentals on FirestoreService {
             'fromUserId': renterId,
             'fromUserName': renterName,
             'requestId': requestId,
+            'rentType': rentType, // Store rent type for notification display
+            'message': notificationMessage,
             'status': 'unread',
             'createdAt': FieldValue.serverTimestamp(),
           });
@@ -2785,6 +3199,112 @@ extension FirestoreServiceRentals on FirestoreService {
       return true;
     } catch (e) {
       debugPrint('Error verifying return: $e');
+      rethrow;
+    }
+  }
+
+  /// Owner force-terminates an active rental (e.g., non-payment or violation).
+  /// This sets status to 'terminated', records the termination time, and
+  /// cancels reminders. It does NOT automatically mark as returned or
+  /// increment rentalCount.
+  Future<bool> ownerTerminateRental({
+    required String requestId,
+    required String ownerId,
+    String? reason,
+  }) async {
+    try {
+      final request = await getRentalRequest(requestId);
+      if (request == null) {
+        throw Exception('Rental request not found');
+      }
+
+      final currentStatus = (request['status'] as String?)?.toLowerCase();
+      if (currentStatus != 'active' && currentStatus != 'ownerapproved') {
+        throw Exception('Can only terminate active or approved rentals');
+      }
+
+      final requestOwnerId = request['ownerId'] as String?;
+      if (requestOwnerId != ownerId) {
+        throw Exception('Only the owner can terminate this rental');
+      }
+
+      final renterId = request['renterId'] as String?;
+      final itemTitle = request['itemTitle'] as String? ?? 'Rental Item';
+      final listingId = request['listingId'] as String?;
+      final ownerName = request['ownerName'] as String? ?? 'Owner';
+
+      final updateData = <String, dynamic>{
+        'status': 'terminated',
+        'terminationReason': reason,
+        'terminatedBy': ownerId,
+        'actualReturnDate': DateTime.now(),
+        'updatedAt': DateTime.now(),
+      };
+
+      await updateRentalRequest(requestId, updateData);
+
+      // Cancel rental reminders
+      try {
+        final localNotificationsService = LocalNotificationsService();
+        final itemId = request['itemId'] as String?;
+        if (itemId != null) {
+          await localNotificationsService.cancelRentalReminders(requestId);
+          await localNotificationsService.cancelRentalOverdueReminders(
+            requestId,
+          );
+        }
+      } catch (e) {
+        debugPrint('Error cancelling rental reminders on terminate: $e');
+      }
+
+      // Notify renter that rental was terminated
+      if (renterId != null && renterId.isNotEmpty && renterId != ownerId) {
+        try {
+          await _db.collection('notifications').add({
+            'toUserId': renterId,
+            'type': 'rent_terminated_by_owner',
+            'itemId': request['itemId'],
+            'itemTitle': itemTitle,
+            'fromUserId': ownerId,
+            'fromUserName': request['ownerName'] ?? 'Owner',
+            'requestId': requestId,
+            'terminationReason': reason,
+            'status': 'unread',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error creating termination notification: $e');
+        }
+      }
+
+      // Create activity log for admin monitoring
+      try {
+        await createActivityLog(
+          category: 'transaction',
+          action: 'rental_terminated_by_owner',
+          actorId: ownerId,
+          actorName: ownerName,
+          targetId: requestId,
+          targetType: 'rental_request',
+          description:
+              'Owner forcibly terminated rental for "$itemTitle"${renterId != null ? ' (renter: $renterId)' : ''}.',
+          metadata: {
+            'requestId': requestId,
+            'listingId': listingId,
+            'renterId': renterId,
+            'itemTitle': itemTitle,
+            'reason': reason,
+            'previousStatus': currentStatus,
+          },
+          severity: 'warning',
+        );
+      } catch (e) {
+        debugPrint('Error creating activity log for ownerTerminateRental: $e');
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error terminating rental: $e');
       rethrow;
     }
   }
@@ -3584,21 +4104,21 @@ extension FirestoreServiceTrading on FirestoreService {
     final fromUserId = offerData['fromUserId'] as String?;
     final offeredItemName = offerData['offeredItemName'] as String?;
 
-    // Update the accepted offer
+    // Update the accepted offer – mark as approved but NOT yet completed
     final offerRef = _db.collection('trade_offers').doc(offerId);
     batch.update(offerRef, {
       'status': 'approved',
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    // Update trade item status to Traded (User2's listing)
+    // Update trade item status to Reserved/PendingTrade (User2's listing)
     final tradeItemRef = _db.collection('trade_items').doc(tradeItemId);
     batch.update(tradeItemRef, {
-      'status': 'Traded',
+      'status': 'Reserved',
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    // Also mark User1's matching trade item as Traded (if they have a listing for the item they're offering)
+    // Also mark User1's matching trade item as Reserved (if they have a listing for the item they're offering)
     if (fromUserId != null &&
         offeredItemName != null &&
         offeredItemName.isNotEmpty) {
@@ -3611,12 +4131,12 @@ extension FirestoreServiceTrading on FirestoreService {
             .where('status', isEqualTo: 'Open')
             .get();
 
-        // Mark all matching items as Traded and decline other pending offers on them
+        // Mark all matching items as Reserved and decline other pending offers on them
         for (var doc in user1ItemsSnap.docs) {
           final user1ItemId = doc.id;
           final user1ItemRef = _db.collection('trade_items').doc(user1ItemId);
           batch.update(user1ItemRef, {
-            'status': 'Traded',
+            'status': 'Reserved',
             'updatedAt': FieldValue.serverTimestamp(),
           });
 
@@ -3700,6 +4220,75 @@ extension FirestoreServiceTrading on FirestoreService {
     } catch (_) {
       // Best-effort; don't fail if notification write fails
     }
+  }
+
+  /// Mark a previously approved trade offer as fully completed.
+  /// This will:
+  /// - set the offer status to 'completed'
+  /// - mark both parties' trade_items as 'Traded'
+  /// - keep all other offers declined
+  Future<void> completeTrade({
+    required String offerId,
+    required String tradeItemId,
+  }) async {
+    final batch = _db.batch();
+
+    // Load offer to get context
+    final offerDoc = await _db.collection('trade_offers').doc(offerId).get();
+    if (!offerDoc.exists) {
+      throw Exception('Trade offer not found');
+    }
+    final offerData = offerDoc.data() as Map<String, dynamic>;
+    final fromUserId = offerData['fromUserId'] as String?;
+    final offeredItemName = offerData['offeredItemName'] as String?;
+
+    // Only allow completion of approved offers
+    final currentStatus =
+        (offerData['status'] as String?)?.toLowerCase() ?? 'pending';
+    if (currentStatus != 'approved') {
+      throw Exception('Only approved offers can be marked as completed');
+    }
+
+    // Mark offer as completed
+    final offerRef = _db.collection('trade_offers').doc(offerId);
+    batch.update(offerRef, {
+      'status': 'completed',
+      'completedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // Mark User2's trade item as Traded
+    final tradeItemRef = _db.collection('trade_items').doc(tradeItemId);
+    batch.update(tradeItemRef, {
+      'status': 'Traded',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // Mark User1's matching trade item as Traded (if exists)
+    if (fromUserId != null &&
+        offeredItemName != null &&
+        offeredItemName.isNotEmpty) {
+      try {
+        final user1ItemsSnap = await _db
+            .collection('trade_items')
+            .where('offeredBy', isEqualTo: fromUserId)
+            .where('offeredItemName', isEqualTo: offeredItemName)
+            .where('status', whereIn: ['Open', 'Reserved'])
+            .get();
+
+        for (var doc in user1ItemsSnap.docs) {
+          final user1ItemRef = _db.collection('trade_items').doc(doc.id);
+          batch.update(user1ItemRef, {
+            'status': 'Traded',
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (e) {
+        debugPrint('Warning: Could not mark User1 trade item as traded: $e');
+      }
+    }
+
+    await batch.commit();
   }
 
   Future<void> declineTradeOffer({required String offerId}) async {
@@ -4350,6 +4939,23 @@ extension FirestoreServiceGiveaway on FirestoreService {
     ];
     return months[month - 1];
   }
+
+  /// Generate rent type-specific notification message for return initiated
+  String _getReturnInitiatedMessage(String rentType) {
+    switch (rentType) {
+      case 'apartment':
+        return 'Renter has ended rental. Please verify that the apartment is in good condition.';
+      case 'boardinghouse':
+      case 'boarding_house':
+        return 'Renter has moved out. Please verify that the room/space is in good condition.';
+      case 'commercial':
+      case 'commercialspace':
+      case 'commercial_space':
+        return 'Renter has ended lease. Please verify that the commercial space is in good condition.';
+      default:
+        return 'Renter has initiated return. Please verify the item.';
+    }
+  }
 }
 
 // ---------------- RATING & FEEDBACK MODULE ----------------
@@ -4692,6 +5298,7 @@ extension FirestoreServiceCalamity on FirestoreService {
         eventId: eventId,
         eventTitle: eventTitle,
         calamityType: payload['calamityType'] as String?,
+        description: payload['description'] as String?,
       );
     } catch (_) {
       // Best-effort; don't fail event creation if notification write fails
@@ -4769,11 +5376,61 @@ extension FirestoreServiceCalamity on FirestoreService {
     Map<String, dynamic> data,
   ) async {
     final payload = Map<String, dynamic>.from(data);
+
+    // Get current donation to check status change
+    final currentDonation = await getCalamityDonation(id);
+    final oldStatus = currentDonation?['status'] as String?;
+    final newStatus = payload['status'] as String?;
+
     // Convert DateTime fields to Timestamps
     if (payload['updatedAt'] is DateTime) {
       payload['updatedAt'] = Timestamp.fromDate(payload['updatedAt']);
     }
     await _db.collection('calamity_donations').doc(id).update(payload);
+
+    // Send notification if status changed from pending to received
+    if (oldStatus == 'pending' &&
+        newStatus == 'received' &&
+        currentDonation != null) {
+      try {
+        final donorEmail = currentDonation['donorEmail'] as String?;
+        final eventId = currentDonation['eventId'] as String?;
+        final itemType = currentDonation['itemType'] as String? ?? 'items';
+        final quantity = currentDonation['quantity'] as int? ?? 0;
+
+        // Get event title
+        String? eventTitle;
+        if (eventId != null) {
+          final event = await getCalamityEvent(eventId);
+          eventTitle = event?['title'] as String? ?? 'Calamity Event';
+        }
+        eventTitle ??= 'Calamity Event';
+
+        // Find donor's userId by email
+        if (donorEmail != null && donorEmail.isNotEmpty) {
+          final donorUser = await getUserByEmail(donorEmail);
+          if (donorUser != null) {
+            final donorId = donorUser['id'] as String?;
+            if (donorId != null) {
+              await _db.collection('notifications').add({
+                'toUserId': donorId,
+                'type': 'calamity_donation_received',
+                'eventId': eventId,
+                'eventTitle': eventTitle,
+                'donationId': id,
+                'itemType': itemType,
+                'quantity': quantity,
+                'status': 'unread',
+                'createdAt': FieldValue.serverTimestamp(),
+              });
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Error creating donation received notification: $e');
+        // Best-effort; don't fail the update if notification write fails
+      }
+    }
   }
 
   Future<Map<String, dynamic>?> getCalamityDonation(String id) async {
@@ -4803,6 +5460,7 @@ extension FirestoreServiceCalamity on FirestoreService {
     final snap = await _db
         .collection('calamity_donations')
         .where('donorEmail', isEqualTo: donorEmail)
+        .where('status', isEqualTo: 'received')
         .orderBy('createdAt', descending: true)
         .get();
     return snap.docs.map((d) {
@@ -4928,6 +5586,7 @@ extension FirestoreServiceCalamity on FirestoreService {
     required String eventId,
     required String eventTitle,
     String? calamityType,
+    String? description,
   }) async {
     try {
       // Find all verified users (users with isVerified = true)
@@ -4945,6 +5604,8 @@ extension FirestoreServiceCalamity on FirestoreService {
           'eventId': eventId,
           'eventTitle': eventTitle,
           'calamityType': calamityType,
+          if (description != null && description.isNotEmpty)
+            'eventDescription': description,
           'status': 'unread',
           'createdAt': FieldValue.serverTimestamp(),
         });

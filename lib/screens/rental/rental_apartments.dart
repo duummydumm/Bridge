@@ -1,7 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../providers/user_provider.dart';
 import '../../reusable_widgets/rental_location_filter.dart';
 
 class RentalApartmentsScreen extends StatefulWidget {
@@ -16,11 +18,25 @@ class _RentalApartmentsScreenState extends State<RentalApartmentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = Provider.of<UserProvider>(
+      context,
+      listen: false,
+    ).currentUser?.uid;
+
     final listingsQuery = FirebaseFirestore.instance
         .collection('rental_listings')
         .where('isActive', isEqualTo: true)
         .where('rentType', isEqualTo: 'apartment')
         .limit(100);
+
+    // Query to get user's existing rental requests (only approved/active)
+    final existingRequestsQuery = currentUserId != null
+        ? FirebaseFirestore.instance
+              .collection('rental_requests')
+              .where('renterId', isEqualTo: currentUserId)
+              .where('status', whereIn: ['ownerapproved', 'active'])
+              .snapshots()
+        : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -42,103 +58,142 @@ class _RentalApartmentsScreenState extends State<RentalApartmentsScreen> {
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: listingsQuery.snapshots(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.home_outlined,
-                          size: 64,
-                          color: Colors.grey[400],
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: existingRequestsQuery,
+                  builder: (context, requestsSnapshot) {
+                    // Build set of listing IDs that user already has requests for
+                    final Set<String> requestedListingIds = {};
+                    if (requestsSnapshot.hasData &&
+                        requestsSnapshot.data != null) {
+                      for (final doc in requestsSnapshot.data!.docs) {
+                        final listingId = doc.data()['listingId'] as String?;
+                        if (listingId != null) {
+                          requestedListingIds.add(listingId);
+                        }
+                      }
+                    }
+
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.home_outlined,
+                              size: 64,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No apartments available',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No apartments available',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
+                      );
+                    }
+
+                    var docs = snapshot.data!.docs;
+
+                    // Filter out listings owned by the current user
+                    if (currentUserId != null) {
+                      docs = docs.where((doc) {
+                        final data = doc.data();
+                        final ownerId = (data['ownerId'] ?? '').toString();
+                        return ownerId != currentUserId;
+                      }).toList();
+                    }
+
+                    // Filter out listings where user already has an
+                    // approved/active rental (currently renting).
+                    if (currentUserId != null &&
+                        requestedListingIds.isNotEmpty) {
+                      docs = docs.where((doc) {
+                        final listingId = doc.id;
+                        return !requestedListingIds.contains(listingId);
+                      }).toList();
+                    }
+
+                    // Filter by selected barangay/location
+                    if (_selectedBarangay != null &&
+                        _selectedBarangay!.isNotEmpty) {
+                      final selectedLower = _selectedBarangay!.toLowerCase();
+                      docs = docs.where((doc) {
+                        final listing = doc.data();
+                        final location = (listing['location'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        final address = (listing['address'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        return location.contains(selectedLower) ||
+                            address.contains(selectedLower);
+                      }).toList();
+                    }
+
+                    if (docs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.search_off,
+                              size: 64,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No apartments match this location',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    // 2-column grid, compact preview cards (image + title + price + location)
+                    return GridView.builder(
+                      padding: const EdgeInsets.all(12),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisExtent: 260,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                var docs = snapshot.data!.docs;
-
-                // Filter by selected barangay/location
-                if (_selectedBarangay != null &&
-                    _selectedBarangay!.isNotEmpty) {
-                  final selectedLower = _selectedBarangay!.toLowerCase();
-                  docs = docs.where((doc) {
-                    final listing = doc.data();
-                    final location = (listing['location'] ?? '')
-                        .toString()
-                        .toLowerCase();
-                    final address = (listing['address'] ?? '')
-                        .toString()
-                        .toLowerCase();
-                    return location.contains(selectedLower) ||
-                        address.contains(selectedLower);
-                  }).toList();
-                }
-
-                if (docs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.search_off,
-                          size: 64,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No apartments match this location',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                // 2-column grid, compact preview cards (image + title + price + location)
-                return GridView.builder(
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisExtent: 260,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                  ),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final listing = docs[index].data();
-                    final listingId = docs[index].id;
-                    final title = (listing['title'] ?? 'Apartment').toString();
-                    final address =
-                        (listing['address'] ?? listing['location'] ?? '')
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        final listing = docs[index].data();
+                        final listingId = docs[index].id;
+                        final title = (listing['title'] ?? 'Apartment')
                             .toString();
-                    final pricePerMonth = (listing['pricePerMonth'] as num?)
-                        ?.toDouble();
-                    final imageUrl = (listing['imageUrl'] as String?)?.trim();
+                        final address =
+                            (listing['address'] ?? listing['location'] ?? '')
+                                .toString();
+                        final pricePerMonth = (listing['pricePerMonth'] as num?)
+                            ?.toDouble();
+                        final imageUrl = (listing['imageUrl'] as String?)
+                            ?.trim();
 
-                    return _ApartmentCard(
-                      listingId: listingId,
-                      title: title,
-                      address: address,
-                      pricePerMonth: pricePerMonth,
-                      imageUrl: imageUrl,
+                        return _ApartmentCard(
+                          listingId: listingId,
+                          title: title,
+                          address: address,
+                          pricePerMonth: pricePerMonth,
+                          imageUrl: imageUrl,
+                        );
+                      },
                     );
                   },
                 );

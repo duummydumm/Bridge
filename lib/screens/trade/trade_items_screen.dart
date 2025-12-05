@@ -896,6 +896,18 @@ class _TradeItemsScreenState extends State<TradeItemsScreen>
         }
         final docs = snapshot.data!.docs;
         final filteredDocs = _filterItems(docs);
+        // Sort user's trades so newest listings appear first
+        filteredDocs.sort((a, b) {
+          final aTs = a.data()['createdAt'];
+          final bTs = b.data()['createdAt'];
+          final aDate = (aTs is Timestamp)
+              ? aTs.toDate()
+              : DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = (bTs is Timestamp)
+              ? bTs.toDate()
+              : DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
         if (filteredDocs.isEmpty) {
           return Center(
             child: Column(

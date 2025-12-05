@@ -14,15 +14,26 @@ class _FeedbackTabState extends State<FeedbackTab> {
   String _categoryFilter = 'all'; // all, general, bug, feature, etc.
 
   Stream<QuerySnapshot> _getFeedbackStream() {
+    // If both filters are active, we need to fetch all and filter in memory
+    // to avoid requiring a composite index
+    final bothFiltersActive = _statusFilter != 'all' && _categoryFilter != 'all';
+    
+    if (bothFiltersActive) {
+      // Fetch all feedback ordered by createdAt, filtering will be done in memory
+      return FirebaseFirestore.instance
+          .collection('feedback')
+          .orderBy('createdAt', descending: true)
+          .snapshots();
+    }
+    
+    // If only one filter is active, use it with orderBy (works with simple index)
     Query query = FirebaseFirestore.instance
         .collection('feedback')
         .orderBy('createdAt', descending: true);
 
     if (_statusFilter != 'all') {
       query = query.where('status', isEqualTo: _statusFilter);
-    }
-
-    if (_categoryFilter != 'all') {
+    } else if (_categoryFilter != 'all') {
       query = query.where('category', isEqualTo: _categoryFilter);
     }
 
@@ -483,7 +494,79 @@ class _FeedbackTabState extends State<FeedbackTab> {
                 }
 
                 if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
+                  final error = snapshot.error.toString();
+                  final isIndexError =
+                      error.contains('index') ||
+                      error.contains('requires an index') ||
+                      error.contains('composite');
+
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Error loading feedback',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (isIndexError)
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.orange[50],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.orange[200]!),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    'Firestore index required',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.orange[900],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Please deploy the indexes from firestore.indexes.json to Firebase Console.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.orange[800],
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            Text(
+                              error,
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              textAlign: TextAlign.center,
+                            ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () => setState(() {}),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Retry'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF00897B),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
                 }
 
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -509,11 +592,55 @@ class _FeedbackTabState extends State<FeedbackTab> {
                   );
                 }
 
+                // Filter in memory if both filters are active
+                var docs = snapshot.data!.docs;
+                final bothFiltersActive = _statusFilter != 'all' && _categoryFilter != 'all';
+                
+                if (bothFiltersActive) {
+                  docs = docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final statusMatch = _statusFilter == 'all' || 
+                        (data['status'] ?? 'pending') == _statusFilter;
+                    final categoryMatch = _categoryFilter == 'all' || 
+                        (data['category'] ?? 'general') == _categoryFilter;
+                    return statusMatch && categoryMatch;
+                  }).toList();
+                }
+
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.feedback_outlined,
+                          size: 64,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No feedback found',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Try adjusting your filters',
+                          style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: snapshot.data!.docs.length,
+                  itemCount: docs.length,
                   itemBuilder: (context, index) {
-                    final doc = snapshot.data!.docs[index];
+                    final doc = docs[index];
                     final feedback = doc.data() as Map<String, dynamic>;
                     final feedbackId = doc.id;
 

@@ -34,6 +34,7 @@ class RentalListingProvider extends ChangeNotifier {
     required String itemId,
     required String ownerId,
     required String ownerName,
+    required String ownerBarangay,
     required String title,
     String? description,
     String? condition,
@@ -77,6 +78,10 @@ class RentalListingProvider extends ChangeNotifier {
         'itemId': itemId,
         'ownerId': ownerId,
         'ownerName': ownerName,
+        // Denormalized owner barangay so we can filter rentals by the
+        // barangay the owner used during registration, not just free-text
+        // location/address fields.
+        'ownerBarangay': ownerBarangay.trim().toLowerCase(),
         'title': title,
         'description': description,
         'condition': condition,
@@ -204,6 +209,7 @@ class RentalListingProvider extends ChangeNotifier {
     int? maxOccupants,
     int? numberOfRooms,
     int? occupantsPerRoom,
+    String? ownerBarangay,
     String? genderPreference,
     String? curfewRules,
     int? initialOccupants,
@@ -245,6 +251,9 @@ class RentalListingProvider extends ChangeNotifier {
         'curfewRules': curfewRules,
         'initialOccupants': initialOccupants,
       };
+      if (ownerBarangay != null && ownerBarangay.trim().isNotEmpty) {
+        payload['ownerBarangay'] = ownerBarangay.trim().toLowerCase();
+      }
       if (imageUrl != null) {
         payload['imageUrl'] = imageUrl;
       }

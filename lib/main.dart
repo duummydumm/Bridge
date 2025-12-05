@@ -74,6 +74,7 @@ import 'screens/borrow/returned_items.dart';
 import 'screens/borrow/pending_returns_screen.dart';
 import 'screens/borrow/currently_lent_screen.dart';
 import 'screens/borrow/disputed_returns_screen.dart';
+import 'screens/borrow/lender_disputes_screen.dart';
 import 'screens/rental/rental_pending_request.dart';
 import 'screens/rental/disputed_rentals_screen.dart';
 import 'screens/trade/trade_pending_request.dart';
@@ -119,21 +120,19 @@ void main() async {
   // Get these from https://dashboard.emailjs.com/
 
   // Backend API URL configuration
-  // For local development: Use localhost or emulator IP
-  // For production: Use your deployed backend URL (e.g., https://your-app.herokuapp.com)
-  // Temporarily using Render for testing in debug mode
+  // Now using Firebase Cloud Functions for EmailJS proxy:
+  //  - sendVerificationEmail: sends OTP emails
+  //  - sendWelcomeEmail: sends welcome emails (called separately in backend)
+  //
+  // Use the HTTPS URL printed by `firebase deploy --only functions`.
   const String backendApiUrl =
-      'https://bridge-emailjs-backend.onrender.com'; // Render backend URL
-  // const String backendApiUrl = kDebugMode
-  //     ? 'http://192.168.1.11:3000' // Local development (use your computer's IP address)
-  //     : 'https://bridge-emailjs-backend.onrender.com'; // Render backend URL
+      'https://us-central1-bridge-72b26.cloudfunctions.net/sendVerificationEmail';
 
   await EmailService().configure(
     serviceId: 'service_hql50hi', // Replace with your EmailJS Service ID
     templateId:
         'template_oyfh658', // Replace with your OTP verification template ID
-    publicKey:
-        'V4g4u9Bklz22oCTI1', // Replace with your EmailJS Public Key (User ID)
+    publicKey: 'arivw_Xe1wVaCwXeD', // Updated EmailJS Public Key (User ID)
     welcomeTemplateId:
         'template_dx6t43s', // Optional: Replace with your welcome email template ID
     backendApiUrl:
@@ -202,9 +201,11 @@ class BridgeApp extends StatelessWidget {
                 return ProtectedRoute(
                   child: Builder(
                     builder: (context) {
+                      // Use listen: false to prevent rebuilds on user data changes
+                      // We only need to check admin status once
                       final userProvider = Provider.of<UserProvider>(
                         context,
-                        listen: true,
+                        listen: false,
                       );
                       if (userProvider.currentUser?.isAdmin == true) {
                         return const AdminHomeScreen();
@@ -250,6 +251,8 @@ class BridgeApp extends StatelessWidget {
                   ProtectedRoute(child: const CurrentlyLentScreen()),
               '/borrow/disputed-returns': (context) =>
                   ProtectedRoute(child: const DisputedReturnsScreen()),
+              '/borrow/lender-disputes': (context) =>
+                  ProtectedRoute(child: const LenderDisputesScreen()),
               '/rental/disputed-rentals': (context) =>
                   ProtectedRoute(child: const DisputedRentalsScreen()),
               '/rental/pending-requests': (context) =>
@@ -368,6 +371,7 @@ class _AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<_AuthWrapper> {
   bool _hasSeenOnboarding = false;
   bool _isLoadingOnboarding = true;
+  String? _lastUserId; // Track last user ID to prevent unnecessary rebuilds
 
   @override
   void initState() {
@@ -425,18 +429,29 @@ class _AuthWrapperState extends State<_AuthWrapper> {
         }
 
         // Otherwise, proceed with normal auth flow
+        // Only rebuild if user ID actually changed
+        final currentUserId = authProvider.user?.uid;
+        if (currentUserId != _lastUserId) {
+          _lastUserId = currentUserId;
+        }
+
         return _buildAuthFlow(authProvider);
       },
     );
   }
 
   Widget _buildAuthFlow(AuthProvider authProvider) {
-    // Listen to auth state changes
     return StreamBuilder<firebase_auth.User?>(
+      // Listen to auth state changes and seed with any already-restored user
       stream: firebase_auth.FirebaseAuth.instance.authStateChanges(),
+      initialData: firebase_auth.FirebaseAuth.instance.currentUser,
       builder: (context, snapshot) {
-        // Show loading while checking auth state
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        // Prefer any user we already know about, even if the stream is still "waiting"
+        final user = snapshot.data ?? authProvider.user;
+
+        // While checking auth state and no user is known yet, show loading
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            user == null) {
           return Scaffold(
             body: Center(
               child: CircularProgressIndicator(
@@ -449,115 +464,169 @@ class _AuthWrapperState extends State<_AuthWrapper> {
         }
 
         // If user is authenticated, ensure profile is loaded then show home page
-        final user = snapshot.data ?? authProvider.user;
         if (user != null) {
-          final userProvider = Provider.of<UserProvider>(context, listen: true);
-          if (userProvider.currentUser == null) {
-            // Defer to next frame to avoid setState during build
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              userProvider.loadUserProfile(user.uid);
-            });
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
+          // First ensure the Firestore user profile is loaded
+          return Consumer<UserProvider>(
+            builder: (context, userProvider, _) {
+              return FutureBuilder<bool>(
+                // If we already have the user profile, just resolve true
+                future: userProvider.currentUser != null
+                    ? Future.value(true)
+                    : userProvider.loadUserProfile(user.uid),
+                builder: (context, profileSnapshot) {
+                  // Still loading the profile
+                  if (profileSnapshot.connectionState ==
+                      ConnectionState.waiting) {
+                    return const Scaffold(
+                      body: Center(child: CircularProgressIndicator()),
+                    );
+                  }
 
-          // Check email verification for non-admin users
-          final bool isAdmin = userProvider.currentUser?.isAdmin == true;
-          if (!isAdmin) {
-            // Check both Firebase Auth and Firestore email verification
-            final bool firebaseEmailVerified = user.emailVerified;
-
-            // Check Firestore emailVerified status (for EmailJS verification)
-            return FutureBuilder<bool>(
-              future: _checkEmailVerification(user.uid),
-              builder: (context, verificationSnapshot) {
-                if (verificationSnapshot.connectionState ==
-                    ConnectionState.waiting) {
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                final bool firestoreEmailVerified =
-                    verificationSnapshot.data ?? false;
-                final bool isEmailVerified =
-                    firebaseEmailVerified || firestoreEmailVerified;
-
-                // Bypass emails (for testing)
-                final String signedInEmail = (user.email ?? '').toLowerCase();
-                const Set<String> kVerificationBypassEmails = {
-                  'balafamily4231@gmail.com',
-                  'applejeantizon09@gmail.com',
-                };
-                final bool isBypassEmail = kVerificationBypassEmails.contains(
-                  signedInEmail,
-                );
-
-                // If email is not verified and not a bypass email, redirect to verification screen
-                if (!isBypassEmail && !isEmailVerified) {
-                  // Use postFrameCallback to avoid setState during build
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    Navigator.of(context).pushReplacementNamed('/verify-email');
-                  });
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                // Email is verified, proceed to home
-                return PopScope(
-                  canPop: false, // Block default back navigation
-                  onPopInvokedWithResult: (didPop, result) async {
-                    if (!didPop) {
-                      // Show confirmation dialog
-                      final shouldExit = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text(
-                            'Exit App',
-                            textAlign: TextAlign.center,
-                          ),
-                          content: const Text(
-                            'Are you sure you want to exit?',
-                            textAlign: TextAlign.center,
-                          ),
-                          actions: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(false),
-                                  child: const Text('Cancel'),
+                  // Failed to load profile (no document or error)
+                  if (profileSnapshot.hasError ||
+                      profileSnapshot.data == false ||
+                      userProvider.currentUser == null) {
+                    return Scaffold(
+                      body: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Unable to load your profile.',
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            if (userProvider.errorMessage != null)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
                                 ),
-                                TextButton(
-                                  onPressed: () => SystemNavigator.pop(),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: Colors.red,
-                                  ),
-                                  child: const Text('Exit'),
+                                child: Text(
+                                  userProvider.errorMessage!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: Colors.red),
                                 ),
-                              ],
+                              ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () {
+                                userProvider.loadUserProfile(user.uid);
+                              },
+                              child: const Text('Retry'),
                             ),
                           ],
                         ),
-                      );
+                      ),
+                    );
+                  }
 
-                      // If user confirmed exit, pop the route
-                      if (shouldExit == true && context.mounted) {
-                        Navigator.of(context).pop();
-                      }
-                    }
-                  },
-                  child: const HomePage(),
-                );
-              },
-            );
-          }
+                  // Check email verification for non-admin users
+                  final bool isAdmin =
+                      userProvider.currentUser?.isAdmin == true;
+                  if (!isAdmin) {
+                    // Check both Firebase Auth and Firestore email verification
+                    final bool firebaseEmailVerified = user.emailVerified;
 
-          // Route admins directly to the Admin Dashboard (admins bypass verification)
-          return const AdminHomeScreen();
+                    // Check Firestore emailVerified status (for EmailJS verification)
+                    // Use a key based on user.uid to prevent FutureBuilder from recreating
+                    return FutureBuilder<bool>(
+                      key: ValueKey('email_verification_${user.uid}'),
+                      future: _checkEmailVerification(user.uid),
+                      builder: (context, verificationSnapshot) {
+                        if (verificationSnapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Scaffold(
+                            body: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+
+                        final bool firestoreEmailVerified =
+                            verificationSnapshot.data ?? false;
+                        final bool isEmailVerified =
+                            firebaseEmailVerified || firestoreEmailVerified;
+
+                        // Bypass emails (for testing)
+                        final String signedInEmail = (user.email ?? '')
+                            .toLowerCase();
+                        const Set<String> kVerificationBypassEmails = {
+                          'balafamily4231@gmail.com',
+                          'applejeantizon09@gmail.com',
+                        };
+                        final bool isBypassEmail = kVerificationBypassEmails
+                            .contains(signedInEmail);
+
+                        // If email is not verified and not a bypass email, redirect to verification screen
+                        if (!isBypassEmail && !isEmailVerified) {
+                          // Use postFrameCallback to avoid setState during build
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            Navigator.of(
+                              context,
+                            ).pushReplacementNamed('/verify-email');
+                          });
+                          return const Scaffold(
+                            body: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+
+                        // Email is verified, proceed to home
+                        return PopScope(
+                          canPop: false, // Block default back navigation
+                          onPopInvokedWithResult: (didPop, result) async {
+                            if (!didPop) {
+                              // Show confirmation dialog
+                              final shouldExit = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text(
+                                    'Exit App',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  content: const Text(
+                                    'Are you sure you want to exit?',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  actions: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(context).pop(false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              SystemNavigator.pop(),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: Colors.red,
+                                          ),
+                                          child: const Text('Exit'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                              // If user confirmed exit, pop the route
+                              if (shouldExit == true && context.mounted) {
+                                Navigator.of(context).pop();
+                              }
+                            }
+                          },
+                          child: const HomePage(),
+                        );
+                      },
+                    );
+                  }
+
+                  // Route admins directly to the Admin Dashboard (admins bypass verification)
+                  return const AdminHomeScreen();
+                },
+              );
+            },
+          );
         }
 
         // Otherwise, show login page

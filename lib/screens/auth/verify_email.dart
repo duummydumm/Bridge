@@ -1,7 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/verification_service.dart';
 import '../../providers/user_provider.dart';
@@ -16,8 +15,9 @@ class VerifyEmailScreen extends StatefulWidget {
 class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   bool _sending = false;
   bool _verifying = false;
-  bool _checkingVerification = false;
+  // bool _checkingVerification = false; // EMAIL LINK FLOW DISABLED
   bool _usingFirebaseVerification = false;
+  Timer? _otpFallbackTimer;
   final VerificationService _verificationService = VerificationService();
   final List<TextEditingController> _otpControllers = List.generate(
     6,
@@ -31,8 +31,8 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     super.initState();
     _checkIfAdminAndRedirect();
     _checkVerificationMethod();
-    // Periodically check if email is verified (for Firebase link verification)
-    _startVerificationCheck();
+    // For OTP-only testing, we disable Firebase email link verification checks.
+    // _startVerificationCheck(); // Disabled: email-link verification fallback
   }
 
   Future<void> _checkIfAdminAndRedirect() async {
@@ -66,6 +66,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     for (var node in _otpFocusNodes) {
       node.dispose();
     }
+    _otpFallbackTimer?.cancel();
     super.dispose();
   }
 
@@ -74,86 +75,21 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     final user = authProvider.user;
 
     if (user != null) {
-      // Check if OTP exists in Firestore (EmailJS verification)
-      try {
-        final otpDoc = await FirebaseFirestore.instance
-            .collection('email_verifications')
-            .doc(user.uid)
-            .get();
-
-        setState(() {
-          _usingFirebaseVerification = !otpDoc.exists;
-        });
-      } catch (e) {
-        // If check fails, assume OTP method
-        setState(() {
-          _usingFirebaseVerification = false;
-        });
-      }
+      // OTP-only mode: always use OTP verification, never Firebase email link.
+      setState(() {
+        _usingFirebaseVerification = false;
+      });
     }
   }
 
-  void _startVerificationCheck() {
-    // Check every 3 seconds if using Firebase verification
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted && _usingFirebaseVerification) {
-        _checkEmailVerification();
-        _startVerificationCheck(); // Continue checking
-      }
-    });
-  }
-
-  Future<void> _checkEmailVerification() async {
-    if (_checkingVerification) return;
-
-    setState(() {
-      _checkingVerification = true;
-    });
-
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final user = authProvider.user;
-
-      if (user != null) {
-        // Reload user to get latest verification status
-        await authProvider.reloadCurrentUser();
-
-        // Check both Firebase Auth and Firestore verification
-        final bool firebaseEmailVerified = user.emailVerified;
-        bool firestoreEmailVerified = false;
-
-        try {
-          firestoreEmailVerified = await _verificationService.isEmailVerified(
-            user.uid,
-          );
-        } catch (e) {
-          // Ignore errors
-        }
-
-        final bool isEmailVerified =
-            firebaseEmailVerified || firestoreEmailVerified;
-
-        if (isEmailVerified && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Email verified successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pushReplacementNamed(context, '/home');
-          return;
-        }
-      }
-    } catch (e) {
-      debugPrint('Error checking email verification: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _checkingVerification = false;
-        });
-      }
-    }
-  }
+  // EMAIL LINK FLOW DISABLED:
+  // The methods below previously implemented Firebase email-link verification
+  // and automatic polling. They are commented out to keep the code OTP-only.
+  //
+  // void _startVerificationCheck() { ... }
+  // Future<void> _checkEmailVerification() async { ... }
+  // void _startOtpFallbackTimer() { ... }
+  // Future<void> _fallbackToEmailLinkVerification() async { ... }
 
   Future<void> _resend() async {
     setState(() {
@@ -201,13 +137,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
           );
         }
       } else {
-        // Fallback to AuthProvider's method
-        await authProvider.sendEmailVerification();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Verification email sent.')),
-          );
-        }
+        // EMAIL LINK FLOW DISABLED: previously we fell back to AuthProvider's
+        // Firebase email-link verification here.
+        // await authProvider.sendEmailVerification();
+        // if (mounted) {
+        //   ScaffoldMessenger.of(context).showSnackBar(
+        //     const SnackBar(content: Text('Verification email sent.')),
+        //   );
+        // }
       }
     } catch (e) {
       if (mounted) {
@@ -433,39 +370,40 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                   ),
                 ),
                 const SizedBox(height: 40),
-                // Check Verification Button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _checkingVerification
-                        ? null
-                        : _checkEmailVerification,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primary,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _checkingVerification
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'Check Verification Status',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
-                ),
+                // EMAIL LINK UI DISABLED: previously showed a "Check Verification"
+                // button that polled Firebase for email-link status.
+                // SizedBox(
+                //   width: double.infinity,
+                //   child: ElevatedButton(
+                //     onPressed: _checkingVerification
+                //         ? null
+                //         : _checkEmailVerification,
+                //     style: ElevatedButton.styleFrom(
+                //       backgroundColor: primary,
+                //       foregroundColor: Colors.white,
+                //       minimumSize: const Size.fromHeight(48),
+                //       shape: RoundedRectangleBorder(
+                //         borderRadius: BorderRadius.circular(12),
+                //       ),
+                //     ),
+                //     child: _checkingVerification
+                //         ? const SizedBox(
+                //             height: 20,
+                //             width: 20,
+                //             child: CircularProgressIndicator(
+                //               strokeWidth: 2,
+                //               color: Colors.white,
+                //             ),
+                //           )
+                //         : const Text(
+                //             'Check Verification Status',
+                //             style: TextStyle(
+                //               fontSize: 16,
+                //               fontWeight: FontWeight.bold,
+                //             ),
+                //           ),
+                //   ),
+                // ),
               ] else ...[
                 Text(
                   'We sent a 6-digit verification code to $email',
@@ -477,12 +415,13 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: List.generate(6, (index) {
                     return SizedBox(
-                      width: 45,
-                      height: 55,
+                      width: 48,
+                      height: 60,
                       child: TextField(
                         controller: _otpControllers[index],
                         focusNode: _otpFocusNodes[index],
                         textAlign: TextAlign.center,
+                        textAlignVertical: TextAlignVertical.center,
                         keyboardType: TextInputType.number,
                         maxLength: 1,
                         style: const TextStyle(
@@ -491,6 +430,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                         ),
                         decoration: InputDecoration(
                           counterText: '',
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide(

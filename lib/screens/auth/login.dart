@@ -194,12 +194,6 @@ class _LoginScreenState extends State<LoginScreen>
       } catch (_) {}
       if (!mounted) return;
 
-      // Wait for auth state to sync with Firebase Auth
-      // This ensures the authStateChanges stream has emitted the new user
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      if (!mounted) return;
-
       // Get the user's name
       final userName =
           userProvider.currentUser?.fullName ??
@@ -234,9 +228,18 @@ class _LoginScreenState extends State<LoginScreen>
         ),
       );
 
+      // Wait a moment for auth state to fully sync before navigating
+      // This prevents the refresh loop issue
+      await Future.delayed(const Duration(milliseconds: 100));
+
       if (!mounted) return;
-      // Navigate to home - auth state should be synced by now
-      Navigator.pushReplacementNamed(context, '/home');
+
+      // Navigate to home and clear the route stack to prevent refresh loops
+      // Using pushNamedAndRemoveUntil ensures a clean navigation without conflicts
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/home',
+        (route) => false, // Remove all previous routes including login
+      );
     } else {
       // Haptic feedback for error
       HapticFeedback.mediumImpact();

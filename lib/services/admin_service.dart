@@ -65,6 +65,22 @@ class AdminService {
       'verifiedAt': FieldValue.serverTimestamp(),
     });
 
+    // Create notification for the user
+    try {
+      await _db.collection('notifications').add({
+        'toUserId': uid,
+        'type': 'verification_approved',
+        'title': 'Account Verified Successfully',
+        'message':
+            'Congratulations! Your account has been verified. You can now post items, borrow, rent, and use all features of the app.',
+        'status': 'unread',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      // Log error but don't fail verification if notification fails
+      debugPrint('Error creating verification notification: $e');
+    }
+
     // Create activity log
     try {
       await _db.collection('activity_logs').add({

@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/firestore_service.dart';
+import '../../services/rating_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../models/rating_model.dart';
+import '../../models/rental_request_model.dart';
 import 'package:provider/provider.dart';
 import 'active_rental_detail_screen.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../submit_rating_screen.dart';
 
 class RentalHistoryScreen extends StatefulWidget {
   final bool?
@@ -18,6 +22,7 @@ class RentalHistoryScreen extends StatefulWidget {
 
 class _RentalHistoryScreenState extends State<RentalHistoryScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final RatingService _ratingService = RatingService();
   List<Map<String, dynamic>> _historyRentals = [];
   bool _isLoading = true;
   bool _viewingAsOwner = false; // Track which view we're showing
@@ -26,6 +31,10 @@ class _RentalHistoryScreenState extends State<RentalHistoryScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialize _viewingAsOwner based on widget.asOwner if explicitly set
+    if (widget.asOwner != null) {
+      _viewingAsOwner = widget.asOwner!;
+    }
     _loadRentalHistory();
   }
 
@@ -48,39 +57,48 @@ class _RentalHistoryScreenState extends State<RentalHistoryScreen> {
       }
 
       // Determine which view to show
-      bool showAsOwner = widget.asOwner ?? false; // Default to renter view
+      bool showAsOwner;
 
-      // If auto-detect (null), check which has more history rentals
       if (widget.asOwner == null) {
-        final ownerRentals = await _firestoreService.getRentalRequestsByUser(
-          userId,
-          asOwner: true,
-        );
-        final renterRentals = await _firestoreService.getRentalRequestsByUser(
-          userId,
-          asOwner: false,
-        );
+        // Auto-detect mode: use current _viewingAsOwner state (can be toggled)
+        // On first load (when _viewingAsOwner is still false), determine which has more history rentals
+        if (!_viewingAsOwner && _historyRentals.isEmpty) {
+          final ownerRentals = await _firestoreService.getRentalRequestsByUser(
+            userId,
+            asOwner: true,
+          );
+          final renterRentals = await _firestoreService.getRentalRequestsByUser(
+            userId,
+            asOwner: false,
+          );
 
-        final historyOwnerRentals = ownerRentals.where((req) {
-          final status = (req['status'] ?? 'requested')
-              .toString()
-              .toLowerCase();
-          return status == 'returned' ||
-              status == 'cancelled' ||
-              status == 'disputed';
-        }).length;
+          final historyOwnerRentals = ownerRentals.where((req) {
+            final status = (req['status'] ?? 'requested')
+                .toString()
+                .toLowerCase();
+            return status == 'returned' ||
+                status == 'cancelled' ||
+                status == 'disputed';
+          }).length;
 
-        final historyRenterRentals = renterRentals.where((req) {
-          final status = (req['status'] ?? 'requested')
-              .toString()
-              .toLowerCase();
-          return status == 'returned' ||
-              status == 'cancelled' ||
-              status == 'disputed';
-        }).length;
+          final historyRenterRentals = renterRentals.where((req) {
+            final status = (req['status'] ?? 'requested')
+                .toString()
+                .toLowerCase();
+            return status == 'returned' ||
+                status == 'cancelled' ||
+                status == 'disputed';
+          }).length;
 
-        // Show owner view if they have more history rentals as owner
-        showAsOwner = historyOwnerRentals > historyRenterRentals;
+          // Show owner view if they have more history rentals as owner
+          showAsOwner = historyOwnerRentals > historyRenterRentals;
+        } else {
+          // Use current toggle state
+          showAsOwner = _viewingAsOwner;
+        }
+      } else {
+        // Explicit mode: use current toggle state (which was initialized from widget.asOwner)
+        showAsOwner = _viewingAsOwner;
       }
 
       final rentRequests = await _firestoreService.getRentalRequestsByUser(
@@ -167,6 +185,37 @@ class _RentalHistoryScreenState extends State<RentalHistoryScreen> {
             }
           }
           enrichedRental['ownerName'] ??= 'Owner';
+        }
+
+        // Check if user has already rated this rental (only for returned status)
+        final rentalStatus = (rental['status'] ?? 'returned')
+            .toString()
+            .toLowerCase();
+        if (rentalStatus == 'returned') {
+          final requestId = rental['id'] as String? ?? '';
+          if (requestId.isNotEmpty) {
+            try {
+              final isOwner = showAsOwner;
+              final otherUserId = isOwner
+                  ? (rental['renterId'] as String? ?? '')
+                  : (rental['ownerId'] as String? ?? '');
+
+              if (otherUserId.isNotEmpty) {
+                final hasRated = await _firestoreService.hasExistingRating(
+                  raterUserId: userId,
+                  ratedUserId: otherUserId,
+                  transactionId: requestId,
+                );
+                enrichedRental['hasRated'] = hasRated;
+                enrichedRental['otherUserId'] = otherUserId;
+              }
+            } catch (_) {
+              // Continue if rating check fails
+              enrichedRental['hasRated'] = false;
+            }
+          }
+        } else {
+          enrichedRental['hasRated'] = false;
         }
 
         enrichedRentals.add(enrichedRental);
@@ -626,6 +675,65 @@ class _RentalHistoryScreenState extends State<RentalHistoryScreen> {
                   ),
                 ),
               ],
+              // Rating button for returned rentals
+              if (status == 'returned') ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: (rental['hasRated'] as bool? ?? false)
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE0F2F1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.star,
+                                    size: 16,
+                                    color: Colors.amber[700],
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Rated',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey[700],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : OutlinedButton.icon(
+                              onPressed: () => _rateRental(rental),
+                              icon: const Icon(Icons.star_outline, size: 18),
+                              label: const Text('Rate'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF00897B),
+                                side: const BorderSide(
+                                  color: Color(0xFF00897B),
+                                  width: 1.5,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ],
               // Created date
               const SizedBox(height: 8),
               Text(
@@ -641,5 +749,95 @@ class _RentalHistoryScreenState extends State<RentalHistoryScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _rateRental(Map<String, dynamic> rental) async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final currentUser = authProvider.user;
+
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You must be logged in to rate'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final requestId = rental['id'] as String? ?? '';
+      if (requestId.isEmpty) return;
+
+      // Get rental request details
+      final requestData = await _firestoreService.getRentalRequest(requestId);
+      if (requestData == null) return;
+
+      final request = RentalRequestModel.fromMap(requestData, requestId);
+
+      // Determine who to rate based on current user
+      final isOwner = currentUser.uid == request.ownerId;
+      final ratedUserId = isOwner ? request.renterId : request.ownerId;
+      final ratedUserName = isOwner ? 'Renter' : 'Owner';
+
+      // Check if already rated (double-check)
+      final hasRated = await _ratingService.hasRated(
+        raterUserId: currentUser.uid,
+        ratedUserId: ratedUserId,
+        transactionId: requestId,
+      );
+
+      if (hasRated) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You have already rated this rental'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        // Reload to update UI
+        _loadRentalHistory();
+        return;
+      }
+
+      // Get rated user's name if available
+      String? ratedUserNameFull;
+      try {
+        final ratedUserData = await _firestoreService.getUser(ratedUserId);
+        if (ratedUserData != null) {
+          ratedUserNameFull =
+              '${ratedUserData['firstName']} ${ratedUserData['lastName']}';
+        }
+      } catch (e) {
+        // Silent fail, use default
+      }
+
+      // Navigate to rating screen
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SubmitRatingScreen(
+            ratedUserId: ratedUserId,
+            ratedUserName: ratedUserNameFull ?? ratedUserName,
+            context: RatingContext.rental,
+            transactionId: requestId,
+            role: isOwner ? 'owner' : 'renter',
+          ),
+        ),
+      );
+
+      // Reload history after rating
+      if (mounted) {
+        _loadRentalHistory();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error launching rating: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

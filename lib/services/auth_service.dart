@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'verification_service.dart';
-import 'email_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -92,8 +91,8 @@ class AuthService {
     final user = _auth.currentUser;
     if (user != null && user.email != null) {
       try {
-        // Use EmailJS to send OTP instead of Firebase's sendEmailVerification
-        // Get user name from Firestore if available
+        // Use EmailJS to send OTP instead of Firebase's sendEmailVerification.
+        // Get user name from Firestore if available.
         String? userName;
         try {
           // You might want to get this from UserProvider instead
@@ -110,32 +109,11 @@ class AuthService {
         );
       } catch (e) {
         debugPrint(
-          'AuthService: Error sending verification email via EmailJS: $e',
+          'AuthService: Error sending verification email via EmailJS (OTP): $e',
         );
-
-        // If EmailJS is blocked (403 error), use Firebase's email verification directly
-        if (e is EmailJSBlockedException) {
-          debugPrint(
-            'AuthService: EmailJS is blocked for non-browser apps. '
-            'Using Firebase email verification instead.',
-          );
-          // Fallback to Firebase's email verification
-          if (!user.emailVerified) {
-            await user.sendEmailVerification();
-            debugPrint(
-              'AuthService: Firebase verification email sent. '
-              'User should check their email for a verification link.',
-            );
-          }
-        } else {
-          // For other errors, also try Firebase fallback
-          if (!user.emailVerified) {
-            await user.sendEmailVerification();
-            debugPrint(
-              'AuthService: Fallback to Firebase email verification due to EmailJS error.',
-            );
-          }
-        }
+        // OTP-only mode: do NOT fall back to Firebase email-link verification.
+        // Previously we called user.sendEmailVerification() here.
+        rethrow;
       }
     }
   }

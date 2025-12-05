@@ -259,6 +259,31 @@ class RentalRequestProvider extends ChangeNotifier {
     }
   }
 
+  /// Owner force-terminates a rental (e.g., non-payment or violation)
+  Future<bool> ownerTerminateRental(
+    String requestId,
+    String ownerId, {
+    String? reason,
+  }) async {
+    try {
+      _setLoading(true);
+      _clearError();
+      await _firestore.ownerTerminateRental(
+        requestId: requestId,
+        ownerId: ownerId,
+        reason: reason,
+      );
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      _setLoading(false);
+      notifyListeners();
+      return false;
+    }
+  }
+
   void _setLoading(bool v) {
     _isLoading = v;
   }

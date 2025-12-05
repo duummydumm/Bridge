@@ -10,6 +10,7 @@ enum RentalRequestStatus {
   returned,
   cancelled,
   disputed,
+  terminated, // Force-terminated by owner (e.g., non-payment or violation)
 }
 
 enum PaymentStatus { unpaid, authorized, captured, refunded, partial }
@@ -103,6 +104,8 @@ class RentalRequestModel {
           return RentalRequestStatus.cancelled;
         case 'disputed':
           return RentalRequestStatus.disputed;
+        case 'terminated':
+          return RentalRequestStatus.terminated;
         default:
           return RentalRequestStatus.requested;
       }

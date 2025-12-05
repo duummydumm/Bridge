@@ -507,50 +507,74 @@ class _IncomingTradeOffersScreenState extends State<IncomingTradeOffersScreen> {
                   ),
                   const SizedBox(height: 12),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: () => _declineOffer(offer['id'] as String),
-                        icon: const Icon(Icons.close, size: 18),
-                        label: const Text('Decline'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red),
+                      Expanded(
+                        child: SizedBox(
+                          height: 40,
+                          child: OutlinedButton.icon(
+                            onPressed: () =>
+                                _declineOffer(offer['id'] as String),
+                            icon: const Icon(Icons.close, size: 18),
+                            label: const Text('Decline'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.pushNamed(
-                            context,
-                            '/trade/make-offer',
-                            arguments: {
-                              'tradeItemId': offer['tradeItemId'],
-                              'isCounter': 'true',
-                              'counterToUserId': offer['fromUserId'],
-                              'counterToUserName': offer['fromUserName'],
-                              'parentOfferId': offer['id'],
+                      Expanded(
+                        child: SizedBox(
+                          height: 40,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/trade/make-offer',
+                                arguments: {
+                                  'tradeItemId': offer['tradeItemId'],
+                                  'isCounter': 'true',
+                                  'counterToUserId': offer['fromUserId'],
+                                  'counterToUserName': offer['fromUserName'],
+                                  'parentOfferId': offer['id'],
+                                },
+                              );
                             },
-                          );
-                        },
-                        icon: const Icon(Icons.swap_horiz, size: 18),
-                        label: const Text('Counter'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _primaryColor,
-                          side: const BorderSide(color: _primaryColor),
+                            icon: const Icon(Icons.swap_horiz, size: 18),
+                            label: const Text('Counter'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _primaryColor,
+                              side: const BorderSide(color: _primaryColor),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: () => _acceptOffer(
-                          offer['id'] as String,
-                          offer['tradeItemId'] as String,
-                        ),
-                        icon: const Icon(Icons.check, size: 18),
-                        label: const Text('Accept'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
+                      Expanded(
+                        child: SizedBox(
+                          height: 40,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _acceptOffer(
+                              offer['id'] as String,
+                              offer['tradeItemId'] as String,
+                            ),
+                            icon: const Icon(Icons.check, size: 18),
+                            label: const Text('Accept'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],

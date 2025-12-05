@@ -105,6 +105,7 @@ class ReportBlockService {
     String? description,
     String? contextType, // 'chat', 'profile', 'item', 'giveaway', etc.
     String? contextId, // conversationId, itemId, giveawayId, etc.
+    List<String>? evidenceImageUrls, // URLs of uploaded evidence images
   }) async {
     try {
       final reportData = {
@@ -117,6 +118,7 @@ class ReportBlockService {
         'description': description ?? '',
         'contextType': contextType ?? '',
         'contextId': contextId ?? '',
+        'evidenceImageUrls': evidenceImageUrls ?? [],
         'status': 'open',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -147,6 +149,7 @@ class ReportBlockService {
     required String ownerName,
     required String reason,
     String? description,
+    List<String>? evidenceImageUrls, // URLs of uploaded evidence images
   }) async {
     try {
       final reportData = {
@@ -159,6 +162,7 @@ class ReportBlockService {
         'ownerName': ownerName,
         'reason': reason,
         'description': description ?? '',
+        'evidenceImageUrls': evidenceImageUrls ?? [],
         'status': 'open',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),

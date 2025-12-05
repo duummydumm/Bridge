@@ -170,10 +170,21 @@ class EmailService {
 
       debugPrint('EmailJS: Request data: ${jsonEncode(emailData)}');
 
-      // Use backend API if configured (for mobile apps), otherwise use EmailJS directly
-      final apiUrl = _backendApiUrl != null && _backendApiUrl!.isNotEmpty
-          ? '$_backendApiUrl/send-verification-email'
-          : _emailJsApiUrl;
+      // Use backend API if configured (for mobile apps), otherwise use EmailJS directly.
+      //
+      // If _backendApiUrl already contains a specific path (e.g. a full
+      // Cloud Functions URL like
+      // https://<region>-<project>.cloudfunctions.net/sendVerificationEmail),
+      // we use it as-is. Otherwise we assume it's a base URL and append the
+      // legacy /send-verification-email path (for the old Node/Render backend).
+      String apiUrl = _emailJsApiUrl;
+      if (_backendApiUrl != null && _backendApiUrl!.isNotEmpty) {
+        final backend = _backendApiUrl!;
+        final hasCustomPath =
+            backend.contains('/send-verification-email') ||
+            backend.contains('/sendVerificationEmail');
+        apiUrl = hasCustomPath ? backend : '$backend/send-verification-email';
+      }
 
       debugPrint('EmailJS: Using API endpoint: $apiUrl');
 
@@ -298,10 +309,30 @@ class EmailService {
         },
       };
 
-      // Use backend API if configured (for mobile apps), otherwise use EmailJS directly
-      final apiUrl = _backendApiUrl != null && _backendApiUrl!.isNotEmpty
-          ? '$_backendApiUrl/send-welcome-email'
-          : _emailJsApiUrl;
+      // Use backend API if configured (for mobile apps), otherwise use EmailJS directly.
+      //
+      // Cloud Functions case:
+      //  - backendApiUrl is often the sendVerificationEmail URL.
+      //  - In that case, we replace the function name with sendWelcomeEmail.
+      //
+      // Legacy Node/Render case:
+      //  - backendApiUrl is a base URL, so we append /send-welcome-email.
+      String apiUrl = _emailJsApiUrl;
+      if (_backendApiUrl != null && _backendApiUrl!.isNotEmpty) {
+        final backend = _backendApiUrl!;
+
+        if (backend.contains('sendVerificationEmail')) {
+          apiUrl = backend.replaceFirst(
+            'sendVerificationEmail',
+            'sendWelcomeEmail',
+          );
+        } else if (backend.contains('/send-welcome-email') ||
+            backend.contains('/sendWelcomeEmail')) {
+          apiUrl = backend;
+        } else {
+          apiUrl = '$backend/send-welcome-email';
+        }
+      }
 
       // Send the email via EmailJS API or backend API
       final response = await http

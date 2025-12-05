@@ -20,14 +20,17 @@ class _DashboardQuickStatsState extends State<DashboardQuickStats> {
   }
 
   Future<void> _loadStats() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final stats = await _exportService.getQuickStats();
+      if (!mounted) return;
       setState(() {
         _stats = stats;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(
@@ -49,11 +52,14 @@ class _DashboardQuickStatsState extends State<DashboardQuickStats> {
 
     return RefreshIndicator(
       onRefresh: _loadStats,
+      edgeOffset: 0,
+      displacement: 0,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.all(20),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/firestore_service.dart';
 import '../services/storage_service.dart';
@@ -10,6 +11,7 @@ class UserProvider extends ChangeNotifier {
   UserModel? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
+  StreamSubscription<Map<String, dynamic>?>? _userStreamSubscription;
 
   // Getters
   UserModel? get currentUser => _currentUser;
@@ -101,6 +103,19 @@ class UserProvider extends ChangeNotifier {
   // Load user profile
   Future<bool> loadUserProfile(String uid) async {
     try {
+      // Prevent multiple simultaneous calls for the same user
+      if (_isLoading && _currentUser?.uid == uid) {
+        // Already loading this user, wait for it to complete
+        return true;
+      }
+
+      // If we already have this user loaded and not loading, skip
+      if (!_isLoading &&
+          _currentUser?.uid == uid &&
+          _userStreamSubscription != null) {
+        return true;
+      }
+
       _setLoading(true);
       _clearError();
 
@@ -110,12 +125,46 @@ class UserProvider extends ChangeNotifier {
         return false;
       }
 
+      // Cancel existing stream subscription if any
+      await _userStreamSubscription?.cancel();
+
+      // First, load user data once to get initial state
       final userData = await _firestoreService.getUser(uid);
 
       if (userData != null) {
         _currentUser = UserModel.fromMap(userData, uid);
         _setLoading(false);
         notifyListeners();
+
+        // Start listening to real-time updates
+        _userStreamSubscription = _firestoreService
+            .getUserStream(uid)
+            .listen(
+              (updatedUserData) {
+                if (updatedUserData != null) {
+                  final newUser = UserModel.fromMap(updatedUserData, uid);
+                  // Only notify listeners if user data actually changed
+                  // This prevents unnecessary rebuilds
+                  if (_currentUser?.uid != newUser.uid ||
+                      _currentUser?.email != newUser.email ||
+                      _currentUser?.isVerified != newUser.isVerified ||
+                      _currentUser?.isAdmin != newUser.isAdmin ||
+                      _currentUser?.verificationStatus !=
+                          newUser.verificationStatus) {
+                    _currentUser = newUser;
+                    notifyListeners();
+                  } else {
+                    // Update silently if only minor fields changed
+                    _currentUser = newUser;
+                  }
+                }
+              },
+              onError: (error) {
+                debugPrint('Error in user stream: $error');
+                // Don't update user on stream error, keep current state
+              },
+            );
+
         return true;
       }
 
@@ -319,8 +368,18 @@ class UserProvider extends ChangeNotifier {
   }
 
   void clearUser() {
+    // Cancel stream subscription when user logs out
+    _userStreamSubscription?.cancel();
+    _userStreamSubscription = null;
     _currentUser = null;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    // Clean up stream subscription when provider is disposed
+    _userStreamSubscription?.cancel();
+    super.dispose();
   }
 
   // Check if a user with the given email already exists

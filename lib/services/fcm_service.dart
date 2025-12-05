@@ -362,19 +362,32 @@ class FCMService {
         channelId = 'borrow_requests';
         channelName = 'Borrow Requests';
         channelDescription = 'Notifications for new borrow requests';
+      } else if (notificationType == 'rent_request') {
+        channelId = 'rental_requests';
+        channelName = 'Rental Requests';
+        channelDescription = 'Notifications for new rental requests';
       } else if (notificationType == 'reminder') {
         final reminderType = data['reminderType'] as String?;
         if (reminderType == 'overdue') {
           channelId = 'overdue_reminders';
           channelName = 'Overdue Reminders';
           channelDescription = 'Reminders for overdue items';
+        } else if (reminderType == 'rental_overdue') {
+          channelId = 'rental_overdue_reminders';
+          channelName = 'Rental Overdue Reminders';
+          channelDescription = 'Reminders for overdue rentals';
+        } else if (reminderType != null && reminderType.startsWith('rental_')) {
+          // Handle rental_24h, rental_1h, rental_due
+          channelId = 'rental_reminders';
+          channelName = 'Rental Reminders';
+          channelDescription = 'Reminders for rental periods';
         } else {
           channelId = 'due_reminders';
           channelName = 'Due Reminders';
           channelDescription = 'Reminders for upcoming and due returns';
         }
       } else {
-        // Check channelId from Android notification payload
+        // Check channelId from Android notification payload (fallback)
         final androidChannelId = message.notification?.android?.channelId;
         if (androidChannelId != null) {
           channelId = androidChannelId;
@@ -384,6 +397,15 @@ class FCMService {
           } else if (androidChannelId == 'due_reminders') {
             channelName = 'Due Reminders';
             channelDescription = 'Reminders for upcoming and due returns';
+          } else if (androidChannelId == 'rental_overdue_reminders') {
+            channelName = 'Rental Overdue Reminders';
+            channelDescription = 'Reminders for overdue rentals';
+          } else if (androidChannelId == 'rental_reminders') {
+            channelName = 'Rental Reminders';
+            channelDescription = 'Reminders for rental periods';
+          } else if (androidChannelId == 'rental_requests') {
+            channelName = 'Rental Requests';
+            channelDescription = 'Notifications for new rental requests';
           }
         }
       }

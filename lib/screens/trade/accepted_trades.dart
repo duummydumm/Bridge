@@ -163,6 +163,8 @@ class _AcceptedTradesScreenState extends State<AcceptedTradesScreen> {
     final currentUserId = authProvider.user?.uid ?? '';
     final createdAt =
         (offer['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final status = (offer['status'] as String?)?.toLowerCase() ?? 'approved';
+    final isCompleted = status == 'completed';
 
     // Determine if this is an incoming or outgoing offer
     final isIncoming = offer['toUserId'] == currentUserId;
@@ -313,7 +315,9 @@ class _AcceptedTradesScreenState extends State<AcceptedTradesScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Accepted on ${_formatDate(createdAt)}',
+                          isCompleted
+                              ? 'Completed on ${_formatDate(createdAt)}'
+                              : 'Accepted on ${_formatDate(createdAt)}',
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey[700],
@@ -328,12 +332,12 @@ class _AcceptedTradesScreenState extends State<AcceptedTradesScreen> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.green,
+                      color: isCompleted ? Colors.blue : Colors.green,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Text(
-                      'Accepted',
-                      style: TextStyle(
+                    child: Text(
+                      isCompleted ? 'Completed' : 'Accepted',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -436,18 +440,73 @@ class _AcceptedTradesScreenState extends State<AcceptedTradesScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: startChat,
-                  icon: const Icon(Icons.message),
-                  label: const Text('Message User'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _primaryColor,
-                    side: const BorderSide(color: _primaryColor),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: startChat,
+                      icon: const Icon(Icons.message),
+                      label: const Text('Message User'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _primaryColor,
+                        side: const BorderSide(color: _primaryColor),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  if (!isCompleted)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          try {
+                            showDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (_) => const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+
+                            await _firestoreService.completeTrade(
+                              offerId: offer['id'] as String,
+                              tradeItemId: offer['tradeItemId'] as String,
+                            );
+
+                            if (context.mounted) {
+                              Navigator.of(context, rootNavigator: true).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Trade marked as completed'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                              _loadOffers();
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              Navigator.of(context, rootNavigator: true).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Error marking trade as completed: $e',
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.check_circle),
+                        label: const Text('Mark Completed'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
