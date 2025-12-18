@@ -76,6 +76,7 @@ class _HomeTutorialState extends State<HomeTutorial>
   late Animation<double> _overlayAnimation;
   late Animation<double> _pulseAnimation;
   late Animation<double> _tooltipAnimation;
+  bool _targetsVerified = false; // Track if targets have been verified
 
   // Tutorial steps configuration
   late List<TutorialStep> _steps;
@@ -176,9 +177,45 @@ class _HomeTutorialState extends State<HomeTutorial>
 
     // Start the tutorial
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Verify that at least the first target is available before starting
+      _verifyTargetsAndStart();
+    });
+  }
+
+  Future<void> _verifyTargetsAndStart() async {
+    // Wait a bit and verify that at least the first target is available
+    // Try multiple times to ensure elements are rendered
+    bool targetReady = false;
+    for (int i = 0; i < 10; i++) {
+      if (!mounted) return;
+
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // Check if the first target key has a valid render box
+      final renderBox =
+          _steps[0].targetKey.currentContext?.findRenderObject() as RenderBox?;
+      if (renderBox != null && renderBox.hasSize) {
+        targetReady = true;
+        break;
+      }
+    }
+
+    if (!targetReady) {
+      // Targets not ready after multiple attempts - auto-complete tutorial to prevent blocking UI
+      if (mounted) {
+        await _completeTutorial();
+      }
+      return;
+    }
+
+    // Targets are ready - mark as verified and start the tutorial
+    if (mounted) {
+      setState(() {
+        _targetsVerified = true;
+      });
       _overlayController.forward();
       _tooltipController.forward();
-    });
+    }
   }
 
   @override
@@ -245,6 +282,17 @@ class _HomeTutorialState extends State<HomeTutorial>
 
   @override
   Widget build(BuildContext context) {
+    // Don't render anything until targets are verified
+    if (!_targetsVerified) {
+      return const SizedBox.shrink();
+    }
+
+    // Don't render if targets aren't ready yet
+    final targetRect = _getTargetRect();
+    if (targetRect == null && _overlayAnimation.value == 0) {
+      return const SizedBox.shrink();
+    }
+
     return FadeTransition(
       opacity: _overlayAnimation,
       child: Stack(
@@ -259,6 +307,12 @@ class _HomeTutorialState extends State<HomeTutorial>
   }
 
   Widget _buildOverlay() {
+    // Don't show overlay if target isn't ready
+    final targetRect = _getTargetRect();
+    if (targetRect == null) {
+      return const SizedBox.shrink();
+    }
+
     return IgnorePointer(
       // Allow scrolling to pass through the overlay
       ignoring: true,

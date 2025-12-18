@@ -280,7 +280,7 @@ class _CalamityEventDetailScreenState extends State<CalamityEventDetailScreen> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: Colors.blue.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.blue),
                 ),
@@ -350,7 +350,7 @@ class _CalamityEventDetailScreenState extends State<CalamityEventDetailScreen> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: _primaryColor.withOpacity(0.1),
+                              color: _primaryColor.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: Text(
@@ -539,7 +539,7 @@ class _CalamityEventDetailScreenState extends State<CalamityEventDetailScreen> {
                               border: Border.all(color: Colors.grey[300]!),
                             ),
                             child: DropdownButtonFormField<String>(
-                              value: _selectedItemType,
+                              initialValue: _selectedItemType,
                               decoration: InputDecoration(
                                 hintText: 'Select item type',
                                 border: OutlineInputBorder(

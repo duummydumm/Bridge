@@ -40,28 +40,25 @@ class _CompletedDonationsScreenState extends State<CompletedDonationsScreen> {
     }
 
     // Query for completed/claimed giveaways by user
-    // Note: For "All" filter, we'll query both and combine client-side
-    // to avoid complex Firestore indexing requirements
+    // Note: We query without orderBy to avoid excluding documents missing 'claimedAt' field
+    // Then sort client-side by claimedAt (or createdAt/updatedAt as fallback)
     Query<Map<String, dynamic>> query;
     if (_selectedFilter == 'Claimed') {
       query = FirebaseFirestore.instance
           .collection('giveaways')
           .where('donorId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: 'claimed')
-          .orderBy('claimedAt', descending: true);
+          .where('status', isEqualTo: 'claimed');
     } else if (_selectedFilter == 'Completed') {
       query = FirebaseFirestore.instance
           .collection('giveaways')
           .where('donorId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: 'completed')
-          .orderBy('claimedAt', descending: true);
+          .where('status', isEqualTo: 'completed');
     } else {
-      // All - use whereIn (requires index with donorId, status, claimedAt)
+      // All - use whereIn
       query = FirebaseFirestore.instance
           .collection('giveaways')
           .where('donorId', isEqualTo: currentUserId)
-          .where('status', whereIn: ['claimed', 'completed'])
-          .orderBy('claimedAt', descending: true);
+          .where('status', whereIn: ['claimed', 'completed']);
     }
 
     return Scaffold(
@@ -178,17 +175,51 @@ class _CompletedDonationsScreenState extends State<CompletedDonationsScreen> {
                 }
 
                 final docs = snapshot.data!.docs;
+
+                // Sort documents client-side by claimedAt (or createdAt/updatedAt as fallback)
+                final sortedDocs = docs.toList()
+                  ..sort((a, b) {
+                    final aData = a.data();
+                    final bData = b.data();
+
+                    // Try to sort by claimedAt first
+                    final aClaimedAt = aData['claimedAt'] as Timestamp?;
+                    final bClaimedAt = bData['claimedAt'] as Timestamp?;
+
+                    if (aClaimedAt != null && bClaimedAt != null) {
+                      return bClaimedAt.compareTo(aClaimedAt); // Descending
+                    }
+
+                    // Fallback to updatedAt
+                    final aUpdatedAt = aData['updatedAt'] as Timestamp?;
+                    final bUpdatedAt = bData['updatedAt'] as Timestamp?;
+
+                    if (aUpdatedAt != null && bUpdatedAt != null) {
+                      return bUpdatedAt.compareTo(aUpdatedAt); // Descending
+                    }
+
+                    // Fallback to createdAt
+                    final aCreatedAt = aData['createdAt'] as Timestamp?;
+                    final bCreatedAt = bData['createdAt'] as Timestamp?;
+
+                    if (aCreatedAt != null && bCreatedAt != null) {
+                      return bCreatedAt.compareTo(aCreatedAt); // Descending
+                    }
+
+                    return 0; // No sorting if all fields are missing
+                  });
+
                 return RefreshIndicator(
                   onRefresh: () async {
                     // StreamBuilder will automatically refresh
                   },
                   child: ListView.separated(
                     padding: const EdgeInsets.all(16),
-                    itemCount: docs.length,
+                    itemCount: sortedDocs.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 16),
                     itemBuilder: (context, index) {
-                      final data = docs[index].data();
-                      final giveawayId = docs[index].id;
+                      final data = sortedDocs[index].data();
+                      final giveawayId = sortedDocs[index].id;
                       final giveaway = GiveawayListingModel.fromMap(
                         data,
                         giveawayId,
@@ -221,7 +252,7 @@ class _CompletedDonationsScreenState extends State<CompletedDonationsScreen> {
           });
         }
       },
-      selectedColor: _primaryColor.withOpacity(0.2),
+      selectedColor: _primaryColor.withValues(alpha: 0.2),
       checkmarkColor: _primaryColor,
       labelStyle: TextStyle(
         color: isSelected ? _primaryColor : Colors.grey[700],
@@ -240,7 +271,7 @@ class _CompletedDonationsScreenState extends State<CompletedDonationsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -355,7 +386,7 @@ class _CompletedDonationsScreenState extends State<CompletedDonationsScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: _primaryColor.withOpacity(0.1),
+                        color: _primaryColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text(
@@ -374,7 +405,7 @@ class _CompletedDonationsScreenState extends State<CompletedDonationsScreen> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
+                          color: Colors.orange.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Text(
@@ -395,9 +426,11 @@ class _CompletedDonationsScreenState extends State<CompletedDonationsScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.05),
+                      color: Colors.green.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green.withOpacity(0.2)),
+                      border: Border.all(
+                        color: Colors.green.withValues(alpha: 0.2),
+                      ),
                     ),
                     child: Row(
                       children: [

@@ -22,7 +22,6 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
   bool _isLoading = true;
   bool _hasPendingClaim = false;
   final TextEditingController _messageController = TextEditingController();
-  bool _showClaimDialog = false;
 
   static const Color _primaryColor = Color(0xFF2A7A9E);
 
@@ -54,6 +53,7 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
     final giveaway = await giveawayProvider.getGiveaway(giveawayId);
 
     if (giveaway != null) {
+      if (!mounted) return;
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final currentUserId = authProvider.user?.uid;
 
@@ -138,9 +138,7 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
       }
     } else {
       // Approval required - create claim request
-      setState(() {
-        _showClaimDialog = true;
-      });
+      _showClaimRequestDialog();
     }
   }
 
@@ -171,8 +169,8 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
     );
 
     if (claimRequestId != null && mounted) {
+      Navigator.pop(context); // Close the dialog
       setState(() {
-        _showClaimDialog = false;
         _hasPendingClaim = true;
         _messageController.clear();
       });
@@ -192,6 +190,126 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
         ),
       );
     }
+  }
+
+  void _showClaimRequestDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Request to Claim',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _messageController.clear();
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Message (Optional)',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _messageController,
+                  maxLines: 4,
+                  minLines: 3,
+                  maxLength: 500,
+                  decoration: InputDecoration(
+                    hintText: 'Add a message for the donor...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: _primaryColor, width: 2),
+                    ),
+                    contentPadding: const EdgeInsets.all(16),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _messageController.clear();
+                        },
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: _submitClaimRequest,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Submit Request',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -311,8 +429,8 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: _giveaway!.isAvailable
-                  ? const Color(0xFF2ECC71).withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.1),
+                  ? const Color(0xFF2ECC71).withValues(alpha: 0.1)
+                  : Colors.grey.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: _giveaway!.isAvailable
@@ -368,7 +486,7 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: _primaryColor.withOpacity(0.1),
+                  color: _primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Text(
@@ -386,7 +504,7 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Text(
@@ -405,7 +523,7 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
+                    color: Colors.blue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
@@ -452,7 +570,7 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
               child: Row(
                 children: [
                   CircleAvatar(
-                    backgroundColor: _primaryColor.withOpacity(0.2),
+                    backgroundColor: _primaryColor.withValues(alpha: 0.2),
                     child: Icon(Icons.person, color: _primaryColor),
                   ),
                   const SizedBox(width: 12),
@@ -655,115 +773,6 @@ class _GiveawayDetailScreenState extends State<GiveawayDetailScreen> {
           const SizedBox(height: 16),
         ],
       ),
-      // Claim Request Dialog
-      bottomSheet: _showClaimDialog
-          ? Container(
-              padding: const EdgeInsets.all(24),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Request to Claim',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () {
-                          setState(() {
-                            _showClaimDialog = false;
-                            _messageController.clear();
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Message (Optional)',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _messageController,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                      hintText: 'Add a message for the donor...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: _primaryColor, width: 2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            setState(() {
-                              _showClaimDialog = false;
-                              _messageController.clear();
-                            });
-                          },
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text('Cancel'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: ElevatedButton(
-                          onPressed: _submitClaimRequest,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryColor,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'Submit Request',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
-                ],
-              ),
-            )
-          : null,
     );
   }
 

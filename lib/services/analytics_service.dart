@@ -370,8 +370,17 @@ class AnalyticsService {
         .get();
     final Map<String, int> counts = {};
     for (final d in snap.docs) {
-      final t = (d.data()['issueType'] ?? 'Other').toString();
-      counts[t] = (counts[t] ?? 0) + 1;
+      // Reports use 'reason' field, not 'issueType'
+      final reason = d.data()['reason'] as String?;
+      final t = (reason ?? 'Other').toString();
+      // Format the reason for display (capitalize first letter, replace underscores with spaces)
+      final formattedReason = t
+          .split('_')
+          .map((word) => word.isEmpty
+              ? ''
+              : word[0].toUpperCase() + word.substring(1).toLowerCase())
+          .join(' ');
+      counts[formattedReason] = (counts[formattedReason] ?? 0) + 1;
     }
     final list = counts.entries.map((e) => IssueCount(e.key, e.value)).toList()
       ..sort((a, b) => b.count.compareTo(a.count));

@@ -144,6 +144,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
 
       if (success && mounted) {
         await _loadConversation();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Group name updated'),
@@ -186,6 +187,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
         await _loadConversation();
         await _loadAvailableUsers();
         setState(() => _showAddMember = false);
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('$userName added to group'),
@@ -239,6 +241,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
 
     setState(() => _isUpdating = true);
     try {
+      if (!mounted) return;
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
       final success = await chatProvider.removeParticipantFromGroup(
         conversationId: widget.conversationId,
@@ -249,6 +252,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
       if (success && mounted) {
         await _loadConversation();
         await _loadAvailableUsers();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('$userName removed from group'),
@@ -306,6 +310,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
 
     setState(() => _isUpdating = true);
     try {
+      if (!mounted) return;
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
       final success = await chatProvider.removeParticipantFromGroup(
         conversationId: widget.conversationId,
@@ -368,6 +373,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
 
     setState(() => _isUpdating = true);
     try {
+      if (!mounted) return;
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
       final success = await chatProvider.transferGroupAdmin(
         conversationId: widget.conversationId,
@@ -377,6 +383,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
 
       if (success && mounted) {
         await _loadConversation();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Admin rights transferred to $newAdminName'),
@@ -432,6 +439,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
       }
 
       // Update group image
+      if (!mounted) return;
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
       final success = await chatProvider.updateGroupImage(
         conversationId: widget.conversationId,
@@ -441,6 +449,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
 
       if (success && mounted) {
         await _loadConversation();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Group image updated'),
@@ -490,6 +499,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
 
       if (success && mounted) {
         await _loadConversation();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Setting updated'),
@@ -581,25 +591,37 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                 children: [
                   Stack(
                     children: [
-                      CircleAvatar(
-                        radius: 60,
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        backgroundImage:
-                            _conversation!.groupImageUrl != null &&
-                                _conversation!.groupImageUrl!.isNotEmpty
-                            ? CachedNetworkImageProvider(
-                                _conversation!.groupImageUrl!,
-                              )
-                            : null,
-                        child:
-                            _conversation!.groupImageUrl == null ||
-                                _conversation!.groupImageUrl!.isEmpty
-                            ? const Icon(
-                                Icons.group,
-                                size: 60,
-                                color: Colors.white,
-                              )
-                            : null,
+                      ClipOval(
+                        child: Container(
+                          width: 120,
+                          height: 120,
+                          color: Colors.white.withValues(alpha: 0.2),
+                          child:
+                              _conversation!.groupImageUrl != null &&
+                                  _conversation!.groupImageUrl!.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl:
+                                      '${_conversation!.groupImageUrl!}?v=${_conversation!.updatedAt?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch}',
+                                  fit: BoxFit.cover,
+                                  placeholder: (context, url) => const Center(
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                  errorWidget: (context, url, error) =>
+                                      const Icon(
+                                        Icons.group,
+                                        size: 60,
+                                        color: Colors.white,
+                                      ),
+                                )
+                              : const Icon(
+                                  Icons.group,
+                                  size: 60,
+                                  color: Colors.white,
+                                ),
+                        ),
                       ),
                       if (isAdmin && !_isUploadingImage)
                         Positioned(
@@ -619,7 +641,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                         Positioned.fill(
                           child: Container(
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.5),
+                              color: Colors.black.withValues(alpha: 0.5),
                               shape: BoxShape.circle,
                             ),
                             child: const Center(
@@ -761,7 +783,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                                   leading: CircleAvatar(
                                     backgroundColor: const Color(
                                       0xFF00897B,
-                                    ).withOpacity(0.1),
+                                    ).withValues(alpha: 0.1),
                                     child: Text(
                                       userName.isNotEmpty
                                           ? userName[0].toUpperCase()
@@ -800,7 +822,7 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                       leading: CircleAvatar(
                         backgroundColor: const Color(
                           0xFF00897B,
-                        ).withOpacity(0.1),
+                        ).withValues(alpha: 0.1),
                         child: Text(
                           participantName.isNotEmpty
                               ? participantName[0].toUpperCase()

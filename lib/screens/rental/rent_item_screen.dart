@@ -13,6 +13,7 @@ import '../../providers/user_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../user_public_profile_screen.dart';
+import '../chat_detail_screen.dart';
 
 class RentItemScreen extends StatefulWidget {
   const RentItemScreen({super.key});
@@ -262,14 +263,32 @@ class _RentItemScreenState extends State<RentItemScreen> {
         _listing != null &&
         _listing!.ownerId == currentUserId;
 
+    // Get dynamic title based on rental type
+    String getAppBarTitle() {
+      if (_listing == null) return 'Rent Item';
+      switch (_listing!.rentType) {
+        case RentalType.item:
+          return 'Rent Item';
+        case RentalType.apartment:
+          return 'Rent Apartment';
+        case RentalType.boardingHouse:
+          return 'Rent Boarding House';
+        case RentalType.commercial:
+          return 'Rent Commercial Space';
+      }
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         backgroundColor: const Color(0xFF00897B),
         elevation: 0,
-        title: const Text(
-          'Rent Item',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        title: Text(
+          getAppBarTitle(),
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -457,35 +476,38 @@ class _RentItemScreenState extends State<RentItemScreen> {
                         // Price and Category
                         Row(
                           children: [
-                            Builder(
-                              builder: (context) {
-                                final denormCategory =
-                                    (_rawData?['category'] as String?)?.trim();
-                                final category =
-                                    denormCategory?.isNotEmpty == true
-                                    ? denormCategory!
-                                    : (_itemData?['category'] as String?) ??
-                                          'Category';
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFE8F5E9),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    category,
-                                    style: const TextStyle(
-                                      color: Color(0xFF1B5E20),
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
+                            // Only show category for items
+                            if (_listing?.rentType == RentalType.item)
+                              Builder(
+                                builder: (context) {
+                                  final denormCategory =
+                                      (_rawData?['category'] as String?)
+                                          ?.trim();
+                                  final category =
+                                      denormCategory?.isNotEmpty == true
+                                      ? denormCategory!
+                                      : (_itemData?['category'] as String?) ??
+                                            'Category';
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
                                     ),
-                                  ),
-                                );
-                              },
-                            ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE8F5E9),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      category,
+                                      style: const TextStyle(
+                                        color: Color(0xFF1B5E20),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             const Spacer(),
                             Text(
                               _getPriceText(),
@@ -550,6 +572,32 @@ class _RentItemScreenState extends State<RentItemScreen> {
                             ),
                           ),
                         ),
+                        // Message Owner Button
+                        if (_listing?.ownerId != null &&
+                            currentUserId != null &&
+                            _listing!.ownerId != currentUserId) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _messageOwner(),
+                              icon: const Icon(Icons.message_outlined),
+                              label: const Text('Message Owner'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF00897B),
+                                side: const BorderSide(
+                                  color: Color(0xFF00897B),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                         // Location
                         Builder(
                           builder: (context) {
@@ -1009,7 +1057,7 @@ class _RentItemScreenState extends State<RentItemScreen> {
                                   PaymentMethod.online,
                                   'Online Payment',
                                   Icons.payment,
-                                  'Pay securely through the app',
+                                  'Pay via GCash sent by owner',
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -1118,8 +1166,8 @@ class _RentItemScreenState extends State<RentItemScreen> {
                                       Text(
                                         _selectedPaymentMethod ==
                                                 PaymentMethod.online
-                                            ? '• Base Price: Pay online via GCash or payment gateway\n'
-                                                  '• Deposit: Pay online, refundable after return'
+                                            ? '• Base Price: Pay via GCash sent by owner\n'
+                                                  '• Deposit: Pay via GCash, refundable after return'
                                             : '• Base Price: Pay cash to owner during meetup\n'
                                                   '• Deposit: Pay cash to owner during meetup, refundable after return',
                                         style: TextStyle(
@@ -1684,5 +1732,119 @@ class _RentItemScreenState extends State<RentItemScreen> {
           'Owner has been reported successfully. Thank you for keeping the community safe.',
       errorMessage: 'Error reporting owner',
     );
+  }
+
+  Future<void> _messageOwner() async {
+    if (_listing == null) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    // Check if user is authenticated
+    if (!authProvider.isAuthenticated || authProvider.user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please login to message owner'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Prevent messaging your own listing
+    if (_listing!.ownerId == authProvider.user!.uid) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("You can't message yourself about your own item."),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final currentUser = userProvider.currentUser;
+    if (currentUser == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('User data not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Show loading
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (dialogContext) =>
+          const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // Get item title
+      final denormTitle = (_rawData?['title'] as String?)?.trim();
+      final itemTitle = denormTitle?.isNotEmpty == true
+          ? denormTitle!
+          : (_itemData?['title'] as String?) ?? 'Rental Item';
+
+      // Get owner name
+      final ownerName = (_rawData?['ownerName'] as String?)?.trim() ?? 'Owner';
+
+      // Create or get conversation
+      final conversationId = await chatProvider.createOrGetConversation(
+        userId1: authProvider.user!.uid,
+        userId1Name: currentUser.fullName,
+        userId2: _listing!.ownerId,
+        userId2Name: ownerName,
+        itemId: _listing!.itemId,
+        itemTitle: itemTitle,
+      );
+
+      // Close loading dialog
+      if (mounted) {
+        final rootNav = Navigator.of(context, rootNavigator: true);
+        if (rootNav.canPop()) rootNav.pop();
+      }
+
+      if (conversationId != null && mounted) {
+        // Navigate to chat detail screen
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              conversationId: conversationId,
+              otherParticipantName: ownerName,
+              userId: authProvider.user!.uid,
+            ),
+          ),
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to start conversation'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        final rootNav = Navigator.of(context, rootNavigator: true);
+        if (rootNav.canPop()) rootNav.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 }

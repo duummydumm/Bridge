@@ -8,6 +8,7 @@ import 'providers/auth_provider.dart';
 import 'providers/user_provider.dart';
 import 'providers/connectivity_provider.dart';
 import 'providers/admin_provider.dart';
+import 'providers/calamity_provider.dart';
 import 'screens/admin/admin_home_screen.dart';
 import 'screens/auth/login.dart';
 
@@ -36,6 +37,7 @@ class BridgeAdminApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => AdminProvider()),
+        ChangeNotifierProvider(create: (_) => CalamityProvider()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

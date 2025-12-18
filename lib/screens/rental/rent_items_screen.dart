@@ -310,7 +310,18 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                 ],
               ),
             ),
-            // Top-level status sections
+            // Active Rentals Section
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Text(
+                'Active Rentals',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
             ListTile(
               leading: const Icon(Icons.pending_outlined),
               title: const Text('Pending Requests'),
@@ -321,7 +332,7 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.home_outlined),
-              title: const Text('Active Rentals'),
+              title: const Text('My Active Rentals'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -335,7 +346,7 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.business_outlined),
-              title: const Text('Rented Out (As Owner)'),
+              title: const Text('Items I\'m Renting Out'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -348,11 +359,11 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
               },
             ),
             const Divider(),
-            // Item rentals section
+            // Reminders & Alerts Section
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: Text(
-                'Item Rentals',
+                'Reminders & Alerts',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -387,12 +398,21 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
               },
             ),
             const Divider(),
-            // Monthly billing section
+            // Long-term Rentals Section
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Text(
+                'Long-term Rentals',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
             ListTile(
               leading: const Icon(Icons.calendar_month_outlined),
-              title: const Text(
-                'Monthly Billing (Apartments/Rooms/Commercial)',
-              ),
+              title: const Text('Monthly Payments'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -404,7 +424,18 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
               },
             ),
             const Divider(),
-            // History / listings section
+            // History & Management Section
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Text(
+                'History & Management',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
             ListTile(
               leading: const Icon(Icons.history_outlined),
               title: const Text('Rental History'),
@@ -417,6 +448,14 @@ class _RentItemsScreenState extends State<RentItemsScreen> {
                         const RentalHistoryScreen(asOwner: null),
                   ),
                 );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.gavel_outlined),
+              title: const Text('Disputed Rentals'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/rental/disputed-rentals');
               },
             ),
             ListTile(

@@ -273,13 +273,18 @@ class FCMService {
     required DateTime scheduledTime,
     required String title,
     required String body,
-    required String reminderType, // '24h', '1h', 'due', 'overdue', 'nudge'
+    required String
+    reminderType, // '24h', '1h', 'due', 'overdue', 'nudge', 'rental_overdue'
     String? borrowerName,
     String? lenderName,
     bool isBorrower = true,
+    String? rentalRequestId, // For rental reminders
+    String? ownerName, // For rental reminders
+    String? renterName, // For rental reminders
+    String rentType = 'item', // For rental reminders - default to 'item'
   }) async {
     try {
-      await _db.collection('reminders').doc(reminderId).set({
+      final reminderData = {
         'userId': userId,
         'itemId': itemId,
         'itemTitle': itemTitle,
@@ -293,7 +298,22 @@ class FCMService {
         'sent': false,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      // Add rental-specific fields if provided
+      if (rentalRequestId != null) {
+        reminderData['rentalRequestId'] = rentalRequestId;
+        // Always include rentType for rental reminders
+        reminderData['rentType'] = rentType;
+      }
+      if (ownerName != null) {
+        reminderData['ownerName'] = ownerName;
+      }
+      if (renterName != null) {
+        reminderData['renterName'] = renterName;
+      }
+
+      await _db.collection('reminders').doc(reminderId).set(reminderData);
       debugPrint('Reminder saved to Firestore: $reminderId');
     } catch (e) {
       debugPrint('Error saving reminder to Firestore: $e');

@@ -100,28 +100,48 @@ class _CurrentlyBorrowedScreenState extends State<CurrentlyBorrowedScreen> {
 
   String _getDaysRemainingText(DateTime? returnDate) {
     if (returnDate == null) return 'No return date set';
-    final now = DateTime.now();
-    final difference = returnDate.difference(now);
 
-    if (difference.inDays < 0) {
-      return 'Overdue by ${difference.inDays.abs()} ${difference.inDays.abs() == 1 ? 'day' : 'days'}';
-    } else if (difference.inDays == 0) {
+    // Normalize to start of day for accurate day comparison
+    final now = DateTime.now();
+    final nowStartOfDay = DateTime(now.year, now.month, now.day);
+    final returnDateStartOfDay = DateTime(
+      returnDate.year,
+      returnDate.month,
+      returnDate.day,
+    );
+
+    final difference = returnDateStartOfDay.difference(nowStartOfDay);
+    final daysDifference = difference.inDays;
+
+    if (daysDifference < 0) {
+      return 'Overdue by ${daysDifference.abs()} ${daysDifference.abs() == 1 ? 'day' : 'days'}';
+    } else if (daysDifference == 0) {
       return 'Due today';
-    } else if (difference.inDays == 1) {
+    } else if (daysDifference == 1) {
       return 'Due tomorrow';
     } else {
-      return 'Due in ${difference.inDays} days';
+      return 'Due in ${daysDifference} days';
     }
   }
 
   Color _getStatusColor(DateTime? returnDate) {
     if (returnDate == null) return Colors.grey;
-    final now = DateTime.now();
-    final difference = returnDate.difference(now);
 
-    if (difference.inDays < 0) {
+    // Normalize to start of day for accurate day comparison
+    final now = DateTime.now();
+    final nowStartOfDay = DateTime(now.year, now.month, now.day);
+    final returnDateStartOfDay = DateTime(
+      returnDate.year,
+      returnDate.month,
+      returnDate.day,
+    );
+
+    final difference = returnDateStartOfDay.difference(nowStartOfDay);
+    final daysDifference = difference.inDays;
+
+    if (daysDifference < 0) {
       return Colors.red;
-    } else if (difference.inDays <= 3) {
+    } else if (daysDifference <= 3) {
       return Colors.orange;
     } else {
       return Colors.green;
@@ -781,13 +801,13 @@ class _CurrentlyBorrowedScreenState extends State<CurrentlyBorrowedScreen> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: isOverdue
-                            ? Colors.red.withOpacity(0.1)
-                            : const Color(0xFF00897B).withOpacity(0.1),
+                            ? Colors.red.withValues(alpha: 0.1)
+                            : const Color(0xFF00897B).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: isOverdue
-                              ? Colors.red.withOpacity(0.3)
-                              : const Color(0xFF00897B).withOpacity(0.3),
+                              ? Colors.red.withValues(alpha: 0.3)
+                              : const Color(0xFF00897B).withValues(alpha: 0.3),
                           width: 1,
                         ),
                       ),
@@ -863,10 +883,10 @@ class _CurrentlyBorrowedScreenState extends State<CurrentlyBorrowedScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
+                        color: Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: Colors.orange.withOpacity(0.3),
+                          color: Colors.orange.withValues(alpha: 0.3),
                           width: 1,
                         ),
                       ),
@@ -1047,7 +1067,7 @@ class _CurrentlyBorrowedScreenState extends State<CurrentlyBorrowedScreen> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00897B).withOpacity(0.1),
+                          color: const Color(0xFF00897B).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -1104,13 +1124,17 @@ class _CurrentlyBorrowedScreenState extends State<CurrentlyBorrowedScreen> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: isOverdue
-                                ? Colors.red.withOpacity(0.1)
-                                : const Color(0xFF00897B).withOpacity(0.1),
+                                ? Colors.red.withValues(alpha: 0.1)
+                                : const Color(
+                                    0xFF00897B,
+                                  ).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: isOverdue
-                                  ? Colors.red.withOpacity(0.3)
-                                  : const Color(0xFF00897B).withOpacity(0.3),
+                                  ? Colors.red.withValues(alpha: 0.3)
+                                  : const Color(
+                                      0xFF00897B,
+                                    ).withValues(alpha: 0.3),
                               width: 1,
                             ),
                           ),

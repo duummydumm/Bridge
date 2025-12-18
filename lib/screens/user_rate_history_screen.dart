@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../services/firestore_service.dart';
 import '../providers/auth_provider.dart';
@@ -64,21 +65,92 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
         return;
       }
 
-      // Get all returned items the current user has borrowed
-      final items = await _firestoreService.getReturnedItemsByBorrower(
-        currentUserId,
-      );
+      // Query borrow requests directly for better control
+      final db = FirebaseFirestore.instance;
+
+      // Get all borrow requests where current user is borrower and status indicates completion
+      // Statuses: 'returned', 'accepted' (but item is returned), 'return_initiated' (if completed)
+      final requestsQuery = await db
+          .collection('borrow_requests')
+          .where('borrowerId', isEqualTo: currentUserId)
+          .where('status', whereIn: ['returned', 'accepted'])
+          .get();
 
       final List<_BorrowHistoryItem> history = [];
 
-      for (final item in items) {
-        final lenderId = (item['lenderId'] ?? '').toString();
-        if (lenderId != widget.userId) continue; // only this profile user
+      for (final requestDoc in requestsQuery.docs) {
+        final requestData = requestDoc.data();
+        final requestId = requestDoc.id;
+        final status = (requestData['status'] ?? '').toString().toLowerCase();
 
-        final lenderName = (item['lenderName'] ?? '').toString();
-        final title = (item['title'] ?? item['name'] ?? 'Item').toString();
-        final requestId = (item['requestId'] ?? '').toString();
-        if (requestId.isEmpty) continue;
+        // For 'accepted' status, check if item is actually returned
+        if (status == 'accepted') {
+          final itemId = requestData['itemId'] as String?;
+          if (itemId != null) {
+            try {
+              final itemDoc = await db.collection('items').doc(itemId).get();
+              if (itemDoc.exists) {
+                final itemData = itemDoc.data();
+                final currentStatus = itemData?['status'] as String?;
+                final currentBorrowerId =
+                    itemData?['currentBorrowerId'] as String?;
+
+                // Item is returned if status is not 'borrowed' OR currentBorrowerId is not this borrower
+                final isReturned =
+                    currentStatus != 'borrowed' ||
+                    (currentStatus == 'borrowed' &&
+                        currentBorrowerId != currentUserId);
+
+                if (!isReturned) continue; // Skip if item is still borrowed
+              }
+            } catch (e) {
+              debugPrint(
+                'Error checking item status for request $requestId: $e',
+              );
+              continue; // Skip if we can't verify
+            }
+          }
+        }
+
+        // Get lender info from request
+        final lenderId = (requestData['lenderId'] ?? '').toString();
+        final lenderName = (requestData['lenderName'] ?? '').toString();
+
+        // Only include items from this profile user
+        if (lenderId.isEmpty || lenderId != widget.userId) continue;
+
+        // Get item title
+        String title = (requestData['itemTitle'] ?? '').toString();
+        if (title.isEmpty) {
+          final itemId = requestData['itemId'] as String?;
+          if (itemId != null && itemId.isNotEmpty) {
+            try {
+              final item = await _firestoreService.getItem(itemId);
+              title = (item?['title'] ?? item?['name'] ?? 'Item').toString();
+            } catch (e) {
+              debugPrint('Error fetching item $itemId: $e');
+            }
+          }
+        }
+        title = title.isEmpty ? 'Item' : title;
+
+        // Get lender name if not in request
+        String finalLenderName = lenderName;
+        if (finalLenderName.isEmpty && lenderId.isNotEmpty) {
+          try {
+            final lender = await _firestoreService.getUser(lenderId);
+            if (lender != null) {
+              final firstName = lender['firstName'] ?? '';
+              final lastName = lender['lastName'] ?? '';
+              finalLenderName = '$firstName $lastName'.trim();
+            }
+          } catch (e) {
+            // Continue if user fetch fails
+          }
+        }
+        finalLenderName = finalLenderName.isEmpty
+            ? widget.userName
+            : finalLenderName;
 
         final hasRated = await _firestoreService.hasExistingRating(
           raterUserId: currentUserId,
@@ -91,7 +163,7 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
             requestId: requestId,
             itemTitle: title,
             lenderId: lenderId,
-            lenderName: lenderName.isEmpty ? widget.userName : lenderName,
+            lenderName: finalLenderName,
             isRated: hasRated,
           ),
         );
@@ -164,13 +236,51 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
         final requestId = (req['id'] ?? '').toString();
         if (requestId.isEmpty) continue;
 
-        final itemTitle = (req['itemTitle'] ?? req['title'] ?? 'Rental Item')
-            .toString();
+        // Get item title from rental listing
+        String itemTitle = (req['itemTitle'] ?? req['title'] ?? '').toString();
+        if (itemTitle.isEmpty) {
+          final listingId = (req['listingId'] ?? '').toString();
+          if (listingId.isNotEmpty) {
+            try {
+              final listing = await _firestoreService.getRentalListing(
+                listingId,
+              );
+              if (listing != null) {
+                itemTitle = (listing['title'] ?? '').toString();
+                // Fallback to item title if listing title not available
+                if (itemTitle.isEmpty) {
+                  final itemId = listing['itemId'] as String?;
+                  if (itemId != null && itemId.isNotEmpty) {
+                    final item = await _firestoreService.getItem(itemId);
+                    itemTitle = (item?['title'] ?? '').toString();
+                  }
+                }
+              }
+            } catch (e) {
+              // Continue if listing fetch fails
+            }
+          }
+        }
+        itemTitle = itemTitle.isEmpty ? 'Rental Item' : itemTitle;
 
         final isOwner = currentUserId == ownerId;
-        final otherUserName =
+        // Get other user's name - fetch from user document if not in request
+        String otherUserName =
             (isOwner ? (req['renterName'] ?? '') : (req['ownerName'] ?? ''))
                 .toString();
+        if (otherUserName.isEmpty && otherUserId != null) {
+          try {
+            final otherUser = await _firestoreService.getUser(otherUserId);
+            if (otherUser != null) {
+              final firstName = otherUser['firstName'] ?? '';
+              final lastName = otherUser['lastName'] ?? '';
+              otherUserName = '$firstName $lastName'.trim();
+            }
+          } catch (e) {
+            // Continue if user fetch fails
+          }
+        }
+        otherUserName = otherUserName.isEmpty ? widget.userName : otherUserName;
 
         final hasRated = await _firestoreService.hasExistingRating(
           raterUserId: currentUserId,
@@ -184,9 +294,7 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
             itemTitle: itemTitle,
             isOwner: isOwner,
             status: status,
-            otherUserName: otherUserName.isEmpty
-                ? widget.userName
-                : otherUserName,
+            otherUserName: otherUserName,
             isRated: hasRated,
           ),
         );
@@ -250,8 +358,51 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
                     ? (offer['toUserName'] ?? '')
                     : (offer['fromUserName'] ?? ''))
                 .toString();
-        final itemTitle = (offer['itemTitle'] ?? offer['title'] ?? 'Trade Item')
-            .toString();
+
+        // Get item title from trade offer fields
+        String itemTitle =
+            (offer['originalOfferedItemName'] ??
+                    offer['offeredItemName'] ??
+                    offer['itemTitle'] ??
+                    offer['title'] ??
+                    '')
+                .toString();
+
+        // If still empty, fetch from trade_item document
+        if (itemTitle.isEmpty) {
+          final tradeItemId = (offer['tradeItemId'] ?? '').toString();
+          if (tradeItemId.isNotEmpty) {
+            try {
+              final tradeItem = await _firestoreService.getTradeItem(
+                tradeItemId,
+              );
+              if (tradeItem != null) {
+                itemTitle = (tradeItem['offeredItemName'] ?? '').toString();
+              }
+            } catch (e) {
+              debugPrint('Error fetching trade item $tradeItemId: $e');
+            }
+          }
+        }
+        itemTitle = itemTitle.isEmpty ? 'Trade Item' : itemTitle;
+
+        // Get other user's name if not in offer
+        String finalOtherUserName = otherUserName;
+        if (finalOtherUserName.isEmpty && otherUserId != null) {
+          try {
+            final otherUser = await _firestoreService.getUser(otherUserId);
+            if (otherUser != null) {
+              final firstName = otherUser['firstName'] ?? '';
+              final lastName = otherUser['lastName'] ?? '';
+              finalOtherUserName = '$firstName $lastName'.trim();
+            }
+          } catch (e) {
+            // Continue if user fetch fails
+          }
+        }
+        finalOtherUserName = finalOtherUserName.isEmpty
+            ? widget.userName
+            : finalOtherUserName;
 
         final hasRated = await _firestoreService.hasExistingRating(
           raterUserId: currentUserId,
@@ -263,9 +414,7 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
           _TradeHistoryItem(
             offerId: offerId,
             itemTitle: itemTitle,
-            otherUserName: otherUserName.isEmpty
-                ? widget.userName
-                : otherUserName,
+            otherUserName: finalOtherUserName,
             status: status,
             isRated: hasRated,
           ),
@@ -328,13 +477,42 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
         final claimId = (claim['id'] ?? '').toString();
         if (claimId.isEmpty) continue;
 
-        final otherUserName =
+        // Get item title from giveaway document
+        String title = (claim['itemTitle'] ?? claim['title'] ?? '').toString();
+        if (title.isEmpty) {
+          final giveawayId = (claim['giveawayId'] ?? '').toString();
+          if (giveawayId.isNotEmpty) {
+            try {
+              final giveaway = await _firestoreService.getGiveaway(giveawayId);
+              if (giveaway != null) {
+                title = (giveaway['title'] ?? '').toString();
+              }
+            } catch (e) {
+              debugPrint('Error fetching giveaway $giveawayId: $e');
+            }
+          }
+        }
+        title = title.isEmpty ? 'Giveaway Item' : title;
+
+        // Get other user's name
+        String otherUserName =
             (currentUserId == donorId
                     ? (claim['claimantName'] ?? '')
                     : (claim['donorName'] ?? ''))
                 .toString();
-        final title = (claim['itemTitle'] ?? claim['title'] ?? 'Giveaway Item')
-            .toString();
+        if (otherUserName.isEmpty && otherUserId != null) {
+          try {
+            final otherUser = await _firestoreService.getUser(otherUserId);
+            if (otherUser != null) {
+              final firstName = otherUser['firstName'] ?? '';
+              final lastName = otherUser['lastName'] ?? '';
+              otherUserName = '$firstName $lastName'.trim();
+            }
+          } catch (e) {
+            // Continue if user fetch fails
+          }
+        }
+        otherUserName = otherUserName.isEmpty ? widget.userName : otherUserName;
 
         final hasRated = await _firestoreService.hasExistingRating(
           raterUserId: currentUserId,
@@ -346,9 +524,7 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
           _GiveawayHistoryItem(
             claimId: claimId,
             itemTitle: title,
-            otherUserName: otherUserName.isEmpty
-                ? widget.userName
-                : otherUserName,
+            otherUserName: otherUserName,
             status: status,
             isRated: hasRated,
           ),
@@ -537,7 +713,8 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
   }
 
   Widget _buildRentCard(_RentHistoryItem item) {
-    final roleLabel = item.isOwner ? 'Owner' : 'Renter';
+    // Show the other user's role (opposite of current user's role)
+    final roleLabel = item.isOwner ? 'Renter' : 'Owner';
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -549,7 +726,7 @@ class _UserRateHistoryScreenState extends State<UserRateHistoryScreen>
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          '$roleLabel with ${item.otherUserName}',
+          '$roleLabel: ${item.otherUserName}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

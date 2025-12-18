@@ -24,6 +24,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
   Map<String, int> _donationCounts = {}; // Cache donation counts per event
   bool _isFiltersExpanded = false; // Track filter expansion state
   int _totalUniqueDonors = 0; // Cache total unique donors count
+  bool _isListView = false; // false = grid view, true = list view
 
   @override
   void initState() {
@@ -109,7 +110,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF00897B).withOpacity(0.3),
+                        color: const Color(0xFF00897B).withValues(alpha: 0.3),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -120,7 +121,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Icon(
@@ -153,6 +154,20 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
                             ),
                           ],
                         ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          _isListView ? Icons.grid_view : Icons.view_list,
+                          color: Colors.white,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _isListView = !_isListView;
+                          });
+                        },
+                        tooltip: _isListView
+                            ? 'Switch to grid view'
+                            : 'Switch to list view',
                       ),
                     ],
                   ),
@@ -194,6 +209,20 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
                             ],
                           ),
                         )
+                      : _isListView
+                      ? ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: filteredEvents.length,
+                          itemBuilder: (context, index) {
+                            final event = filteredEvents[index];
+                            return _buildEventCard(
+                              context,
+                              event,
+                              provider,
+                              isListView: true,
+                            );
+                          },
+                        )
                       : LayoutBuilder(
                           builder: (context, constraints) {
                             final width = constraints.maxWidth;
@@ -220,6 +249,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
                                   context,
                                   event,
                                   provider,
+                                  isListView: false,
                                 );
                               },
                             );
@@ -365,10 +395,10 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -379,7 +409,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color, size: 20),
@@ -471,7 +501,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
                     },
                     style: IconButton.styleFrom(
                       backgroundColor: _isFiltersExpanded
-                          ? _primaryColor.withOpacity(0.1)
+                          ? _primaryColor.withValues(alpha: 0.1)
                           : Colors.grey[100],
                       foregroundColor: _isFiltersExpanded
                           ? _primaryColor
@@ -524,7 +554,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
 
   Widget _buildStatusFilter() {
     return DropdownButtonFormField<String>(
-      value: _selectedStatusFilter,
+      initialValue: _selectedStatusFilter,
       decoration: InputDecoration(
         labelText: 'Status',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -551,7 +581,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
 
   Widget _buildCalamityTypeFilter() {
     return DropdownButtonFormField<String>(
-      value: _selectedCalamityTypeFilter,
+      initialValue: _selectedCalamityTypeFilter,
       decoration: InputDecoration(
         labelText: 'Calamity Type',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -580,7 +610,7 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
 
   Widget _buildSortDropdown() {
     return DropdownButtonFormField<String>(
-      value: _selectedSortBy,
+      initialValue: _selectedSortBy,
       decoration: InputDecoration(
         labelText: 'Sort By',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -699,8 +729,9 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
   Widget _buildEventCard(
     BuildContext context,
     CalamityEventModel event,
-    CalamityProvider provider,
-  ) {
+    CalamityProvider provider, {
+    bool isListView = false,
+  }) {
     final isExpired = event.deadline.isBefore(DateTime.now());
 
     String _formatDate(DateTime date) {
@@ -721,314 +752,653 @@ class _CalamityEventsAdminScreenState extends State<CalamityEventsAdminScreen> {
       return '${months[date.month - 1]} ${date.day.toString().padLeft(2, '0')}, ${date.year}';
     }
 
-    return Card(
-      elevation: 2,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Banner Image
-          if (event.bannerUrl.isNotEmpty)
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
+    if (isListView) {
+      // List view style
+      return Card(
+        elevation: 2,
+        margin: const EdgeInsets.only(bottom: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Banner Image (left side)
+            if (event.bannerUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  bottomLeft: Radius.circular(12),
+                ),
+                child: Image.network(
+                  event.bannerUrl,
+                  width: 200,
+                  height: 200,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      width: 200,
+                      height: 200,
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.image_not_supported, size: 32),
+                    );
+                  },
+                ),
               ),
-              child: Image.network(
-                event.bannerUrl,
-                height: 120,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 120,
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.image_not_supported, size: 32),
-                  );
-                },
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Title and Status
-                Row(
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            event.title,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                    // Title and Status
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                event.title,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.blue),
+                                    ),
+                                    child: Text(
+                                      event.calamityType,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.blue[700],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: event.isActive && !isExpired
+                                          ? Colors.green.withValues(alpha: 0.1)
+                                          : Colors.grey.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: event.isActive && !isExpired
+                                            ? Colors.green
+                                            : Colors.grey,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      isExpired
+                                          ? 'Expired'
+                                          : event.statusDisplay,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: event.isActive && !isExpired
+                                            ? Colors.green[700]
+                                            : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Description
+                    Text(
+                      event.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    // Donation Count and Needed Items
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.pink.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.pink),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.favorite,
+                                size: 12,
+                                color: Colors.pink[700],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${_donationCounts[event.eventId] ?? 0} donations',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.pink[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: event.neededItems.take(5).map((item) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _primaryColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  item,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: _primaryColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (event.neededItems.length > 5)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '+${event.neededItems.length - 5} more items',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    // Location and Deadline
+                    Row(
+                      children: [
+                        Icon(Icons.location_on, size: 14, color: _primaryColor),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            event.dropoffLocation,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Icon(Icons.event, size: 14, color: Colors.orange[700]),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatDate(event.deadline),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isExpired
+                                ? Colors.red[700]
+                                : Colors.grey[600],
+                            fontWeight: isExpired
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Action Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              CalamityEventDetailAdminScreen.show(
+                                context,
+                                eventId: event.eventId,
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _primaryColor,
+                              side: BorderSide(color: _primaryColor),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            child: const Text(
+                              'Details',
+                              style: TextStyle(fontSize: 12),
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          // Calamity Type
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              CreateEditCalamityEventScreen.show(
+                                context,
+                                event: event,
+                              ).then((_) {
+                                provider.loadAllCalamityEvents().then((_) {
+                                  _loadDonationCounts(provider);
+                                  _loadTotalUniqueDonors(provider);
+                                });
+                              });
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.orange[700],
+                              side: BorderSide(color: Colors.orange[700]!),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
                             ),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.blue),
+                            child: const Text(
+                              'Edit',
+                              style: TextStyle(fontSize: 12),
                             ),
-                            child: Text(
-                              event.calamityType,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.blue[700],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (event.isActive && !isExpired)
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => _showCloseEventDialog(
+                                context,
+                                event,
+                                provider,
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange[700],
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                              ),
+                              child: const Text(
+                                'Close',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          )
+                        else
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: null,
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: Colors.grey[400]!),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                              ),
+                              child: Text(
+                                event.status == CalamityEventStatus.closed
+                                    ? 'Closed'
+                                    : 'Expired',
+                                style: const TextStyle(fontSize: 12),
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: event.isActive && !isExpired
-                            ? Colors.green.withOpacity(0.1)
-                            : Colors.grey.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: event.isActive && !isExpired
-                              ? Colors.green
-                              : Colors.grey,
+                        const SizedBox(width: 6),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          color: Colors.red,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () =>
+                              _showDeleteDialog(context, event, provider),
                         ),
-                      ),
-                      child: Text(
-                        isExpired ? 'Expired' : event.statusDisplay,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: event.isActive && !isExpired
-                              ? Colors.green[700]
-                              : Colors.grey[700],
-                        ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                // Description
-                Text(
-                  event.description,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Grid view style (existing)
+      return Card(
+        elevation: 2,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Banner Image
+            if (event.bannerUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  topRight: Radius.circular(12),
                 ),
-                const SizedBox(height: 8),
-                // Donation Count Badge
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+                child: Image.network(
+                  event.bannerUrl,
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      height: 120,
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.image_not_supported, size: 32),
+                    );
+                  },
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title and Status
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              event.title,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            // Calamity Type
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.blue),
+                              ),
+                              child: Text(
+                                event.calamityType,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.blue[700],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      decoration: BoxDecoration(
-                        color: Colors.pink.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.pink),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.favorite,
-                            size: 12,
-                            color: Colors.pink[700],
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: event.isActive && !isExpired
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : Colors.grey.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: event.isActive && !isExpired
+                                ? Colors.green
+                                : Colors.grey,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${_donationCounts[event.eventId] ?? 0} donations',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
+                        ),
+                        child: Text(
+                          isExpired ? 'Expired' : event.statusDisplay,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: event.isActive && !isExpired
+                                ? Colors.green[700]
+                                : Colors.grey[700],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Description
+                  Text(
+                    event.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  // Donation Count Badge
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.pink.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.pink),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.favorite,
+                              size: 12,
                               color: Colors.pink[700],
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                // Needed Items - compact
-                Wrap(
-                  spacing: 4,
-                  runSpacing: 4,
-                  children: event.neededItems.take(4).map((item) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        item,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: _primaryColor,
-                          fontWeight: FontWeight.w600,
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_donationCounts[event.eventId] ?? 0} donations',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.pink[700],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-                if (event.neededItems.length > 4)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      '+${event.neededItems.length - 4} more',
-                      style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-                    ),
+                    ],
                   ),
-                const SizedBox(height: 8),
-                // Location and Deadline in one row
-                Row(
-                  children: [
-                    Icon(Icons.location_on, size: 14, color: _primaryColor),
-                    const SizedBox(width: 4),
-                    Expanded(
+                  const SizedBox(height: 8),
+                  // Needed Items - compact
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: event.neededItems.take(4).map((item) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          item,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: _primaryColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  if (event.neededItems.length > 4)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        event.dropoffLocation,
-                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        '+${event.neededItems.length - 4} more',
+                        style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Icon(Icons.event, size: 14, color: Colors.orange[700]),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatDate(event.deadline),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isExpired ? Colors.red[700] : Colors.grey[600],
-                        fontWeight: isExpired
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // Action Buttons - compact horizontal layout
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          CalamityEventDetailAdminScreen.show(
-                            context,
-                            eventId: event.eventId,
-                          );
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _primaryColor,
-                          side: BorderSide(color: _primaryColor),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                        ),
-                        child: const Text(
-                          'Details',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          CreateEditCalamityEventScreen.show(
-                            context,
-                            event: event,
-                          ).then((_) {
-                            provider.loadAllCalamityEvents().then((_) {
-                              _loadDonationCounts(provider);
-                              _loadTotalUniqueDonors(provider);
-                            });
-                          });
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.orange[700],
-                          side: BorderSide(color: Colors.orange[700]!),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                        ),
-                        child: const Text(
-                          'Edit',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    if (event.isActive && !isExpired)
+                  const SizedBox(height: 8),
+                  // Location and Deadline in one row
+                  Row(
+                    children: [
+                      Icon(Icons.location_on, size: 14, color: _primaryColor),
+                      const SizedBox(width: 4),
                       Expanded(
-                        child: ElevatedButton(
-                          onPressed: () =>
-                              _showCloseEventDialog(context, event, provider),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange[700],
-                            foregroundColor: Colors.white,
+                        child: Text(
+                          event.dropoffLocation,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Icon(Icons.event, size: 14, color: Colors.orange[700]),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatDate(event.deadline),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isExpired ? Colors.red[700] : Colors.grey[600],
+                          fontWeight: isExpired
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Action Buttons - compact horizontal layout
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            CalamityEventDetailAdminScreen.show(
+                              context,
+                              eventId: event.eventId,
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _primaryColor,
+                            side: BorderSide(color: _primaryColor),
                             padding: const EdgeInsets.symmetric(vertical: 8),
                           ),
                           child: const Text(
-                            'Close',
+                            'Details',
                             style: TextStyle(fontSize: 12),
                           ),
                         ),
-                      )
-                    else
+                      ),
+                      const SizedBox(width: 6),
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: null,
+                          onPressed: () {
+                            CreateEditCalamityEventScreen.show(
+                              context,
+                              event: event,
+                            ).then((_) {
+                              provider.loadAllCalamityEvents().then((_) {
+                                _loadDonationCounts(provider);
+                                _loadTotalUniqueDonors(provider);
+                              });
+                            });
+                          },
                           style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: Colors.grey[400]!),
+                            foregroundColor: Colors.orange[700],
+                            side: BorderSide(color: Colors.orange[700]!),
                             padding: const EdgeInsets.symmetric(vertical: 8),
                           ),
-                          child: Text(
-                            event.status == CalamityEventStatus.closed
-                                ? 'Closed'
-                                : 'Expired',
-                            style: const TextStyle(fontSize: 12),
+                          child: const Text(
+                            'Edit',
+                            style: TextStyle(fontSize: 12),
                           ),
                         ),
                       ),
-                    const SizedBox(width: 6),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      color: Colors.red,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () =>
-                          _showDeleteDialog(context, event, provider),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 6),
+                      if (event.isActive && !isExpired)
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () =>
+                                _showCloseEventDialog(context, event, provider),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange[700],
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            child: const Text(
+                              'Close',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: null,
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: Colors.grey[400]!),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            child: Text(
+                              event.status == CalamityEventStatus.closed
+                                  ? 'Closed'
+                                  : 'Expired',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 6),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        color: Colors.red,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () =>
+                            _showDeleteDialog(context, event, provider),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
+    }
   }
 
   void _showDeleteDialog(

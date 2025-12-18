@@ -500,7 +500,7 @@ class _UserListingsScreenState extends State<UserListingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -518,7 +518,7 @@ class _UserListingsScreenState extends State<UserListingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.blueGrey.withOpacity(0.08),
+        color: Colors.blueGrey.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(

@@ -65,12 +65,13 @@ import 'providers/calamity_provider.dart';
 import 'providers/giveaway_rating_provider.dart';
 import 'providers/donor_analytics_provider.dart';
 import 'screens/auth/verify_email.dart';
+import 'screens/auth/suspended_account_screen.dart';
 import 'services/email_service.dart';
 import 'screens/pending_requests_screen.dart';
 import 'screens/borrow/borrow_pending_request.dart';
 import 'screens/borrow/approved_borrow.dart';
 import 'screens/borrow/currently_borrowed.dart';
-import 'screens/borrow/returned_items.dart';
+import 'screens/borrow/borrow_history_screen.dart';
 import 'screens/borrow/pending_returns_screen.dart';
 import 'screens/borrow/currently_lent_screen.dart';
 import 'screens/borrow/disputed_returns_screen.dart';
@@ -197,6 +198,7 @@ class BridgeApp extends StatelessWidget {
               '/login': (context) => const LoginScreen(),
               '/register': (context) => const RegisterScreen(),
               '/verify-email': (context) => const VerifyEmailScreen(),
+              '/suspended-account': (context) => const SuspendedAccountScreen(),
               '/home': (context) {
                 return ProtectedRoute(
                   child: Builder(
@@ -243,8 +245,8 @@ class BridgeApp extends StatelessWidget {
                   ProtectedRoute(child: const ApprovedBorrowScreen()),
               '/borrow/currently-borrowed': (context) =>
                   ProtectedRoute(child: const CurrentlyBorrowedScreen()),
-              '/borrow/returned-items': (context) =>
-                  ProtectedRoute(child: const ReturnedItemsScreen()),
+              '/borrow/history': (context) =>
+                  ProtectedRoute(child: const BorrowHistoryScreen()),
               '/borrow/pending-returns': (context) =>
                   ProtectedRoute(child: const PendingReturnsScreen()),
               '/borrow/currently-lent': (context) =>
@@ -517,6 +519,23 @@ class _AuthWrapperState extends State<_AuthWrapper> {
                           ],
                         ),
                       ),
+                    );
+                  }
+
+                  // Check if user is suspended
+                  final bool isSuspended =
+                      userProvider.currentUser?.isSuspended == true;
+                  if (isSuspended) {
+                    // Redirect to suspended account screen
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (context.mounted) {
+                        Navigator.of(
+                          context,
+                        ).pushReplacementNamed('/suspended-account');
+                      }
+                    });
+                    return const Scaffold(
+                      body: Center(child: CircularProgressIndicator()),
                     );
                   }
 

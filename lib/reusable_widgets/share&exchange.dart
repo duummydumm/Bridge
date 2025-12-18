@@ -142,7 +142,9 @@ class _ExchangeModalState extends State<ExchangeModal>
                   opacity: (_fadeAnimation.value * 0.5).clamp(0.0, 1.0),
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                    child: Container(color: Colors.black.withOpacity(0.3)),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.3),
+                    ),
                   ),
                 ),
               ),
@@ -167,7 +169,7 @@ class _ExchangeModalState extends State<ExchangeModal>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
+                                color: Colors.black.withValues(alpha: 0.2),
                                 blurRadius: 30,
                                 offset: const Offset(0, -10),
                               ),
@@ -357,13 +359,19 @@ class _ExchangeModalState extends State<ExchangeModal>
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [color.withOpacity(0.12), color.withOpacity(0.08)],
+                  colors: [
+                    color.withValues(alpha: 0.12),
+                    color.withValues(alpha: 0.08),
+                  ],
                 ),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+                border: Border.all(
+                  color: color.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: color.withOpacity(0.15),
+                    color: color.withValues(alpha: 0.15),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -378,13 +386,13 @@ class _ExchangeModalState extends State<ExchangeModal>
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          color.withOpacity(0.2),
-                          color.withOpacity(0.15),
+                          color.withValues(alpha: 0.2),
+                          color.withValues(alpha: 0.15),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: color.withOpacity(0.3),
+                        color: color.withValues(alpha: 0.3),
                         width: 1,
                       ),
                     ),
@@ -419,7 +427,7 @@ class _ExchangeModalState extends State<ExchangeModal>
                   if (isEnabled)
                     Icon(
                       Icons.chevron_right_rounded,
-                      color: color.withOpacity(0.6),
+                      color: color.withValues(alpha: 0.6),
                       size: 24,
                     )
                   else

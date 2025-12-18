@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' show File;
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/firestore_service.dart';
@@ -138,9 +138,9 @@ class _RegisterScreenState extends State<RegisterScreen>
       setState(() {
         _barangays = jsonData.cast<String>();
       });
-      print('Loaded ${_barangays.length} barangays');
+      debugPrint('Loaded ${_barangays.length} barangays');
     } catch (e) {
-      print('Error loading barangays: $e');
+      debugPrint('Error loading barangays: $e');
       // Show error to user if needed
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -220,9 +220,79 @@ class _RegisterScreenState extends State<RegisterScreen>
   // Pick and crop image (front or back)
   Future<void> _pickAndCropImage({required bool isFront}) async {
     try {
+      // Show dialog to choose between camera (scanning) and gallery
+      final ImageSource? source = await showDialog<ImageSource>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            'Select ${isFront ? "Front" : "Back"} ID',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(
+                  Icons.camera_alt,
+                  color: Color(0xFF1E88E5),
+                  size: 28,
+                ),
+                title: const Text(
+                  'Scan with Camera',
+                  style: TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
+                ),
+                subtitle: const Text(
+                  'Recommended for better quality',
+                  style: TextStyle(fontSize: 12),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: const BorderSide(color: Color(0xFF1E88E5), width: 1.5),
+                ),
+                onTap: () => Navigator.pop(context, ImageSource.camera),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_library,
+                  color: Colors.grey,
+                  size: 28,
+                ),
+                title: const Text(
+                  'Choose from Gallery',
+                  style: TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
+                ),
+                subtitle: const Text(
+                  'Select existing photo',
+                  style: TextStyle(fontSize: 12),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                onTap: () => Navigator.pop(context, ImageSource.gallery),
+              ),
+            ],
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      );
+
+      if (source == null || !mounted) return;
+
       final picker = ImagePicker();
       final image = await picker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: 85,
         maxWidth: 1200,
         maxHeight: 1200,
@@ -230,88 +300,127 @@ class _RegisterScreenState extends State<RegisterScreen>
 
       if (image == null || !mounted) return;
 
-      // Validate that the image file exists and is accessible
-      try {
-        final file = File(image.path);
-        if (!file.existsSync()) {
+      XFile? finalImage;
+
+      if (kIsWeb) {
+        // On web we cannot use dart:io File or native ImageCropper, so
+        // we skip file existence checks and cropping and just use the
+        // picked image directly. The upload pipeline already knows how
+        // to handle XFile on web.
+        finalImage = image;
+      } else {
+        // Validate that the image file exists and is accessible (non-web)
+        try {
+          final file = File(image.path);
+          if (!file.existsSync()) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Selected image file not found. Please try again.',
+                  ),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+        } catch (fileError) {
+          debugPrint('Error checking image file: $fileError');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text(
-                  'Selected image file not found. Please try again.',
-                ),
+                content: Text('Error accessing image file. Please try again.'),
                 backgroundColor: Colors.red,
               ),
             );
           }
           return;
         }
-      } catch (fileError) {
-        debugPrint('Error checking image file: $fileError');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Error accessing image file. Please try again.'),
-              backgroundColor: Colors.red,
-            ),
+
+        // Try to crop the image, but fall back to original if cropping fails
+        try {
+          final croppedFile = await ImageCropper().cropImage(
+            sourcePath: image.path,
+            // Allow free aspect ratio for ID documents - users can adjust the crop box
+            compressQuality: 90,
+            uiSettings: [
+              AndroidUiSettings(
+                toolbarTitle: 'Crop ID Image',
+                toolbarColor: const Color(0xFF1E88E5),
+                toolbarWidgetColor: Colors.white,
+                initAspectRatio: CropAspectRatioPreset.original,
+                lockAspectRatio: false, // Allow free-form resizing
+                aspectRatioPresets: [
+                  CropAspectRatioPreset.original,
+                  CropAspectRatioPreset.square,
+                  CropAspectRatioPreset.ratio3x2,
+                  CropAspectRatioPreset.ratio4x3,
+                  CropAspectRatioPreset.ratio16x9,
+                ],
+                hideBottomControls: false, // Show controls for resizing
+                showCropGrid: true, // Show grid for better alignment
+                cropFrameColor: const Color(0xFF1E88E5),
+                cropGridColor: Colors.white.withOpacity(0.5),
+                cropFrameStrokeWidth: 3,
+                cropGridStrokeWidth: 1,
+                activeControlsWidgetColor: const Color(0xFF1E88E5),
+                dimmedLayerColor: Colors.black.withOpacity(0.5),
+              ),
+              IOSUiSettings(
+                title: 'Crop ID Image',
+                aspectRatioLockEnabled: false, // Allow resizing
+                aspectRatioLockDimensionSwapEnabled: true,
+                resetAspectRatioEnabled: true,
+                aspectRatioPresets: [
+                  CropAspectRatioPreset.original,
+                  CropAspectRatioPreset.square,
+                  CropAspectRatioPreset.ratio3x2,
+                  CropAspectRatioPreset.ratio4x3,
+                  CropAspectRatioPreset.ratio16x9,
+                ],
+                hidesNavigationBar: false,
+                showCancelConfirmationDialog: true,
+              ),
+            ],
           );
-        }
-        return;
-      }
 
-      // Try to crop the image, but fall back to original if cropping fails
-      XFile? finalImage;
-      try {
-        final croppedFile = await ImageCropper().cropImage(
-          sourcePath: image.path,
-          aspectRatio: const CropAspectRatio(ratioX: 1.0, ratioY: 1.0),
-          uiSettings: [
-            AndroidUiSettings(
-              toolbarTitle: 'Crop ID Image',
-              toolbarColor: const Color(0xFF1E88E5),
-              toolbarWidgetColor: Colors.white,
-              initAspectRatio: CropAspectRatioPreset.square,
-              lockAspectRatio: true,
-            ),
-            IOSUiSettings(title: 'Crop ID Image', aspectRatioLockEnabled: true),
-          ],
-        );
-
-        if (croppedFile != null) {
-          // Verify cropped file exists
-          try {
-            final croppedFileCheck = File(croppedFile.path);
-            if (croppedFileCheck.existsSync()) {
-              finalImage = XFile(croppedFile.path);
-            } else {
-              debugPrint('Cropped file does not exist, using original');
+          if (croppedFile != null) {
+            // Verify cropped file exists
+            try {
+              final croppedFileCheck = File(croppedFile.path);
+              if (croppedFileCheck.existsSync()) {
+                finalImage = XFile(croppedFile.path);
+              } else {
+                debugPrint('Cropped file does not exist, using original');
+                finalImage = image;
+              }
+            } catch (e) {
+              debugPrint('Error verifying cropped file: $e');
               finalImage = image;
             }
-          } catch (e) {
-            debugPrint('Error verifying cropped file: $e');
+          } else {
+            // User cancelled cropping, use original
             finalImage = image;
           }
-        } else {
-          // User cancelled cropping, use original
-          finalImage = image;
-        }
-      } catch (cropError) {
-        debugPrint(
-          'Image cropping not available, using original image: $cropError',
-        );
-        // Fall back to original image if cropping fails
-        finalImage = image;
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Using original image. Please restart the app to enable image cropping.',
-              ),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 3),
-            ),
+        } catch (cropError) {
+          debugPrint(
+            'Image cropping not available, using original image: $cropError',
           );
+          // Fall back to original image if cropping fails
+          finalImage = image;
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Using original image. Please restart the app to enable image cropping.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
         }
       }
 
@@ -386,6 +495,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       final int frontBytes = await _pickedImageFront!.length();
       const int maxBytes = 5 * 1024 * 1024;
       if (frontBytes > maxBytes) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Front image too large. Max size is 5 MB per image.'),
@@ -397,6 +507,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (_pickedImageBack != null) {
         final int backBytes = await _pickedImageBack!.length();
         if (backBytes > maxBytes) {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -408,12 +519,12 @@ class _RegisterScreenState extends State<RegisterScreen>
         }
       }
     } catch (_) {}
-
+    if (!mounted) return;
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
 
     try {
-      print('Starting registration process...');
+      debugPrint('Starting registration process...');
 
       // Check for duplicate email in Firestore before attempting registration
       final email = _emailController.text.trim();
@@ -435,12 +546,12 @@ class _RegisterScreenState extends State<RegisterScreen>
 
       // Check for duplicate account by name and address
       // This prevents the same person from creating multiple accounts
-      print('🔍 Checking for duplicate account...');
-      print('   First Name: ${_firstNameController.text.trim()}');
-      print('   Last Name: ${_lastNameController.text.trim()}');
-      print('   Street: ${_streetController.text.trim()}');
-      print('   Barangay: ${_selectedBarangay ?? ''}');
-      print('   City: ${_cityController.text.trim()}');
+      debugPrint('🔍 Checking for duplicate account...');
+      debugPrint('   First Name: ${_firstNameController.text.trim()}');
+      debugPrint('   Last Name: ${_lastNameController.text.trim()}');
+      debugPrint('   Street: ${_streetController.text.trim()}');
+      debugPrint('   Barangay: ${_selectedBarangay ?? ''}');
+      debugPrint('   City: ${_cityController.text.trim()}');
 
       final duplicateExists = await userProvider
           .checkUserExistsByNameAndAddress(
@@ -451,10 +562,10 @@ class _RegisterScreenState extends State<RegisterScreen>
             city: _cityController.text.trim(),
           );
 
-      print('🔍 Duplicate check result: $duplicateExists');
+      debugPrint('🔍 Duplicate check result: $duplicateExists');
 
       if (duplicateExists) {
-        print('❌ Registration blocked: Duplicate account found');
+        debugPrint('❌ Registration blocked: Duplicate account found');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -469,7 +580,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         return;
       }
 
-      print('✅ No duplicate found, proceeding with registration...');
+      debugPrint('✅ No duplicate found, proceeding with registration...');
 
       // Additional diagnostic: Check if there are any users with similar data
       // This helps debug why the duplicate check might not be working
@@ -482,13 +593,13 @@ class _RegisterScreenState extends State<RegisterScreen>
           city: _cityController.text.trim(),
         );
         if (allUsers.isNotEmpty) {
-          print(
+          debugPrint(
             '⚠️ WARNING: Found ${allUsers.length} potential duplicate(s) but exact match check returned false!',
           );
-          print('   This might indicate a data normalization issue.');
+          debugPrint('   This might indicate a data normalization issue.');
         }
       } catch (e) {
-        print('⚠️ Could not check for potential duplicates: $e');
+        debugPrint('⚠️ Could not check for potential duplicates: $e');
       }
 
       String? imageUrlFront;
@@ -496,7 +607,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
       // Try to upload front image first (required)
       try {
-        print('Starting front image upload...');
+        debugPrint('Starting front image upload...');
         setState(() {
           _uploadingImage = true;
         });
@@ -510,26 +621,26 @@ class _RegisterScreenState extends State<RegisterScreen>
           userHint,
           isFront: true,
         );
-        print('Front image upload successful: $imageUrlFront');
+        debugPrint('Front image upload successful: $imageUrlFront');
 
         // Upload back image if provided (optional)
         if (_pickedImageBack != null) {
           try {
-            print('Starting back image upload...');
+            debugPrint('Starting back image upload...');
             imageUrlBack = await userProvider.uploadIdImage(
               _pickedImageBack!,
               userHint,
               isFront: false,
             );
-            print('Back image upload successful: $imageUrlBack');
+            debugPrint('Back image upload successful: $imageUrlBack');
           } catch (e) {
-            print('Back image upload failed (non-critical): $e');
+            debugPrint('Back image upload failed (non-critical): $e');
             // Don't fail registration if back image fails
             imageUrlBack = null;
           }
         }
       } catch (e) {
-        print('Front image upload failed: $e');
+        debugPrint('Front image upload failed: $e');
         // Continue with registration even if image upload fails
         imageUrlFront = 'pending_upload';
       } finally {
@@ -549,7 +660,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       }
 
       final uid = authProvider.user!.uid;
-      print('Auth user created with UID: $uid');
+      debugPrint('Auth user created with UID: $uid');
 
       // Create user profile
       final profileSuccess = await userProvider.createUserProfile(
@@ -629,6 +740,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         }
 
         // Navigate to verification screen
+        if (!mounted) return;
         Navigator.pushReplacementNamed(context, '/verify-email');
 
         // Show appropriate message based on email sending result
@@ -655,7 +767,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         }
       }
     } catch (e) {
-      print('Registration error: $e');
+      debugPrint('Registration error: $e');
       if (mounted) {
         String errorMessage = 'Failed to register: $e';
 
@@ -943,7 +1055,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                                                   bottom: 12,
                                                 ),
                                                 child: DropdownButtonFormField<String>(
-                                                  value: _selectedBarangay,
+                                                  initialValue:
+                                                      _selectedBarangay,
                                                   decoration:
                                                       _inputDecoration(
                                                         'Barangay',
@@ -1070,7 +1183,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                                               ),
                                               const SizedBox(height: 4),
                                               Text(
-                                                'Upload front of ID (required). Back side is recommended if your ID has information on both sides.',
+                                                'Scan or upload front of ID (required). Back side is recommended if your ID has information on both sides. Camera scanning is recommended for better quality.',
                                                 style: TextStyle(
                                                   fontSize: 12,
                                                   color: Colors.grey[600],
@@ -1350,8 +1463,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                     return const SizedBox.shrink();
                   }
                   return Container(
-                    color: Colors.black.withOpacity(
-                      0.7 * _successController.value,
+                    color: Colors.black.withValues(
+                      alpha: 0.7 * _successController.value,
                     ),
                     child: Center(
                       child: Transform.scale(
@@ -1365,7 +1478,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.3),
+                                  color: Colors.black.withValues(alpha: 0.3),
                                   blurRadius: 20,
                                   spreadRadius: 5,
                                 ),
@@ -1568,8 +1681,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                     const SizedBox(height: 8),
                     Text(
                       isRequired
-                          ? 'Tap to upload $label'
-                          : 'Tap to upload $label (optional)',
+                          ? 'Tap to scan or upload $label'
+                          : 'Tap to scan or upload $label (optional)',
                       style: TextStyle(color: Colors.grey[600], fontSize: 13),
                     ),
                   ],
@@ -1583,20 +1696,6 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   // Image preview widget
   Widget _buildImagePreview({required XFile image, required bool isFront}) {
-    // Safely get the image file
-    File? imageFile;
-    try {
-      final path = image.path;
-      if (path.isNotEmpty) {
-        final file = File(path);
-        if (file.existsSync()) {
-          imageFile = file;
-        }
-      }
-    } catch (e) {
-      debugPrint('Error accessing image file: $e');
-    }
-
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -1610,18 +1709,39 @@ class _RegisterScreenState extends State<RegisterScreen>
           // Image preview
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-            child: imageFile != null
-                ? Image.file(
-                    imageFile,
+            child: kIsWeb
+                ? Image.network(
+                    image.path,
                     height: 200,
                     width: double.infinity,
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) {
-                      debugPrint('Error loading image: $error');
+                      debugPrint('Error loading web image: $error');
                       return _buildImageErrorPlaceholder();
                     },
                   )
-                : _buildImageErrorPlaceholder(),
+                : Builder(
+                    builder: (context) {
+                      try {
+                        final file = File(image.path);
+                        if (file.existsSync()) {
+                          return Image.file(
+                            file,
+                            height: 200,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              debugPrint('Error loading image: $error');
+                              return _buildImageErrorPlaceholder();
+                            },
+                          );
+                        }
+                      } catch (e) {
+                        debugPrint('Error accessing image file: $e');
+                      }
+                      return _buildImageErrorPlaceholder();
+                    },
+                  ),
           ),
           // Image info and actions
           Padding(
@@ -1644,9 +1764,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        imageFile != null
-                            ? '${isFront ? "Front" : "Back"} ID ready'
-                            : 'Image selected',
+                        '${isFront ? "Front" : "Back"} ID ready',
                         style: TextStyle(color: Colors.grey[600], fontSize: 12),
                       ),
                     ],

@@ -47,6 +47,7 @@ class RentalRequestModel {
   final int?
   numberOfOccupants; // For boarding houses: number of people in this rental
   final String? notes;
+  final Map<String, dynamic>? disputeResolution; // Dispute resolution data
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -79,6 +80,7 @@ class RentalRequestModel {
     this.assignedRoomNumbers,
     this.numberOfOccupants,
     this.notes,
+    this.disputeResolution,
     required this.createdAt,
     this.updatedAt,
   });
@@ -187,6 +189,9 @@ class RentalRequestModel {
           ? data['numberOfOccupants'] as int
           : int.tryParse('${data['numberOfOccupants']}'),
       notes: data['notes'],
+      disputeResolution: data['disputeResolution'] != null
+          ? Map<String, dynamic>.from(data['disputeResolution'])
+          : null,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -228,8 +233,11 @@ class RentalRequestModel {
       'assignedRoomNumbers': assignedRoomNumbers,
       'numberOfOccupants': numberOfOccupants,
       'notes': notes,
+      'disputeResolution': disputeResolution,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
     };
   }
+
+  bool get hasDisputeResolution => disputeResolution != null;
 }

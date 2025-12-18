@@ -570,7 +570,7 @@ class _RentalDueSoonScreenState extends State<RentalDueSoonScreen>
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: statusColor.withOpacity(0.5), width: 2),
+        side: BorderSide(color: statusColor.withValues(alpha: 0.5), width: 2),
       ),
       child: InkWell(
         onTap: () {
@@ -641,7 +641,7 @@ class _RentalDueSoonScreenState extends State<RentalDueSoonScreen>
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
+                          color: Colors.black.withValues(alpha: 0.3),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),

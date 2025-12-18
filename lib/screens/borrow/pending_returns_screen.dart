@@ -1,6 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -214,7 +215,7 @@ class _PendingReturnsScreenState extends State<PendingReturnsScreen> {
                     decoration: BoxDecoration(
                       color: _getConditionColor(
                         borrowerCondition,
-                      ).withOpacity(0.1),
+                      ).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: _getConditionColor(borrowerCondition),
@@ -265,32 +266,33 @@ class _PendingReturnsScreenState extends State<PendingReturnsScreen> {
                   const SizedBox(height: 8),
                   SizedBox(
                     height: 100,
-                    child: ListView.builder(
+                    child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      itemCount: borrowerPhotos.length,
-                      itemBuilder: (context, index) {
-                        return Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          width: 100,
-                          height: 100,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
-                              imageUrl: borrowerPhotos[index],
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                              errorWidget: (context, url, error) =>
-                                  const Icon(Icons.error, color: Colors.red),
+                      child: Row(
+                        children: borrowerPhotos.map((photoUrl) {
+                          return Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey),
                             ),
-                          ),
-                        );
-                      },
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: CachedNetworkImage(
+                                imageUrl: photoUrl,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                                errorWidget: (context, url, error) =>
+                                    const Icon(Icons.error, color: Colors.red),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -321,7 +323,7 @@ class _PendingReturnsScreenState extends State<PendingReturnsScreen> {
                           ),
                           decoration: BoxDecoration(
                             color: conditionAccepted
-                                ? const Color(0xFF00897B).withOpacity(0.1)
+                                ? const Color(0xFF00897B).withValues(alpha: 0.1)
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
@@ -334,18 +336,30 @@ class _PendingReturnsScreenState extends State<PendingReturnsScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Radio<bool>(
-                                value: true,
-                                groupValue: conditionAccepted,
-                                onChanged: (value) {
-                                  setState(() {
-                                    conditionAccepted = value!;
-                                    showDamageForm = false;
-                                  });
-                                },
-                                activeColor: const Color(0xFF00897B),
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: conditionAccepted
+                                        ? const Color(0xFF00897B)
+                                        : Colors.grey[400]!,
+                                    width: 2,
+                                  ),
+                                  color: conditionAccepted
+                                      ? const Color(0xFF00897B)
+                                      : Colors.transparent,
+                                ),
+                                child: conditionAccepted
+                                    ? const Icon(
+                                        Icons.check,
+                                        size: 14,
+                                        color: Colors.white,
+                                      )
+                                    : null,
                               ),
-
+                              const SizedBox(width: 8),
                               const Expanded(
                                 child: Text(
                                   'Accept',
@@ -377,7 +391,7 @@ class _PendingReturnsScreenState extends State<PendingReturnsScreen> {
                           ),
                           decoration: BoxDecoration(
                             color: !conditionAccepted
-                                ? Colors.orange.withOpacity(0.1)
+                                ? Colors.orange.withValues(alpha: 0.1)
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
@@ -390,18 +404,30 @@ class _PendingReturnsScreenState extends State<PendingReturnsScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Radio<bool>(
-                                value: false,
-                                groupValue: conditionAccepted,
-                                onChanged: (value) {
-                                  setState(() {
-                                    conditionAccepted = value!;
-                                    showDamageForm = true;
-                                  });
-                                },
-                                activeColor: Colors.orange,
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: !conditionAccepted
+                                        ? Colors.orange
+                                        : Colors.grey[400]!,
+                                    width: 2,
+                                  ),
+                                  color: !conditionAccepted
+                                      ? Colors.orange
+                                      : Colors.transparent,
+                                ),
+                                child: !conditionAccepted
+                                    ? const Icon(
+                                        Icons.check,
+                                        size: 14,
+                                        color: Colors.white,
+                                      )
+                                    : null,
                               ),
-
+                              const SizedBox(width: 8),
                               const Expanded(
                                 child: Text(
                                   'Dispute / Report Damage',
@@ -463,44 +489,121 @@ class _PendingReturnsScreenState extends State<PendingReturnsScreen> {
                   if (selectedPhotos.isNotEmpty)
                     SizedBox(
                       height: 100,
-                      child: ListView.builder(
+                      child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
-                        itemCount: selectedPhotos.length,
-                        itemBuilder: (context, index) {
-                          return Stack(
-                            children: [
-                              Container(
-                                margin: const EdgeInsets.only(right: 8),
-                                width: 100,
-                                height: 100,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.grey),
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.file(
-                                    File(selectedPhotos[index].path),
-                                    fit: BoxFit.cover,
+                        child: Row(
+                          children: selectedPhotos.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final photo = entry.value;
+                            return Stack(
+                              children: [
+                                Container(
+                                  margin: const EdgeInsets.only(right: 8),
+                                  width: 100,
+                                  height: 100,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Builder(
+                                      builder: (context) {
+                                        // Handle web platform where Image.file is not supported
+                                        if (kIsWeb) {
+                                          return FutureBuilder<List<int>>(
+                                            future: photo.readAsBytes(),
+                                            builder: (context, snapshot) {
+                                              if (snapshot.connectionState ==
+                                                  ConnectionState.waiting) {
+                                                return Container(
+                                                  color: Colors.grey[300],
+                                                  child: const Center(
+                                                    child:
+                                                        CircularProgressIndicator(),
+                                                  ),
+                                                );
+                                              }
+                                              if (snapshot.hasError ||
+                                                  !snapshot.hasData) {
+                                                return Container(
+                                                  color: Colors.grey[300],
+                                                  child: const Icon(
+                                                    Icons.error_outline,
+                                                    color: Colors.red,
+                                                  ),
+                                                );
+                                              }
+                                              return Image.memory(
+                                                Uint8List.fromList(
+                                                  snapshot.data!,
+                                                ),
+                                                fit: BoxFit.cover,
+                                                errorBuilder:
+                                                    (
+                                                      context,
+                                                      error,
+                                                      stackTrace,
+                                                    ) {
+                                                      return Container(
+                                                        color: Colors.grey[300],
+                                                        child: const Icon(
+                                                          Icons.error_outline,
+                                                          color: Colors.red,
+                                                        ),
+                                                      );
+                                                    },
+                                              );
+                                            },
+                                          );
+                                        } else {
+                                          // Handle non-web platform with File
+                                          try {
+                                            return Image.file(
+                                              File(photo.path),
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                    return Container(
+                                                      color: Colors.grey[300],
+                                                      child: const Icon(
+                                                        Icons.error_outline,
+                                                        color: Colors.red,
+                                                      ),
+                                                    );
+                                                  },
+                                            );
+                                          } catch (e) {
+                                            return Container(
+                                              color: Colors.grey[300],
+                                              child: const Icon(
+                                                Icons.error_outline,
+                                                color: Colors.red,
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
+                                    ),
                                   ),
                                 ),
-                              ),
-                              Positioned(
-                                top: 4,
-                                right: 4,
-                                child: IconButton(
-                                  icon: const Icon(Icons.close, size: 20),
-                                  color: Colors.red,
-                                  onPressed: () {
-                                    setState(() {
-                                      selectedPhotos.removeAt(index);
-                                    });
-                                  },
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close, size: 20),
+                                    color: Colors.red,
+                                    onPressed: () {
+                                      setState(() {
+                                        selectedPhotos.removeAt(index);
+                                      });
+                                    },
+                                  ),
                                 ),
-                              ),
-                            ],
-                          );
-                        },
+                              ],
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
                   const SizedBox(height: 8),
@@ -970,7 +1073,7 @@ class _PendingReturnsScreenState extends State<PendingReturnsScreen> {
                     decoration: BoxDecoration(
                       color: _getConditionColor(
                         returnItem['borrowerCondition'] as String,
-                      ).withOpacity(0.1),
+                      ).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: _getConditionColor(

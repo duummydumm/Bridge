@@ -19,6 +19,7 @@ class GiveawayListingModel {
   final String? claimedBy; // User ID who claimed it
   final String? claimedByName;
   final DateTime? claimedAt;
+  final DateTime? completedAt; // When the item was actually picked up/delivered
   final String? pickupNotes; // Instructions for pickup coordination
   final String? donationTrackingId; // For barangay records
   final int reportCount; // Abuse/spam monitoring
@@ -41,6 +42,7 @@ class GiveawayListingModel {
     this.claimedBy,
     this.claimedByName,
     this.claimedAt,
+    this.completedAt,
     this.pickupNotes,
     this.donationTrackingId,
     this.reportCount = 0,
@@ -110,6 +112,7 @@ class GiveawayListingModel {
       claimedBy: data['claimedBy'],
       claimedByName: data['claimedByName'],
       claimedAt: (data['claimedAt'] as Timestamp?)?.toDate(),
+      completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
       pickupNotes: data['pickupNotes'],
       donationTrackingId: data['donationTrackingId'],
       reportCount: (data['reportCount'] ?? 0) is int
@@ -136,6 +139,9 @@ class GiveawayListingModel {
       'claimedBy': claimedBy,
       'claimedByName': claimedByName,
       'claimedAt': claimedAt != null ? Timestamp.fromDate(claimedAt!) : null,
+      'completedAt': completedAt != null
+          ? Timestamp.fromDate(completedAt!)
+          : null,
       'pickupNotes': pickupNotes,
       'donationTrackingId': donationTrackingId,
       'reportCount': reportCount,

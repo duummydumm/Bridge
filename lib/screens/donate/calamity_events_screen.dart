@@ -67,8 +67,8 @@ class _CalamityEventsScreenState extends State<CalamityEventsScreen> {
                   end: Alignment.bottomRight,
                   colors: [
                     _primaryColor,
-                    _primaryColor.withOpacity(0.8),
-                    _primaryColor.withOpacity(0.6),
+                    _primaryColor.withValues(alpha: 0.8),
+                    _primaryColor.withValues(alpha: 0.6),
                   ],
                 ),
               ),
@@ -82,7 +82,7 @@ class _CalamityEventsScreenState extends State<CalamityEventsScreen> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -108,7 +108,7 @@ class _CalamityEventsScreenState extends State<CalamityEventsScreen> {
                     'Help those in need',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
@@ -306,7 +306,7 @@ class _CalamityEventsScreenState extends State<CalamityEventsScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        color: Colors.blue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.blue),
                       ),
@@ -341,7 +341,7 @@ class _CalamityEventsScreenState extends State<CalamityEventsScreen> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: _primaryColor.withOpacity(0.1),
+                        color: _primaryColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -394,7 +394,7 @@ class _CalamityEventsScreenState extends State<CalamityEventsScreen> {
                         isExpired
                             ? 'Deadline passed: ${_formatDate(event.deadline)}'
                             : daysRemaining > 0
-                            ? 'Deadline: ${_formatDate(event.deadline)} (${daysRemaining} days left)'
+                            ? 'Deadline: ${_formatDate(event.deadline)} ($daysRemaining days left)'
                             : 'Deadline: ${_formatDate(event.deadline)} ${_formatTime(event.deadline)}',
                         style: TextStyle(
                           fontSize: 12,

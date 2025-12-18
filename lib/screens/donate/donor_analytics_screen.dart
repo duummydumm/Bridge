@@ -157,29 +157,40 @@ class _DonorAnalyticsScreenState extends State<DonorAnalyticsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(icon, color: color, size: 28),
-          const Spacer(),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 8),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[800],
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 4),
-          Text(title, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+          Text(
+            title,
+            style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
@@ -192,7 +203,7 @@ class _DonorAnalyticsScreenState extends State<DonorAnalyticsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -259,7 +270,7 @@ class _DonorAnalyticsScreenState extends State<DonorAnalyticsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -334,7 +345,7 @@ class _DonorAnalyticsScreenState extends State<DonorAnalyticsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),

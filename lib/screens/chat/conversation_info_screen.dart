@@ -156,7 +156,7 @@ class _ConversationInfoScreenState extends State<ConversationInfoScreen> {
               children: [
                 CircleAvatar(
                   radius: 50,
-                  backgroundColor: Colors.white.withOpacity(0.2),
+                  backgroundColor: Colors.white.withValues(alpha: 0.2),
                   child: Text(
                     widget.otherParticipantName.isNotEmpty
                         ? widget.otherParticipantName[0].toUpperCase()
@@ -336,7 +336,7 @@ class _ConversationInfoScreenState extends State<ConversationInfoScreen> {
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: isCurrentUser
-                          ? const Color(0xFF00897B).withOpacity(0.1)
+                          ? const Color(0xFF00897B).withValues(alpha: 0.1)
                           : Colors.grey[300],
                       child: Text(
                         participantName.isNotEmpty

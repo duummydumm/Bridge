@@ -207,7 +207,7 @@ class _MyLendersDetailScreenState extends State<MyLendersDetailScreen> {
                               radius: 28,
                               backgroundColor: const Color(
                                 0xFF00897B,
-                              ).withOpacity(0.1),
+                              ).withValues(alpha: 0.1),
                               backgroundImage: profilePhotoUrl.isNotEmpty
                                   ? NetworkImage(profilePhotoUrl)
                                   : null,

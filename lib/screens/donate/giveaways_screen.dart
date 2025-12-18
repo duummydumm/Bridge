@@ -12,6 +12,7 @@ import '../../models/calamity_event_model.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
 import '../../reusable_widgets/verification_guard.dart';
 import 'pending_claims.dart';
+import 'my_pending_requests.dart';
 import 'approved_claims.dart';
 import 'completed_donations.dart';
 
@@ -98,7 +99,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
         _barangays = jsonData.cast<String>();
       });
     } catch (e) {
-      print('Error loading barangays: $e');
+      debugPrint('Error loading barangays: $e');
     }
   }
 
@@ -119,6 +120,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
     final activeGiveawaysQuery = FirebaseFirestore.instance
         .collection('giveaways')
         .where('status', isEqualTo: 'active')
+        .orderBy('createdAt', descending: true)
         .limit(50);
 
     // My Giveaways Query
@@ -126,6 +128,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
         ? FirebaseFirestore.instance
               .collection('giveaways')
               .where('donorId', isEqualTo: currentUserId)
+              .orderBy('createdAt', descending: true)
               .limit(50)
         : null;
 
@@ -165,8 +168,6 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
           indicatorWeight: 3,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
-          isScrollable: true,
-          tabAlignment: TabAlignment.center,
           tabs: const [
             Tab(icon: Icon(Icons.card_giftcard), text: 'Available'),
             Tab(icon: Icon(Icons.inventory), text: 'My Giveaways'),
@@ -185,8 +186,8 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                   end: Alignment.bottomRight,
                   colors: [
                     _primaryColor,
-                    _primaryColor.withOpacity(0.8),
-                    _primaryColor.withOpacity(0.6),
+                    _primaryColor.withValues(alpha: 0.8),
+                    _primaryColor.withValues(alpha: 0.6),
                   ],
                 ),
               ),
@@ -200,7 +201,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -226,7 +227,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                     'Manage your donations',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
@@ -250,12 +251,27 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
             ListTile(
               leading: const Icon(Icons.pending_outlined),
               title: const Text('Pending Claims'),
+              subtitle: const Text('Claims on your giveaways'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => const PendingClaimsScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.pending_actions_outlined),
+              title: const Text('My Pending Requests'),
+              subtitle: const Text('Your claim requests'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MyPendingRequestsScreen(),
                   ),
                 );
               },
@@ -497,7 +513,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                           const SizedBox(height: 12),
                           // Barangay Filter Dropdown
                           DropdownButtonFormField<String>(
-                            value: _selectedBarangay,
+                            initialValue: _selectedBarangay,
                             decoration: InputDecoration(
                               labelText: 'Filter by Barangay',
                               prefixIcon: const Icon(Icons.location_on),
@@ -547,8 +563,8 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                                         _selectedCategory = category;
                                       });
                                     },
-                                    selectedColor: _primaryColor.withOpacity(
-                                      0.2,
+                                    selectedColor: _primaryColor.withValues(
+                                      alpha: 0.2,
                                     ),
                                     checkmarkColor: _primaryColor,
                                     labelStyle: TextStyle(
@@ -578,6 +594,73 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                final error = snapshot.error;
+                final isIndexError =
+                    error.toString().contains('index') ||
+                    error.toString().contains('requires an index');
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: Colors.orange[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          isIndexError
+                              ? 'Firestore Index Required'
+                              : 'Error loading giveaways',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey[800],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange[200]!),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                isIndexError
+                                    ? 'Please deploy the indexes from firestore.indexes.json to Firebase Console.'
+                                    : 'An error occurred while loading giveaways.',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.orange[900],
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              if (isIndexError) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Run: firebase deploy --only firestore:indexes',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.orange[800],
+                                    fontFamily: 'monospace',
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
               }
               if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                 return Center(
@@ -737,6 +820,73 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
+        if (snapshot.hasError) {
+          final error = snapshot.error;
+          final isIndexError =
+              error.toString().contains('index') ||
+              error.toString().contains('requires an index');
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.orange[400],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isIndexError
+                        ? 'Firestore Index Required'
+                        : 'Error loading giveaways',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey[800],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange[200]!),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          isIndexError
+                              ? 'Please deploy the indexes from firestore.indexes.json to Firebase Console.'
+                              : 'An error occurred while loading giveaways.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.orange[900],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        if (isIndexError) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Run: firebase deploy --only firestore:indexes',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange[800],
+                              fontFamily: 'monospace',
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return Center(
             child: Column(
@@ -827,7 +977,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -944,7 +1094,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: _primaryColor.withOpacity(0.1),
+                        color: _primaryColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text(
@@ -962,7 +1112,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
+                        color: Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text(
@@ -1194,7 +1344,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -1270,7 +1420,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        color: Colors.blue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.blue),
                       ),
@@ -1300,7 +1450,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                         isExpired
                             ? 'Deadline passed: ${_formatDate(event.deadline)}'
                             : daysRemaining > 0
-                            ? 'Deadline: ${_formatDate(event.deadline)} (${daysRemaining} days left)'
+                            ? 'Deadline: ${_formatDate(event.deadline)} ($daysRemaining days left)'
                             : 'Deadline: ${_formatDate(event.deadline)}',
                         style: TextStyle(
                           fontSize: 12,
@@ -1325,7 +1475,7 @@ class _GiveawaysScreenState extends State<GiveawaysScreen>
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: _primaryColor.withOpacity(0.1),
+                        color: _primaryColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(

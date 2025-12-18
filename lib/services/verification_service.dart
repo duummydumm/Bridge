@@ -143,6 +143,36 @@ class VerificationService {
         'emailVerifiedAt': FieldValue.serverTimestamp(),
       });
 
+      // Create activity log for email verification
+      try {
+        final userDoc = await _db.collection('users').doc(userId).get();
+        if (userDoc.exists) {
+          final userData = userDoc.data();
+          final firstName = userData?['firstName'] ?? '';
+          final lastName = userData?['lastName'] ?? '';
+          final userName = '$firstName $lastName'.trim();
+          final displayName = userName.isNotEmpty
+              ? userName
+              : (userData?['email'] ?? 'User');
+
+          await _db.collection('activity_logs').add({
+            'timestamp': FieldValue.serverTimestamp(),
+            'category': 'user',
+            'action': 'email_verified',
+            'actorId': userId,
+            'actorName': displayName,
+            'targetId': userId,
+            'targetType': 'user',
+            'description': 'User verified their email address',
+            'metadata': {'userId': userId, 'email': userData?['email'] ?? ''},
+            'severity': 'info',
+          });
+        }
+      } catch (e) {
+        debugPrint('Error creating activity log for email verification: $e');
+        // Don't fail verification if logging fails
+      }
+
       // Get user data for welcome email
       String? userEmail;
       String? userName;

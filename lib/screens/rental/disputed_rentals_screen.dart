@@ -8,6 +8,7 @@ import '../../providers/chat_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
 import '../chat_detail_screen.dart';
+import 'active_rental_detail_screen.dart';
 
 class DisputedRentalsScreen extends StatefulWidget {
   const DisputedRentalsScreen({super.key});
@@ -282,9 +283,432 @@ class _DisputedRentalsScreenState extends State<DisputedRentalsScreen> {
     final requestId = rental['id'] as String?;
     if (requestId == null) return;
 
-    // Navigate to rental detail screen
+    // Navigate to active rental detail screen (user-facing detail view)
     if (mounted) {
-      Navigator.of(context).pushNamed('/rental/detail', arguments: requestId);
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => ActiveRentalDetailScreen(requestId: requestId),
+        ),
+      );
+    }
+  }
+
+  Future<void> _proposeCompensation(Map<String, dynamic> rental) async {
+    final requestId = rental['id'] as String?;
+    if (requestId == null) return;
+
+    final damageReport = rental['damageReport'] as Map<String, dynamic>?;
+    final estimatedCost = damageReport?['estimatedCost'] as num?;
+
+    final amountController = TextEditingController(
+      text: estimatedCost != null ? estimatedCost.toStringAsFixed(2) : '',
+    );
+    final notesController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Propose Compensation'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter the compensation amount you are proposing:',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: amountController,
+                decoration: const InputDecoration(
+                  labelText: 'Compensation Amount *',
+                  hintText: '0.00',
+                  prefixText: '₱ ',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(
+                  labelText: 'Notes (Optional)',
+                  hintText: 'Additional information about the compensation...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final amount = double.tryParse(amountController.text.trim());
+              if (amount == null || amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid amount'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(context, true);
+            },
+            child: const Text('Propose'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final ownerId = authProvider.user?.uid;
+
+      if (ownerId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You must be logged in'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final amount = double.parse(amountController.text.trim());
+      final notes = notesController.text.trim().isNotEmpty
+          ? notesController.text.trim()
+          : null;
+
+      await _firestoreService.proposeRentalDisputeCompensation(
+        requestId: requestId,
+        ownerId: ownerId,
+        compensationAmount: amount,
+        proposalNotes: notes,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Compensation proposal sent successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadDisputedRentals();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _acceptCompensation(Map<String, dynamic> rental) async {
+    final requestId = rental['id'] as String?;
+    if (requestId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Accept Compensation?'),
+        content: const Text(
+          'Are you sure you want to accept this compensation proposal? You will need to record payment after accepting.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00897B),
+            ),
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final renterId = authProvider.user?.uid;
+
+      if (renterId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You must be logged in'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      await _firestoreService.acceptRentalDisputeCompensation(
+        requestId: requestId,
+        renterId: renterId,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Compensation accepted. Please record payment.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadDisputedRentals();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectCompensation(Map<String, dynamic> rental) async {
+    final requestId = rental['id'] as String?;
+    if (requestId == null) return;
+
+    final reasonController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reject Compensation?'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Are you sure you want to reject this compensation proposal?',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Reason (Optional)',
+                  hintText: 'Why are you rejecting this proposal?',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final renterId = authProvider.user?.uid;
+
+      if (renterId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You must be logged in'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final reason = reasonController.text.trim().isNotEmpty
+          ? reasonController.text.trim()
+          : null;
+
+      await _firestoreService.rejectRentalDisputeCompensation(
+        requestId: requestId,
+        renterId: renterId,
+        rejectionReason: reason,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Compensation proposal rejected'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        _loadDisputedRentals();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _recordPayment(Map<String, dynamic> rental) async {
+    final requestId = rental['id'] as String?;
+    if (requestId == null) return;
+
+    final disputeResolution =
+        rental['disputeResolution'] as Map<String, dynamic>?;
+    final proposedAmount = disputeResolution?['proposedAmount'] as num?;
+
+    final amountController = TextEditingController(
+      text: proposedAmount != null ? proposedAmount.toStringAsFixed(2) : '',
+    );
+    final methodController = TextEditingController(text: 'Cash');
+    final notesController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Record Payment'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Record the compensation payment you made:',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: amountController,
+                decoration: const InputDecoration(
+                  labelText: 'Payment Amount *',
+                  hintText: '0.00',
+                  prefixText: '₱ ',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: methodController,
+                decoration: const InputDecoration(
+                  labelText: 'Payment Method',
+                  hintText: 'Cash, Bank Transfer, etc.',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(
+                  labelText: 'Notes (Optional)',
+                  hintText: 'Payment reference, transaction ID, etc.',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final amount = double.tryParse(amountController.text.trim());
+              if (amount == null || amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid amount'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(context, true);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('Record Payment'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final renterId = authProvider.user?.uid;
+
+      if (renterId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You must be logged in'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final amount = double.parse(amountController.text.trim());
+      final method = methodController.text.trim().isNotEmpty
+          ? methodController.text.trim()
+          : null;
+      final notes = notesController.text.trim().isNotEmpty
+          ? notesController.text.trim()
+          : null;
+
+      await _firestoreService.recordRentalDisputeCompensationPayment(
+        requestId: requestId,
+        renterId: renterId,
+        amount: amount,
+        paymentMethod: method,
+        paymentNotes: notes,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment recorded. Dispute resolved!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadDisputedRentals();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -364,6 +788,10 @@ class _DisputedRentalsScreenState extends State<DisputedRentalsScreen> {
     final images = (rental['images'] as List<dynamic>?)?.cast<String>() ?? [];
     final hasImages = images.isNotEmpty;
     final damageReport = rental['damageReport'] as Map<String, dynamic>?;
+    final disputeResolution =
+        rental['disputeResolution'] as Map<String, dynamic>?;
+    final resolutionStatus = disputeResolution?['status'] as String?;
+    final proposedAmount = disputeResolution?['proposedAmount'] as num?;
     final isOwner = rental['ownerId'] == userId;
 
     return Card(
@@ -517,7 +945,271 @@ class _DisputedRentalsScreenState extends State<DisputedRentalsScreen> {
                   ),
                 ),
               ],
-              const SizedBox(height: 12),
+              // Compensation Proposal Section
+              if (disputeResolution != null && proposedAmount != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: resolutionStatus == 'proposal_pending'
+                        ? Colors.blue.withOpacity(0.1)
+                        : resolutionStatus == 'accepted'
+                        ? Colors.green.withOpacity(0.1)
+                        : resolutionStatus == 'resolved'
+                        ? Colors.green.withOpacity(0.1)
+                        : Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: resolutionStatus == 'proposal_pending'
+                          ? Colors.blue.withOpacity(0.3)
+                          : resolutionStatus == 'accepted'
+                          ? Colors.green.withOpacity(0.3)
+                          : resolutionStatus == 'resolved'
+                          ? Colors.green.withOpacity(0.3)
+                          : Colors.orange.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            resolutionStatus == 'proposal_pending'
+                                ? Icons.pending_outlined
+                                : resolutionStatus == 'accepted'
+                                ? Icons.check_circle
+                                : resolutionStatus == 'resolved'
+                                ? Icons.check_circle_outline
+                                : Icons.cancel,
+                            color: resolutionStatus == 'proposal_pending'
+                                ? Colors.blue[700]
+                                : resolutionStatus == 'accepted'
+                                ? Colors.green[700]
+                                : resolutionStatus == 'resolved'
+                                ? Colors.green[700]
+                                : Colors.orange[700],
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            resolutionStatus == 'proposal_pending'
+                                ? 'Compensation Proposal'
+                                : resolutionStatus == 'accepted'
+                                ? 'Compensation Accepted'
+                                : resolutionStatus == 'resolved'
+                                ? 'Dispute Resolved'
+                                : 'Compensation Rejected',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: resolutionStatus == 'proposal_pending'
+                                  ? Colors.blue[700]
+                                  : resolutionStatus == 'accepted'
+                                  ? Colors.green[700]
+                                  : resolutionStatus == 'resolved'
+                                  ? Colors.green[700]
+                                  : Colors.orange[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Proposed Amount: ₱${proposedAmount.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                      if (disputeResolution['proposalNotes'] != null &&
+                          (disputeResolution['proposalNotes'] as String)
+                              .isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          disputeResolution['proposalNotes'] as String,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                      if (resolutionStatus == 'resolved' &&
+                          disputeResolution['paymentAmount'] != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Payment Recorded: ₱${(disputeResolution['paymentAmount'] as num).toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green[700],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else if (isOwner &&
+                  (disputeResolution == null ||
+                      resolutionStatus == null ||
+                      resolutionStatus == 'rejected')) ...[
+                // Owner can propose compensation (first time or after rejection)
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: () => _proposeCompensation(rental),
+                  icon: const Icon(Icons.attach_money, size: 18),
+                  label: Text(
+                    resolutionStatus == 'rejected'
+                        ? 'Propose New Compensation'
+                        : 'Propose Compensation',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 40),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else if (!isOwner &&
+                  (disputeResolution == null || resolutionStatus == null)) ...[
+                // Renter waiting for proposal
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.hourglass_empty, color: Colors.orange[700]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Waiting for owner to propose compensation amount.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              // Action Buttons based on resolution status
+              if (resolutionStatus == 'proposal_pending' && !isOwner) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _rejectCompensation(rental),
+                        icon: const Icon(Icons.close, size: 18),
+                        label: const Text('Reject'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _acceptCompensation(rental),
+                        icon: const Icon(Icons.check, size: 18),
+                        label: const Text('Accept'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00897B),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ] else if (resolutionStatus == 'accepted' && !isOwner) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green[700]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Compensation accepted. Please record payment.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  onPressed: () => _recordPayment(rental),
+                  icon: const Icon(Icons.payment, size: 18),
+                  label: const Text('Record Payment'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 40),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ] else if (resolutionStatus == 'resolved') ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        color: Colors.green[700],
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Dispute resolved. Payment has been recorded.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [

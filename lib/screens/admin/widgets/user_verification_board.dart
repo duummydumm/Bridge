@@ -14,6 +14,7 @@ class UserVerificationBoard extends StatefulWidget {
 class _UserVerificationBoardState extends State<UserVerificationBoard> {
   final Set<String> _selectedUserIds = {};
   bool _isSelectionMode = false;
+  bool _isListView = false; // false = grid view, true = list view
 
   void _showRejectDialog(
     BuildContext context,
@@ -351,7 +352,7 @@ class _UserVerificationBoardState extends State<UserVerificationBoard> {
     );
 
     if (confirmed != true) return;
-
+    if (!mounted) return;
     final admin = Provider.of<AdminProvider>(context, listen: false);
     try {
       final reason = reasonController.text.trim().isEmpty
@@ -384,6 +385,428 @@ class _UserVerificationBoardState extends State<UserVerificationBoard> {
     }
   }
 
+  Widget _buildUserCard(
+    BuildContext context,
+    String uid,
+    Map<String, dynamic> data,
+    AdminProvider admin,
+  ) {
+    final name = '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'.trim();
+    final email = data['email'] ?? '';
+    final idType = data['barangayIdType'] ?? '';
+    final createdAtTs = data['createdAt'];
+    String joined = '';
+    if (createdAtTs is Timestamp) {
+      final d = createdAtTs.toDate();
+      joined = '${d.month}/${d.day}/${d.year}';
+    }
+    final isSelected = _selectedUserIds.contains(uid);
+
+    if (_isListView) {
+      // List view style
+      return Card(
+        elevation: 4,
+        margin: const EdgeInsets.only(bottom: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isSelected
+                  ? [Colors.blue[50]!, Colors.blue[100]!]
+                  : [Colors.white, const Color(0xFFF5F7FA)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected ? Colors.blue[300]! : Colors.grey[200]!,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: InkWell(
+            onTap: _isSelectionMode
+                ? () => _toggleUserSelection(uid)
+                : () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => UserVerificationDetailDialog(
+                        uid: uid,
+                        userData: data,
+                        admin: admin,
+                      ),
+                    );
+                  },
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  if (_isSelectionMode)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: Checkbox(
+                        value: isSelected,
+                        onChanged: (_) => _toggleUserSelection(uid),
+                      ),
+                    ),
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.grey[300],
+                    backgroundImage:
+                        (data['profilePhotoUrl'] as String?)?.isNotEmpty == true
+                        ? NetworkImage(data['profilePhotoUrl'] as String)
+                        : null,
+                    child:
+                        ((data['profilePhotoUrl'] as String?)?.isEmpty ?? true)
+                        ? const Icon(
+                            Icons.person,
+                            size: 28,
+                            color: Colors.white,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                name.isEmpty ? email : name,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const _StatusPill(
+                              text: 'Pending',
+                              color: Colors.orange,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          email,
+                          style: TextStyle(
+                            color: Colors.grey[700],
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 16,
+                              color: Colors.grey[600],
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Joined: $joined',
+                              style: TextStyle(
+                                color: Colors.grey[800],
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Icon(
+                              Icons.credit_card_outlined,
+                              size: 16,
+                              color: Colors.grey[600],
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'ID: ${idType.isEmpty ? 'Not provided' : idType}',
+                                style: TextStyle(
+                                  color: Colors.grey[800],
+                                  fontSize: 13,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF2E7D32),
+                              const Color(0xFF1B5E20),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(
+                                0xFF2E7D32,
+                              ).withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () => admin.approveUser(uid),
+                          icon: const Icon(
+                            Icons.check,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                          label: const Text(
+                            'Approve',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFD32F2F),
+                          side: const BorderSide(
+                            color: Color(0xFFD32F2F),
+                            width: 1.5,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () =>
+                            _showRejectDialog(context, admin, uid, data),
+                        icon: const Icon(Icons.close, size: 18),
+                        label: const Text('Reject'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    } else {
+      // Grid view style (existing)
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isSelected
+                  ? [Colors.blue[50]!, Colors.blue[100]!]
+                  : [Colors.white, const Color(0xFFF5F7FA)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected ? Colors.blue[300]! : Colors.grey[200]!,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: InkWell(
+            onTap: _isSelectionMode
+                ? () => _toggleUserSelection(uid)
+                : () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => UserVerificationDetailDialog(
+                        uid: uid,
+                        userData: data,
+                        admin: admin,
+                      ),
+                    );
+                  },
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (_isSelectionMode)
+                        Checkbox(
+                          value: isSelected,
+                          onChanged: (_) => _toggleUserSelection(uid),
+                        ),
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Colors.grey[300],
+                        backgroundImage:
+                            (data['profilePhotoUrl'] as String?)?.isNotEmpty ==
+                                true
+                            ? NetworkImage(data['profilePhotoUrl'] as String)
+                            : null,
+                        child:
+                            ((data['profilePhotoUrl'] as String?)?.isEmpty ??
+                                true)
+                            ? const Icon(
+                                Icons.person,
+                                size: 24,
+                                color: Colors.white,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name.isEmpty ? email : name,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              email,
+                              style: TextStyle(color: Colors.grey[700]),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const _StatusPill(text: 'Pending', color: Colors.orange),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today_outlined,
+                        size: 14,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Joined: $joined',
+                        style: TextStyle(color: Colors.grey[800], fontSize: 13),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.credit_card_outlined,
+                        size: 14,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'ID: ${idType.isEmpty ? 'Not provided' : idType}',
+                          style: TextStyle(
+                            color: Colors.grey[800],
+                            fontSize: 13,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF2E7D32),
+                                const Color(0xFF1B5E20),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFF2E7D32,
+                                ).withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () => admin.approveUser(uid),
+                            icon: const Icon(
+                              Icons.check,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                            label: const Text(
+                              'Approve',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFD32F2F),
+                            side: const BorderSide(
+                              color: Color(0xFFD32F2F),
+                              width: 1.5,
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () =>
+                              _showRejectDialog(context, admin, uid, data),
+                          icon: const Icon(Icons.close, size: 18),
+                          label: const Text('Reject'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final admin = Provider.of<AdminProvider>(context, listen: false);
@@ -403,7 +826,7 @@ class _UserVerificationBoardState extends State<UserVerificationBoard> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF00897B).withOpacity(0.3),
+                  color: const Color(0xFF00897B).withValues(alpha: 0.3),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -414,7 +837,7 @@ class _UserVerificationBoardState extends State<UserVerificationBoard> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
@@ -434,6 +857,20 @@ class _UserVerificationBoardState extends State<UserVerificationBoard> {
                       letterSpacing: 0.5,
                     ),
                   ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _isListView ? Icons.grid_view : Icons.view_list,
+                    color: Colors.white,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _isListView = !_isListView;
+                    });
+                  },
+                  tooltip: _isListView
+                      ? 'Switch to grid view'
+                      : 'Switch to list view',
                 ),
                 IconButton(
                   icon: Icon(
@@ -501,279 +938,44 @@ class _UserVerificationBoardState extends State<UserVerificationBoard> {
                     child: Text('No users awaiting verification'),
                   );
                 }
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    final width = constraints.maxWidth;
-                    int cross = 1;
-                    if (width >= 1200)
-                      cross = 3;
-                    else if (width >= 900)
-                      cross = 2;
-                    return GridView.builder(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: cross,
-                        mainAxisSpacing: 16,
-                        crossAxisSpacing: 16,
-                        childAspectRatio: 1.8,
-                      ),
-                      itemCount: docs.length,
-                      itemBuilder: (context, index) {
-                        final data = docs[index].data();
-                        final uid = docs[index].id;
-                        final name =
-                            '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'
-                                .trim();
-                        final email = data['email'] ?? '';
-                        final idType = data['barangayIdType'] ?? '';
-                        final createdAtTs = data['createdAt'];
-                        String joined = '';
-                        if (createdAtTs is Timestamp) {
-                          final d = createdAtTs.toDate();
-                          joined = '${d.month}/${d.day}/${d.year}';
-                        }
-                        final isSelected = _selectedUserIds.contains(uid);
-                        return Card(
-                          elevation: 4,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: isSelected
-                                    ? [Colors.blue[50]!, Colors.blue[100]!]
-                                    : [Colors.white, const Color(0xFFF5F7FA)],
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: isSelected
-                                    ? Colors.blue[300]!
-                                    : Colors.grey[200]!,
-                                width: isSelected ? 2 : 1,
-                              ),
-                            ),
-                            child: InkWell(
-                              onTap: _isSelectionMode
-                                  ? () => _toggleUserSelection(uid)
-                                  : () {
-                                      showDialog(
-                                        context: context,
-                                        builder: (context) =>
-                                            UserVerificationDetailDialog(
-                                              uid: uid,
-                                              userData: data,
-                                              admin: admin,
-                                            ),
-                                      );
-                                    },
-                              borderRadius: BorderRadius.circular(16),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        if (_isSelectionMode)
-                                          Checkbox(
-                                            value: isSelected,
-                                            onChanged: (_) =>
-                                                _toggleUserSelection(uid),
-                                          ),
-                                        CircleAvatar(
-                                          radius: 24,
-                                          backgroundColor: Colors.grey[300],
-                                          backgroundImage:
-                                              (data['profilePhotoUrl']
-                                                          as String?)
-                                                      ?.isNotEmpty ==
-                                                  true
-                                              ? NetworkImage(
-                                                  data['profilePhotoUrl']
-                                                      as String,
-                                                )
-                                              : null,
-                                          child:
-                                              ((data['profilePhotoUrl']
-                                                          as String?)
-                                                      ?.isEmpty ??
-                                                  true)
-                                              ? const Icon(
-                                                  Icons.person,
-                                                  size: 24,
-                                                  color: Colors.white,
-                                                )
-                                              : null,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                name.isEmpty ? email : name,
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                              Text(
-                                                email,
-                                                style: TextStyle(
-                                                  color: Colors.grey[700],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const _StatusPill(
-                                          text: 'Pending',
-                                          color: Colors.orange,
-                                        ),
-                                      ],
-                                    ),
-                                    // Removed barangay ID image preview from card to keep list clean
-                                    const SizedBox(height: 10),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.calendar_today_outlined,
-                                          size: 14,
-                                          color: Colors.grey[600],
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          'Joined: $joined',
-                                          style: TextStyle(
-                                            color: Colors.grey[800],
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.credit_card_outlined,
-                                          size: 14,
-                                          color: Colors.grey[600],
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            'ID: ${idType.isEmpty ? 'Not provided' : idType}',
-                                            style: TextStyle(
-                                              color: Colors.grey[800],
-                                              fontSize: 13,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 20),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: [
-                                                  const Color(0xFF2E7D32),
-                                                  const Color(0xFF1B5E20),
-                                                ],
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: const Color(
-                                                    0xFF2E7D32,
-                                                  ).withOpacity(0.3),
-                                                  blurRadius: 8,
-                                                  offset: const Offset(0, 4),
-                                                ),
-                                              ],
-                                            ),
-                                            child: FilledButton.icon(
-                                              style: FilledButton.styleFrom(
-                                                backgroundColor:
-                                                    Colors.transparent,
-                                                shadowColor: Colors.transparent,
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: 12,
-                                                    ),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                ),
-                                              ),
-                                              onPressed: () =>
-                                                  admin.approveUser(uid),
-                                              icon: const Icon(
-                                                Icons.check,
-                                                size: 18,
-                                                color: Colors.white,
-                                              ),
-                                              label: const Text(
-                                                'Approve',
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: OutlinedButton.icon(
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: const Color(
-                                                0xFFD32F2F,
-                                              ),
-                                              side: const BorderSide(
-                                                color: Color(0xFFD32F2F),
-                                                width: 1.5,
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    vertical: 12,
-                                                  ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                            ),
-                                            onPressed: () => _showRejectDialog(
-                                              context,
-                                              admin,
-                                              uid,
-                                              data,
-                                            ),
-                                            icon: const Icon(
-                                              Icons.close,
-                                              size: 18,
-                                            ),
-                                            label: const Text('Reject'),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
+                if (_isListView) {
+                  // List view
+                  return ListView.builder(
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final data = docs[index].data();
+                      final uid = docs[index].id;
+                      return _buildUserCard(context, uid, data, admin);
+                    },
+                  );
+                } else {
+                  // Grid view
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.maxWidth;
+                      int cross = 1;
+                      if (width >= 1200) {
+                        cross = 3;
+                      } else if (width >= 900) {
+                        cross = 2;
+                      }
+                      return GridView.builder(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: cross,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          childAspectRatio: 1.8,
+                        ),
+                        itemCount: docs.length,
+                        itemBuilder: (context, index) {
+                          final data = docs[index].data();
+                          final uid = docs[index].id;
+                          return _buildUserCard(context, uid, data, admin);
+                        },
+                      );
+                    },
+                  );
+                }
               },
             ),
           ),
@@ -793,9 +995,9 @@ class _StatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(
         text.toUpperCase(),

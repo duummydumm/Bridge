@@ -64,6 +64,7 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
   String? _listingId;
   String? _itemId;
   bool _isLoading = false;
+  bool _hasLoadedListing = false; // Flag to prevent multiple loads
   final PageController _imagePageController = PageController();
   int _currentImageIndex = 0;
 
@@ -112,16 +113,20 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Only load listing once to prevent refresh loops
+    if (_hasLoadedListing) return;
+    
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map && args['listingId'] is String) {
       _listingId = args['listingId'] as String;
       _isEditMode = true;
+      _hasLoadedListing = true;
       _loadListing();
     }
   }
 
   Future<void> _loadListing() async {
-    if (_listingId == null) return;
+    if (_listingId == null || _isLoading) return; // Prevent concurrent loads
     setState(() => _isLoading = true);
     try {
       final provider = Provider.of<RentalListingProvider>(
@@ -422,7 +427,7 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
+                                    color: Colors.black.withValues(alpha: 0.3),
                                     blurRadius: 4,
                                     offset: const Offset(0, 2),
                                   ),
@@ -531,7 +536,7 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
+                                    color: Colors.black.withValues(alpha: 0.3),
                                     blurRadius: 4,
                                     offset: const Offset(0, 2),
                                   ),
@@ -750,10 +755,11 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
         child: Form(
           key: _formKey,
           child: ListView(
+            padding: const EdgeInsets.only(top: 8.0),
             children: [
               // Rental Type dropdown
               DropdownButtonFormField<RentalType>(
-                value: _rentType,
+                initialValue: _rentType,
                 decoration: const InputDecoration(
                   labelText: 'Rental Type *',
                   border: OutlineInputBorder(),
@@ -829,10 +835,18 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
               // Description/Condition field
               TextFormField(
                 controller: _descriptionCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Description / Condition *',
-                  hintText: 'e.g., Slightly used camera, includes charger',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: _rentType == RentalType.item
+                      ? 'Description / Condition *'
+                      : 'Description *',
+                  hintText: _rentType == RentalType.item
+                      ? 'e.g., Slightly used camera, includes charger'
+                      : _rentType == RentalType.apartment
+                      ? 'e.g., Fully furnished 2BR apartment with modern amenities'
+                      : _rentType == RentalType.boardingHouse
+                      ? 'e.g., Cozy boarding house with shared facilities, near public transport'
+                      : 'e.g., Prime commercial space suitable for retail or office use',
+                  border: const OutlineInputBorder(),
                   alignLabelWithHint: true,
                 ),
                 maxLines: 3,
@@ -848,7 +862,7 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
               // Category dropdown (only for items)
               if (_rentType == RentalType.item)
                 DropdownButtonFormField<String>(
-                  value: _selectedCategory,
+                  initialValue: _selectedCategory,
                   decoration: const InputDecoration(
                     labelText: 'Category *',
                     border: OutlineInputBorder(),
@@ -872,7 +886,7 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
               // Condition dropdown (only for items)
               if (_rentType == RentalType.item)
                 DropdownButtonFormField<String>(
-                  value: _selectedCondition,
+                  initialValue: _selectedCondition,
                   decoration: const InputDecoration(
                     labelText: 'Condition *',
                     border: OutlineInputBorder(),
@@ -939,7 +953,7 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
 
               // Pricing Mode
               DropdownButtonFormField<PricingMode>(
-                value: _mode,
+                initialValue: _mode,
                 decoration: const InputDecoration(
                   labelText: 'Pricing Mode *',
                   border: OutlineInputBorder(),
@@ -1327,7 +1341,7 @@ class _RentalListingEditorScreenState extends State<RentalListingEditorScreen> {
                 const SizedBox(height: 16),
                 // Preferences
                 DropdownButtonFormField<String>(
-                  value: _selectedGenderPreference,
+                  initialValue: _selectedGenderPreference,
                   decoration: const InputDecoration(
                     labelText: 'Gender Preference *',
                     border: OutlineInputBorder(),

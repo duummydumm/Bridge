@@ -4,9 +4,9 @@ import 'package:provider/provider.dart';
 import '../../models/giveaway_claim_request_model.dart';
 import '../../models/giveaway_listing_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/giveaway_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/user_provider.dart';
-import '../../services/firestore_service.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
 import '../chat_detail_screen.dart';
 
@@ -18,8 +18,6 @@ class ApprovedClaimsScreen extends StatefulWidget {
 }
 
 class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
-  final FirestoreService _firestore = FirestoreService();
-
   static const Color _primaryColor = Color(0xFF2A7A9E);
 
   @override
@@ -44,6 +42,9 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
     }
 
     // Query for approved claims on user's giveaways
+    // Note: Using orderBy on 'approvedAt' requires a composite index.
+    // If index is missing, Firestore will throw an error with a link to create it.
+    // Fallback: If approvedAt field is missing on documents, they won't appear in results.
     final approvedClaimsQuery = FirebaseFirestore.instance
         .collection('giveaway_claims')
         .where('donorId', isEqualTo: currentUserId)
@@ -169,10 +170,35 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
   }
 
   Widget _buildClaimCard(GiveawayClaimRequestModel claim) {
-    return FutureBuilder<GiveawayListingModel?>(
-      future: _loadGiveaway(claim.giveawayId),
+    // Use StreamBuilder to listen to real-time updates
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('giveaways')
+          .doc(claim.giveawayId)
+          .snapshots(),
       builder: (context, snapshot) {
-        final giveaway = snapshot.data;
+        GiveawayListingModel? giveaway;
+        if (snapshot.hasData && snapshot.data!.exists) {
+          final data = snapshot.data!.data()!;
+          data['id'] = snapshot.data!.id;
+          giveaway = GiveawayListingModel.fromMap(data, snapshot.data!.id);
+        } else if (snapshot.connectionState == ConnectionState.waiting) {
+          // Show loading state
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 12),
+                Text('Loading giveaway details...'),
+              ],
+            ),
+          );
+        }
 
         return Container(
           decoration: BoxDecoration(
@@ -180,7 +206,7 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -275,15 +301,15 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                     ),
                   ),
                 )
-              else
+              else if (giveaway == null)
                 Container(
                   padding: const EdgeInsets.all(16),
                   color: Colors.grey[50],
                   child: const Row(
                     children: [
-                      CircularProgressIndicator(),
+                      Icon(Icons.error_outline, color: Colors.grey),
                       SizedBox(width: 12),
-                      Text('Loading giveaway details...'),
+                      Text('Giveaway not found'),
                     ],
                   ),
                 ),
@@ -300,7 +326,7 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
+                            color: Colors.green.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
@@ -340,7 +366,7 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
+                            color: Colors.green.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Row(
@@ -372,10 +398,10 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.05),
+                          color: Colors.blue.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: Colors.blue.withOpacity(0.2),
+                            color: Colors.blue.withValues(alpha: 0.2),
                           ),
                         ),
                         child: Row(
@@ -450,12 +476,89 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                       ],
                     ),
 
+                    // Status Badge
+                    if (giveaway != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: giveaway.status == GiveawayStatus.completed
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : Colors.orange.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: giveaway.status == GiveawayStatus.completed
+                                ? Colors.green
+                                : Colors.orange,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              giveaway.status == GiveawayStatus.completed
+                                  ? Icons.check_circle
+                                  : Icons.pending,
+                              size: 16,
+                              color: giveaway.status == GiveawayStatus.completed
+                                  ? Colors.green
+                                  : Colors.orange,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              giveaway.statusDisplay,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color:
+                                    giveaway.status == GiveawayStatus.completed
+                                    ? Colors.green
+                                    : Colors.orange,
+                              ),
+                            ),
+                            if (giveaway.completedAt != null) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                'on ${_formatDate(giveaway.completedAt!)}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+
                     // Action Buttons
                     const SizedBox(height: 16),
+                    if (giveaway != null &&
+                        giveaway.status == GiveawayStatus.claimed) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _markAsCompleted(claim, giveaway!),
+                          icon: const Icon(Icons.check_circle),
+                          label: const Text('Mark as Completed'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () => _messageClaimant(claim, giveaway),
+                        onPressed: giveaway != null
+                            ? () => _messageClaimant(claim, giveaway)
+                            : null,
                         icon: const Icon(Icons.message),
                         label: const Text('Message Claimant'),
                         style: ElevatedButton.styleFrom(
@@ -493,16 +596,6 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
         );
       },
     );
-  }
-
-  Future<GiveawayListingModel?> _loadGiveaway(String giveawayId) async {
-    try {
-      final data = await _firestore.getGiveaway(giveawayId);
-      if (data == null) return null;
-      return GiveawayListingModel.fromMap(data, data['id'] as String);
-    } catch (e) {
-      return null;
-    }
   }
 
   Future<void> _messageClaimant(
@@ -571,6 +664,107 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _markAsCompleted(
+    GiveawayClaimRequestModel claim,
+    GiveawayListingModel giveaway,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Mark as Completed?',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+        ),
+        content: Text(
+          'Have you completed the pickup/delivery of "${giveaway.title}" with ${claim.claimantName}? This will mark the donation as completed.',
+          style: const TextStyle(fontSize: 14),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'Mark as Completed',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 12),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                ),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Show loading
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final giveawayProvider = Provider.of<GiveawayProvider>(
+      context,
+      listen: false,
+    );
+
+    final success = await giveawayProvider.markGiveawayAsCompleted(
+      giveawayId: giveaway.id,
+    );
+
+    if (!mounted) return;
+    Navigator.pop(context); // Close loading dialog
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Donation marked as completed successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            giveawayProvider.errorMessage ?? 'Failed to mark as completed',
+          ),
           backgroundColor: Colors.red,
         ),
       );

@@ -54,6 +54,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   StreamSubscription<Map<String, bool>>? _typingSubscription;
   DateTime? _otherUserLastSeen;
   String? _otherParticipantId;
+  String? _otherUserProfilePhotoUrl;
   bool _isUserBlocked = false;
   bool _isUploadingImage = false;
   bool _isOtherUserTyping = false;
@@ -80,10 +81,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       chatProvider.markMessagesAsRead(widget.conversationId, widget.userId);
 
       // Get conversation to find other participant ID
+      // This will also check if user is blocked after _otherParticipantId is set
       _loadConversationAndSetupPresence(chatProvider);
-
-      // Check if user is blocked
-      _checkIfBlocked();
 
       // Load mute status
       _loadMuteStatus(chatProvider);
@@ -170,7 +169,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             );
           }
         } catch (e2) {
-          print('Error fetching conversation from Firestore: $e2');
+          debugPrint('Error fetching conversation from Firestore: $e2');
         }
       }
 
@@ -191,19 +190,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
         if (_otherParticipantId != null && _otherParticipantId!.isNotEmpty) {
           // Check if blocked
-          final authProvider = Provider.of<AuthProvider>(
-            context,
-            listen: false,
-          );
-          if (authProvider.user != null) {
-            final isBlocked = await _reportBlockService.isUserBlocked(
-              userId: authProvider.user!.uid,
-              otherUserId: _otherParticipantId!,
-            );
-            if (mounted) {
-              setState(() {
-                _isUserBlocked = isBlocked;
-              });
+          await _checkIfBlocked();
+
+          // Load other user's profile photo (for individual chats)
+          if (!_isGroup) {
+            try {
+              final userData = await _firestoreService.getUser(
+                _otherParticipantId!,
+              );
+              if (userData != null && mounted) {
+                setState(() {
+                  _otherUserProfilePhotoUrl =
+                      userData['profilePhotoUrl'] as String?;
+                });
+              }
+            } catch (e) {
+              debugPrint('Error loading user profile photo: $e');
             }
           }
 
@@ -223,7 +225,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         }
       }
     } catch (e) {
-      print('Error loading conversation for presence: $e');
+      debugPrint('Error loading conversation for presence: $e');
     }
   }
 
@@ -375,18 +377,97 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           automaticallyImplyLeading: true,
           title: Row(
             children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.white.withOpacity(0.2),
-                child: Text(
-                  widget.otherParticipantName.isNotEmpty
-                      ? widget.otherParticipantName[0].toUpperCase()
-                      : 'U',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+              ClipOval(
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  color: Colors.white.withValues(alpha: 0.2),
+                  child: _isGroup
+                      ? (_conversation?.groupImageUrl != null &&
+                                _conversation!.groupImageUrl!.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl:
+                                    '${_conversation!.groupImageUrl!}?v=${_conversation!.updatedAt?.millisecondsSinceEpoch ?? _conversation!.lastMessageTime.millisecondsSinceEpoch}',
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => const Center(
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                errorWidget: (context, url, error) => Center(
+                                  child: Text(
+                                    widget.otherParticipantName.isNotEmpty
+                                        ? widget.otherParticipantName[0]
+                                              .toUpperCase()
+                                        : 'G',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Center(
+                                child: Text(
+                                  widget.otherParticipantName.isNotEmpty
+                                      ? widget.otherParticipantName[0]
+                                            .toUpperCase()
+                                      : 'G',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ))
+                      : (_otherUserProfilePhotoUrl != null &&
+                                _otherUserProfilePhotoUrl!.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: _otherUserProfilePhotoUrl!,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => const Center(
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                errorWidget: (context, url, error) => Center(
+                                  child: Text(
+                                    widget.otherParticipantName.isNotEmpty
+                                        ? widget.otherParticipantName[0]
+                                              .toUpperCase()
+                                        : 'U',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Center(
+                                child: Text(
+                                  widget.otherParticipantName.isNotEmpty
+                                      ? widget.otherParticipantName[0]
+                                            .toUpperCase()
+                                      : 'U',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              )),
                 ),
               ),
               const SizedBox(width: 12),
@@ -506,6 +587,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           children: [
             // Offline Banner
             const OfflineBannerWidget(),
+            // Blocked User Banner
+            if (_isUserBlocked)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                color: Colors.red.withValues(alpha: 0.1),
+                child: Row(
+                  children: [
+                    const Icon(Icons.block, color: Colors.red, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'You have blocked this user. You cannot send or receive messages.',
+                        style: TextStyle(
+                          color: Colors.red[700],
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // Search Bar (when in search mode)
             if (_isSearchMode) _buildSearchBar(),
             // Messages List
@@ -595,7 +702,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           return Container(
             decoration: isHighlighted
                 ? BoxDecoration(
-                    color: Colors.yellow.withOpacity(0.3),
+                    color: Colors.yellow.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(8),
                   )
                 : null,
@@ -747,7 +854,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
+                  color: Colors.black.withValues(alpha: 0.08),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
@@ -764,7 +871,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
                       color: (isMe ? Colors.white : Colors.grey[200])
-                          ?.withOpacity(0.5),
+                          ?.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(8),
                       border: Border(
                         left: BorderSide(
@@ -894,7 +1001,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             const SizedBox(width: 8),
             CircleAvatar(
               radius: 14,
-              backgroundColor: themeData.primaryColor.withOpacity(0.1),
+              backgroundColor: themeData.primaryColor.withValues(alpha: 0.1),
               child: Icon(
                 Icons.person,
                 size: 16,
@@ -919,7 +1026,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             color: Colors.white,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 10,
                 offset: const Offset(0, -2),
               ),
@@ -944,9 +1051,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 Expanded(
                   child: TextField(
                     controller: _messageController,
-                    enabled: isOnline,
+                    enabled: isOnline && !_isUserBlocked,
                     decoration: InputDecoration(
-                      hintText: isOnline
+                      hintText: _isUserBlocked
+                          ? 'You have blocked this user'
+                          : isOnline
                           ? 'Type a message...'
                           : 'Offline - no internet connection',
                       border: OutlineInputBorder(
@@ -969,12 +1078,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 const SizedBox(width: 8),
                 Container(
                   decoration: BoxDecoration(
-                    color: isOnline ? themeData.primaryColor : Colors.grey,
+                    color: (isOnline && !_isUserBlocked)
+                        ? themeData.primaryColor
+                        : Colors.grey,
                     shape: BoxShape.circle,
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.send, color: Colors.white),
-                    onPressed: isOnline ? _sendMessage : null,
+                    onPressed: (isOnline && !_isUserBlocked)
+                        ? _sendMessage
+                        : null,
                   ),
                 ),
               ],
@@ -1097,8 +1210,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 context,
                 listen: false,
               );
-              if (authProvider.user == null || _otherParticipantId == null)
+              if (authProvider.user == null || _otherParticipantId == null) {
                 return;
+              }
 
               try {
                 await _reportBlockService.blockUser(

@@ -38,8 +38,10 @@ class _MyCalamityDonationsScreenState extends State<MyCalamityDonationsScreen> {
     final userProvider = Provider.of<UserProvider>(context);
     final currentUser = userProvider.currentUser;
     final email = authProvider.user?.email ?? currentUser?.email ?? '';
-    final calamityProvider =
-        Provider.of<CalamityProvider>(context, listen: false);
+    final calamityProvider = Provider.of<CalamityProvider>(
+      context,
+      listen: false,
+    );
 
     // Safety net: if user email becomes available after initState
     // and we still haven't loaded donations, trigger a load.
@@ -47,8 +49,7 @@ class _MyCalamityDonationsScreenState extends State<MyCalamityDonationsScreen> {
         calamityProvider.calamityDonations.isEmpty &&
         !calamityProvider.isLoading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final provider =
-            Provider.of<CalamityProvider>(context, listen: false);
+        final provider = Provider.of<CalamityProvider>(context, listen: false);
         provider.loadDonationsByDonor(email);
       });
     }
@@ -189,8 +190,8 @@ class _MyCalamityDonationsScreenState extends State<MyCalamityDonationsScreen> {
                             ),
                             decoration: BoxDecoration(
                               color: donation.isPending
-                                  ? Colors.orange.withOpacity(0.1)
-                                  : Colors.green.withOpacity(0.1),
+                                  ? Colors.orange.withValues(alpha: 0.1)
+                                  : Colors.green.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
                                 color: donation.isPending

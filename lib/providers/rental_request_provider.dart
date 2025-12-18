@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../models/rental_request_model.dart';
 
@@ -166,6 +167,7 @@ class RentalRequestProvider extends ChangeNotifier {
   }
 
   /// Mark payment as received by owner (base price + deposit)
+  /// For long-term rentals, also creates a payment record for monthly tracking
   Future<bool> markPaymentReceived(String requestId) async {
     try {
       _setLoading(true);
@@ -174,6 +176,8 @@ class RentalRequestProvider extends ChangeNotifier {
       // Get current request to check if we should auto-transition to active
       final currentRequest = await _firestore.getRentalRequest(requestId);
       final status = currentRequest?['status'] as String?;
+      final isLongTerm = currentRequest?['isLongTerm'] as bool? ?? false;
+      final isActive = (status?.toLowerCase() ?? '') == 'active';
 
       await _firestore.updateRentalRequest(requestId, {
         'paymentStatus': PaymentStatus.captured.name,
@@ -181,11 +185,58 @@ class RentalRequestProvider extends ChangeNotifier {
       });
 
       // Auto-transition to active when payment is received
+      bool justBecameActive = false;
       if ((status?.toLowerCase() ?? '') == 'ownerapproved') {
         await _firestore.updateRentalRequest(requestId, {
           'status': RentalRequestStatus.active.name.toLowerCase(),
           'updatedAt': DateTime.now(),
         });
+        justBecameActive = true;
+      }
+
+      // For long-term rentals (active or just became active), create a payment record
+      // This ensures the monthly payment tracker shows the month as paid
+      if (isLongTerm && (isActive || justBecameActive)) {
+        try {
+          final monthlyAmount =
+              (currentRequest?['monthlyPaymentAmount'] as num?)?.toDouble();
+          if (monthlyAmount != null && monthlyAmount > 0) {
+            // Check if payment for current month already exists
+            final payments = await _firestore.getPaymentsForRequest(requestId);
+            final now = DateTime.now();
+            final currentMonthKey = '${now.year}-${now.month}';
+
+            bool paymentExists = false;
+            for (final payment in payments) {
+              final paymentDate =
+                  (payment['createdAt'] as Timestamp?)?.toDate() ??
+                  DateTime(1970);
+              final paymentMonthKey =
+                  '${paymentDate.year}-${paymentDate.month}';
+              if (paymentMonthKey == currentMonthKey &&
+                  (payment['status'] as String? ?? '').toLowerCase() ==
+                      'succeeded') {
+                paymentExists = true;
+                break;
+              }
+            }
+
+            // Only create payment record if one doesn't exist for current month
+            if (!paymentExists) {
+              await _firestore.recordMonthlyRentalPayment(
+                rentalRequestId: requestId,
+                amount: monthlyAmount,
+                paymentDate: DateTime.now(),
+              );
+            }
+          }
+        } catch (e) {
+          // Don't fail the entire operation if payment record creation fails
+          // Log error but continue
+          debugPrint(
+            'Error creating payment record when marking payment received: $e',
+          );
+        }
       }
 
       _setLoading(false);

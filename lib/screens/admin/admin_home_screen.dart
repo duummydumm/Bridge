@@ -10,7 +10,6 @@ import 'widgets/reports_tab.dart';
 import 'widgets/analytics.dart';
 import 'widgets/account_management.dart';
 import 'widgets/logs.dart';
-import 'widgets/dashboard_quick_stats.dart';
 import 'widgets/feedback_tab.dart';
 import 'admin_notifications_screen.dart';
 import 'calamity_events_admin_screen.dart';
@@ -144,13 +143,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       body: SafeArea(child: _buildPage(_selected)),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selected > 9 ? 0 : _selected,
+        selectedIndex: _selected > 8 ? 0 : _selected,
         onDestinationSelected: (i) => setState(() => _selected = i),
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            label: 'Dashboard',
-          ),
           NavigationDestination(
             icon: Icon(Icons.verified_user_outlined),
             label: 'Verify',
@@ -195,24 +190,22 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Widget _buildPage(int index) {
     switch (index) {
       case 0:
-        return const DashboardQuickStats();
-      case 1:
         return const UserVerificationBoard();
-      case 2:
+      case 1:
         return const ActivityMonitoringTab();
-      case 3:
+      case 2:
         return const ReportsTab();
-      case 4:
+      case 3:
         return const AnalyticsTab();
-      case 5:
+      case 4:
         return const AccountManagementTab();
-      case 6:
+      case 5:
         return const AdminNotificationsScreen();
-      case 7:
+      case 6:
         return const CalamityEventsAdminScreen();
-      case 8:
+      case 7:
         return const ActivityLogsTab();
-      case 9:
+      case 8:
         return const FeedbackTab();
       default:
         return const SizedBox.shrink();

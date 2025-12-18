@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import '../services/firestore_service.dart';
 import '../services/storage_service.dart';
 import '../models/item_model.dart';
+import '../models/borrow_request_model.dart';
 
 class ItemProvider extends ChangeNotifier {
   final FirestoreService _firestoreService = FirestoreService();
@@ -11,11 +12,12 @@ class ItemProvider extends ChangeNotifier {
   List<ItemModel> _items = [];
   List<ItemModel> _myItems = []; // Items listed by current user
   Stream<List<ItemModel>>? _myItemsStream;
+  Stream<List<ItemModel>>? _availableItemsStream;
   ItemModel? _selectedItem;
   bool _isLoading = false;
   String? _errorMessage;
   // Borrower activity cache
-  List<Map<String, dynamic>> _pendingBorrowRequests = [];
+  List<BorrowRequestModel> _pendingBorrowRequests = [];
   List<Map<String, dynamic>> _borrowedByMe = [];
   DateTime? _borrowerActivityFetchedAt;
 
@@ -23,11 +25,11 @@ class ItemProvider extends ChangeNotifier {
   List<ItemModel> get items => _items;
   List<ItemModel> get myItems => _myItems;
   Stream<List<ItemModel>>? get myItemsStream => _myItemsStream;
+  Stream<List<ItemModel>>? get availableItemsStream => _availableItemsStream;
   ItemModel? get selectedItem => _selectedItem;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  List<Map<String, dynamic>> get pendingBorrowRequests =>
-      _pendingBorrowRequests;
+  List<BorrowRequestModel> get pendingBorrowRequests => _pendingBorrowRequests;
   List<Map<String, dynamic>> get borrowedByMe => _borrowedByMe;
 
   // Get all items
@@ -102,6 +104,15 @@ class ItemProvider extends ChangeNotifier {
       _setLoading(false);
       notifyListeners();
     }
+  }
+
+  // Subscribe to available items as a stream for real-time updates
+  void subscribeToAvailableItems() {
+    _availableItemsStream = _firestoreService.getAvailableItemsStream().map(
+      (itemsData) =>
+          itemsData.map((data) => ItemModel.fromMap(data, data['id'])).toList(),
+    );
+    notifyListeners();
   }
 
   // Create a new item

@@ -146,7 +146,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners(); // Notify to update UI immediately
 
       final userId = _user?.uid;
-      
+
       // Clear FCM token BEFORE logging out (while user is still authenticated)
       if (userId != null) {
         await FCMService().clearTokenForUser(userId);

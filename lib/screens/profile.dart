@@ -799,7 +799,7 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildQuickLinks(UserModel? user) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(30),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -821,6 +821,7 @@ class ProfileScreenState extends State<ProfileScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
@@ -849,9 +850,13 @@ class ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.5,
             children: [
               _buildQuickLinkButton(
                 icon: Icons.inventory_2_outlined,
@@ -929,29 +934,54 @@ class ProfileScreenState extends State<ProfileScreen> {
           if (onTap != null) {
             onTap();
           } else if (route != null) {
+            // Check verification for borrow, rent, trade, and giveaway routes
+            final protectedRoutes = ['/borrow', '/rent', '/trade', '/giveaway'];
+            if (protectedRoutes.contains(route)) {
+              final userProvider = Provider.of<UserProvider>(
+                context,
+                listen: false,
+              );
+              final isVerified = userProvider.currentUser?.isVerified ?? false;
+              if (!isVerified) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text(
+                      'Your account is pending admin verification. You can browse items but cannot post or transact yet.',
+                    ),
+                    backgroundColor: Colors.orange.shade700,
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+                return;
+              }
+            }
             Navigator.pushNamed(context, route);
           }
         },
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 8),
+              Icon(icon, color: color, size: 24),
+              const SizedBox(height: 8),
               Text(
                 label,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   color: color,
-                  fontSize: 14,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

@@ -233,6 +233,7 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                             );
                             int deletedCount = 0;
                             int failedCount = 0;
+                            final List<String> errorMessages = [];
                             for (final listing in provider.myListings.where(
                               (e) => _selectedIds.contains(e.id),
                             )) {
@@ -243,19 +244,36 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                                 deletedCount++;
                               } else {
                                 failedCount++;
+                                final errorMsg = provider.errorMessage;
+                                if (errorMsg != null && errorMsg.isNotEmpty) {
+                                  errorMessages.add(errorMsg);
+                                }
                               }
                             }
                             if (mounted) {
+                              String message;
+                              if (failedCount > 0) {
+                                if (errorMessages.isNotEmpty) {
+                                  // Show first error message if available
+                                  message =
+                                      'Deleted $deletedCount, $failedCount failed: ${errorMessages.first}';
+                                } else {
+                                  message =
+                                      'Deleted $deletedCount, $failedCount failed (may have active rentals)';
+                                }
+                              } else {
+                                message =
+                                    'Deleted $deletedCount listing${deletedCount != 1 ? 's' : ''}';
+                              }
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 SnackBar(
-                                  content: Text(
-                                    failedCount > 0
-                                        ? 'Deleted $deletedCount, $failedCount failed (may have active rentals)'
-                                        : 'Deleted $deletedCount listing${deletedCount != 1 ? 's' : ''}',
-                                  ),
+                                  content: Text(message),
                                   backgroundColor: failedCount > 0
                                       ? Colors.orange
                                       : Colors.green,
+                                  duration: Duration(
+                                    seconds: failedCount > 0 ? 5 : 3,
+                                  ),
                                 ),
                               );
                             }
@@ -411,7 +429,114 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                           },
                         ),
                       ];
+                    } else if (tab == 3) {
+                      // Donate tab (Giveaways)
+                      buttons = [
+                        IconButton(
+                          tooltip: 'Select all',
+                          icon: const Icon(Icons.select_all),
+                          onPressed: () {
+                            final ids =
+                                Provider.of<GiveawayProvider>(
+                                      ctx,
+                                      listen: false,
+                                    ).myGiveaways
+                                    .where(
+                                      (g) => g.status == GiveawayStatus.active,
+                                    )
+                                    .map((e) => e.id)
+                                    .toList();
+                            setState(() {
+                              _selectedIds
+                                ..clear()
+                                ..addAll(ids);
+                            });
+                          },
+                        ),
+                        IconButton(
+                          tooltip: 'Delete',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: ctx,
+                              builder: (c) => AlertDialog(
+                                title: const Text('Delete giveaways'),
+                                content: const Text(
+                                  'This will permanently delete selected giveaways. Giveaways with pending or approved claim requests cannot be deleted.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(c, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(c, true),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.red,
+                                    ),
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed != true) return;
+
+                            final provider = Provider.of<GiveawayProvider>(
+                              ctx,
+                              listen: false,
+                            );
+                            final giveaways = provider.myGiveaways.where(
+                              (e) => _selectedIds.contains(e.id),
+                            );
+                            int deletedCount = 0;
+                            int failedCount = 0;
+                            final List<String> errorMessages = [];
+                            for (final g in giveaways) {
+                              final success = await provider.deleteGiveaway(
+                                g.id,
+                              );
+                              if (success) {
+                                deletedCount++;
+                              } else {
+                                failedCount++;
+                                final errorMsg = provider.errorMessage;
+                                if (errorMsg != null && errorMsg.isNotEmpty) {
+                                  errorMessages.add(errorMsg);
+                                }
+                              }
+                            }
+                            if (mounted) {
+                              String message;
+                              if (failedCount > 0) {
+                                if (errorMessages.isNotEmpty) {
+                                  message =
+                                      'Deleted $deletedCount, $failedCount failed: ${errorMessages.first}';
+                                } else {
+                                  message =
+                                      'Deleted $deletedCount, $failedCount failed (may have active claims)';
+                                }
+                              } else {
+                                message =
+                                    'Deleted $deletedCount giveaway${deletedCount != 1 ? 's' : ''}';
+                              }
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                SnackBar(
+                                  content: Text(message),
+                                  backgroundColor: failedCount > 0
+                                      ? Colors.orange
+                                      : Colors.green,
+                                  duration: Duration(
+                                    seconds: failedCount > 0 ? 5 : 3,
+                                  ),
+                                ),
+                              );
+                            }
+                            _exitSelection();
+                          },
+                        ),
+                      ];
                     } else {
+                      // Lend tab (tab == 0)
                       buttons = [
                         IconButton(
                           tooltip: 'Select all',
@@ -421,13 +546,8 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                               ctx,
                               listen: false,
                             ).myItems;
-                            final isDonate = tab == 3;
                             final ids = items
-                                .where(
-                                  (e) =>
-                                      (e.type).toLowerCase() ==
-                                      (isDonate ? 'donate' : 'lend'),
-                                )
+                                .where((e) => (e.type).toLowerCase() == 'lend')
                                 .map((e) => e.itemId)
                                 .toList();
                             setState(() {
@@ -526,16 +646,48 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                             final items = provider.myItems.where(
                               (e) => _selectedIds.contains(e.itemId),
                             );
+                            int deletedCount = 0;
+                            int failedCount = 0;
+                            final List<String> errorMessages = [];
                             for (final item in items) {
-                              await provider.deleteItem(
+                              final success = await provider.deleteItem(
                                 item.itemId,
                                 item.lenderId,
                               );
+                              if (success) {
+                                deletedCount++;
+                              } else {
+                                failedCount++;
+                                final errorMsg = provider.errorMessage;
+                                if (errorMsg != null && errorMsg.isNotEmpty) {
+                                  errorMessages.add(errorMsg);
+                                }
+                              }
                             }
                             if (mounted) {
+                              String message;
+                              if (failedCount > 0) {
+                                if (errorMessages.isNotEmpty) {
+                                  // Show first error message if available
+                                  message =
+                                      'Deleted $deletedCount, $failedCount failed: ${errorMessages.first}';
+                                } else {
+                                  message =
+                                      'Deleted $deletedCount, $failedCount failed';
+                                }
+                              } else {
+                                message =
+                                    'Deleted $deletedCount item${deletedCount != 1 ? 's' : ''}';
+                              }
                               ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Deleted selected'),
+                                SnackBar(
+                                  content: Text(message),
+                                  backgroundColor: failedCount > 0
+                                      ? Colors.orange
+                                      : Colors.green,
+                                  duration: Duration(
+                                    seconds: failedCount > 0 ? 5 : 3,
+                                  ),
                                 ),
                               );
                             }
@@ -602,6 +754,8 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                   }
 
                   final data = snapshot.data!;
+
+                  // Show all lend items including disputed ones (so owner can see and reactivate them)
                   List<ItemModel> lend = data
                       .where((e) => (e.type).toLowerCase() == 'lend')
                       .toList();
@@ -823,83 +977,173 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                       itemCount: giveaways.length,
                       itemBuilder: (context, index) {
                         final g = giveaways[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                        final isSelected = _selectedIds.contains(g.id);
+                        return Slidable(
+                          key: ValueKey('giveaway_${g.id}'),
+                          closeOnScroll: true,
+                          endActionPane: ActionPane(
+                            motion: const StretchMotion(),
+                            extentRatio: 0.30,
+                            children: [
+                              SlidableAction(
+                                onPressed: (_) async {
+                                  final text = '${g.title}\n${g.description}';
+                                  await Share.share(text);
+                                },
+                                backgroundColor: const Color(0xFF00897B),
+                                foregroundColor: Colors.white,
+                                icon: Icons.share_outlined,
+                                label: 'Share',
+                              ),
+                              SlidableAction(
+                                onPressed: (_) {
+                                  // Navigate to detail screen for now
+                                  // TODO: Add edit screen for giveaways
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/giveaway/detail',
+                                    arguments: {'giveawayId': g.id},
+                                  );
+                                },
+                                backgroundColor: const Color(0xFF546E7A),
+                                foregroundColor: Colors.white,
+                                icon: Icons.edit_outlined,
+                                label: 'Edit',
+                                borderRadius: const BorderRadius.only(
+                                  topRight: Radius.circular(12),
+                                  bottomRight: Radius.circular(12),
+                                ),
+                              ),
+                            ],
                           ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
+                          child: Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            shape: RoundedRectangleBorder(
+                              side: BorderSide(
+                                color: isSelected
+                                    ? const Color(0xFF00897B)
+                                    : Colors.transparent,
+                                width: isSelected ? 2 : 0,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            title: Text(
-                              g.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 4),
-                                Text(
-                                  g.description,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.grey[700],
-                                    fontSize: 13,
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              title: Text(
+                                g.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    g.description,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.grey[700],
+                                      fontSize: 13,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 6),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 4,
-                                  children: [
-                                    Chip(
-                                      label: Text(g.statusDisplay),
-                                      backgroundColor:
-                                          Colors.blueGrey.withOpacity(0.12),
-                                      labelStyle: const TextStyle(
-                                        color: Color(0xFF546E7A),
-                                        fontWeight: FontWeight.w600,
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: [
+                                      Chip(
+                                        label: Text(g.statusDisplay),
+                                        backgroundColor: Colors.blueGrey
+                                            .withValues(alpha: 0.12),
+                                        labelStyle: const TextStyle(
+                                          color: Color(0xFF546E7A),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                        ),
                                       ),
-                                      materialTapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
+                                      Chip(
+                                        label: Text(g.category),
+                                        backgroundColor: const Color(
+                                          0xFFE0F2F1,
+                                        ),
+                                        labelStyle: const TextStyle(
+                                          color: Color(0xFF00796B),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                        ),
                                       ),
-                                    ),
-                                    Chip(
-                                      label: Text(g.category),
-                                      backgroundColor:
-                                          const Color(0xFFE0F2F1),
-                                      labelStyle: const TextStyle(
-                                        color: Color(0xFF00796B),
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      materialTapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              trailing: _selectionMode
+                                  ? (g.status == GiveawayStatus.active
+                                        ? Checkbox(
+                                            value: isSelected,
+                                            onChanged: (_) {
+                                              setState(() {
+                                                if (isSelected) {
+                                                  _selectedIds.remove(g.id);
+                                                } else {
+                                                  _selectedIds.add(g.id);
+                                                }
+                                                _selectionMode =
+                                                    _selectedIds.isNotEmpty;
+                                              });
+                                            },
+                                          )
+                                        : const SizedBox.shrink())
+                                  : const Icon(Icons.chevron_right),
+                              onTap: () {
+                                if (_selectionMode) {
+                                  // Only allow selecting active giveaways
+                                  if (g.status == GiveawayStatus.active) {
+                                    setState(() {
+                                      if (isSelected) {
+                                        _selectedIds.remove(g.id);
+                                      } else {
+                                        _selectedIds.add(g.id);
+                                      }
+                                      _selectionMode = _selectedIds.isNotEmpty;
+                                    });
+                                  }
+                                  return;
+                                }
+                                Navigator.pushNamed(
+                                  context,
+                                  '/giveaway/detail',
+                                  arguments: {'giveawayId': g.id},
+                                );
+                              },
+                              onLongPress: () {
+                                if (!_selectionMode) {
+                                  // Only allow selection of active giveaways
+                                  if (g.status == GiveawayStatus.active) {
+                                    setState(() {
+                                      _selectionMode = true;
+                                      _selectedIds.add(g.id);
+                                    });
+                                  }
+                                }
+                              },
                             ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () {
-                              Navigator.pushNamed(
-                                context,
-                                '/giveaway/detail',
-                                arguments: {'giveawayId': g.id},
-                              );
-                            },
                           ),
                         );
                       },
@@ -1047,7 +1291,7 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                 children: [
                   Chip(
                     label: Text(item.statusDisplay),
-                    backgroundColor: statusColor.withOpacity(0.12),
+                    backgroundColor: statusColor.withValues(alpha: 0.12),
                     labelStyle: TextStyle(
                       color: statusColor,
                       fontWeight: FontWeight.w600,
@@ -1056,6 +1300,45 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
+                  // Show disputed indicator if item is unavailable and was disputed
+                  if (item.status == ItemStatus.unavailable)
+                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance
+                          .collection('borrow_requests')
+                          .where('itemId', isEqualTo: item.itemId)
+                          .where(
+                            'status',
+                            whereIn: ['return_disputed', 'returned'],
+                          )
+                          .limit(1)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        final isDisputed =
+                            snapshot.hasData &&
+                            snapshot.data!.docs.isNotEmpty &&
+                            (snapshot.data!.docs.first.data()['status'] ==
+                                    'return_disputed' ||
+                                snapshot.data!.docs.first
+                                        .data()['disputeResolution'] !=
+                                    null);
+                        if (isDisputed) {
+                          return Chip(
+                            label: const Text('Disputed'),
+                            backgroundColor: Colors.red.withValues(alpha: 0.12),
+                            labelStyle: const TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
                   if (item.pricePerDay != null)
                     Chip(
                       label: Text(
@@ -1199,7 +1482,7 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                       ? 'Closed'
                       : 'Traded',
                 ),
-                backgroundColor: Colors.blueGrey.withOpacity(0.12),
+                backgroundColor: Colors.blueGrey.withValues(alpha: 0.12),
                 labelStyle: const TextStyle(
                   color: Color(0xFF546E7A),
                   fontWeight: FontWeight.w600,
@@ -1291,7 +1574,123 @@ class _MyListingsScreenState extends State<MyListingsScreen>
         ),
       );
     }
+
+    // Check if item is unavailable and disputed - show reactivate button
+    if (item.status == ItemStatus.unavailable) {
+      // Check both the item's isDisputed flag and borrow requests
+      return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('items')
+            .doc(item.itemId)
+            .snapshots(),
+        builder: (context, itemSnapshot) {
+          // Check item's isDisputed flag
+          final itemData = itemSnapshot.data?.data();
+          final itemIsDisputed = itemData?['isDisputed'] == true;
+
+          // Also check borrow requests for dispute resolution
+          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('borrow_requests')
+                .where('itemId', isEqualTo: item.itemId)
+                .where('status', whereIn: ['return_disputed', 'returned'])
+                .limit(1)
+                .snapshots(),
+            builder: (context, requestSnapshot) {
+              final hasDisputedRequest =
+                  requestSnapshot.hasData &&
+                  requestSnapshot.data!.docs.isNotEmpty &&
+                  (requestSnapshot.data!.docs.first.data()['status'] ==
+                          'return_disputed' ||
+                      requestSnapshot.data!.docs.first
+                              .data()['disputeResolution'] !=
+                          null);
+
+              // Show reactivate button if item is disputed OR has disputed request
+              if (itemIsDisputed || hasDisputedRequest) {
+                return IconButton(
+                  tooltip: 'Reactivate item (mark as fixed)',
+                  onPressed: () => _reactivateDisputedItem(item),
+                  icon: const Icon(
+                    Icons.check_circle_outline,
+                    color: Colors.green,
+                  ),
+                );
+              }
+              return const Icon(Icons.chevron_right);
+            },
+          );
+        },
+      );
+    }
+
     return const Icon(Icons.chevron_right);
+  }
+
+  Future<void> _reactivateDisputedItem(ItemModel item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reactivate Item?'),
+        content: const Text(
+          'Are you sure this item has been fixed and is ready to be borrowed again? '
+          'This will mark the item as available for other users.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00897B),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Reactivate'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final itemProvider = Provider.of<ItemProvider>(context, listen: false);
+
+      // Update item status to available and clear disputed flag
+      await itemProvider.updateItemStatus(item.itemId, ItemStatus.available);
+
+      // Also clear the isDisputed flag in Firestore
+      await FirebaseFirestore.instance
+          .collection('items')
+          .doc(item.itemId)
+          .update({
+            'isDisputed': FieldValue.delete(),
+            'lastUpdated': FieldValue.serverTimestamp(),
+          });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Item reactivated! It is now available for borrowing.',
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error reactivating item: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   /// Build trailing actions for rental listings (similar to borrow items)
@@ -1398,6 +1797,7 @@ class _MyListingsScreenState extends State<MyListingsScreen>
       if (requestData == null) return;
 
       final request = RentalRequestModel.fromMap(requestData, requestId);
+      if (!mounted) return;
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final currentUser = authProvider.user;
 
@@ -1702,7 +2102,7 @@ class _MyListingsScreenState extends State<MyListingsScreen>
                         (listing.isActive
                                 ? const Color(0xFF2ECC71)
                                 : Colors.grey)
-                            .withOpacity(0.15),
+                            .withValues(alpha: 0.15),
                     labelStyle: TextStyle(
                       color: listing.isActive
                           ? const Color(0xFF2E7D32)

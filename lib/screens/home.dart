@@ -61,7 +61,7 @@ class HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     // Load items when screen loads
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
@@ -83,12 +83,16 @@ class HomePageState extends State<HomePage> {
         setState(() {
           _statsLoading = true;
         });
-        _loadBorrowerStats(currentUser.uid);
-        _loadRentalStats(currentUser.uid);
+        await _loadBorrowerStats(currentUser.uid);
+        await _loadRentalStats(currentUser.uid);
         // Load all activities (borrow, rent, trade, donate)
         _loadAllActivities(currentUser.uid);
         // Check for overdue items and create Firestore notifications
         _checkOverdueItems();
+        // Check for overdue rentals and create Firestore notifications
+        _checkOverdueRentals();
+        // Check for overdue monthly payments and create Firestore notifications
+        _checkOverdueMonthlyPayments();
       }
       if (authProvider.isAuthenticated && authProvider.user != null) {
         chatProvider.setupConversationsStream(authProvider.user!.uid);
@@ -107,12 +111,52 @@ class HomePageState extends State<HomePage> {
   Future<void> _checkTutorialStatus() async {
     final hasBeenShown = await HomeTutorial.hasBeenShown();
     if (!hasBeenShown && mounted) {
-      // Delay to ensure UI is fully rendered
+      // Wait a bit for user data to load
       await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
+
+      // Check if user is an existing user (created more than 1 day ago)
+      // Existing users shouldn't see the tutorial
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final currentUser = userProvider.currentUser;
+      if (currentUser != null) {
+        final daysSinceCreation = DateTime.now()
+            .difference(currentUser.createdAt)
+            .inDays;
+        // Skip tutorial for existing users (created more than 1 day ago)
+        // Also skip if user has been created for more than a few hours (likely existing user)
+        if (daysSinceCreation > 0 ||
+            DateTime.now().difference(currentUser.createdAt).inHours > 3) {
+          // Existing user - mark tutorial as shown and skip
+          await HomeTutorial.markAsShown();
+          return;
+        }
+      }
+
+      // Delay to ensure UI is fully rendered
+      await Future.delayed(const Duration(milliseconds: 1500));
+
+      // Verify that at least the first target key is available
+      // Try multiple times with delays to ensure elements are rendered
+      bool targetReady = false;
+      for (int i = 0; i < 5; i++) {
+        if (!mounted) return;
+        final renderBox =
+            _tutorialKeys[0].currentContext?.findRenderObject() as RenderBox?;
+        if (renderBox != null && renderBox.hasSize) {
+          targetReady = true;
+          break;
+        }
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+
+      // Only show tutorial if targets are ready
+      if (targetReady && mounted) {
         setState(() {
           _showTutorial = true;
         });
+      } else if (mounted) {
+        // If targets aren't ready after timeout, mark tutorial as shown to prevent blocking
+        await HomeTutorial.markAsShown();
       }
     }
   }
@@ -152,6 +196,7 @@ class HomePageState extends State<HomePage> {
             itemTitle: itemTitle,
             returnDateLocal: dueLocal,
             borrowerName: borrowerName,
+            borrowerId: userId, // userId is the borrower's ID in this context
           );
         }
       }
@@ -182,8 +227,35 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _checkOverdueItems() async {
     try {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final currentUser = userProvider.currentUser;
+      if (currentUser == null) return;
+
       final service = FirestoreService();
-      await service.checkAndNotifyOverdueItems();
+      // Only check items where current user is involved, and only notify current user
+      // Force create to ensure FCM fires when navigating to home page
+      await service.checkAndNotifyOverdueItems(
+        userId: currentUser.uid,
+        forceCreate: true,
+      );
+    } catch (_) {
+      // Best-effort; don't fail if overdue check fails
+    }
+  }
+
+  Future<void> _checkOverdueRentals() async {
+    try {
+      final service = FirestoreService();
+      await service.checkAndNotifyOverdueRentals();
+    } catch (_) {
+      // Best-effort; don't fail if overdue check fails
+    }
+  }
+
+  Future<void> _checkOverdueMonthlyPayments() async {
+    try {
+      final service = FirestoreService();
+      await service.checkAndNotifyOverdueMonthlyPayments();
     } catch (_) {
       // Best-effort; don't fail if overdue check fails
     }
@@ -226,14 +298,14 @@ class HomePageState extends State<HomePage> {
         allActivities.add({
           'type': 'borrow',
           'subtype': 'pending',
-          'title': (req['itemTitle'] ?? 'Item').toString(),
+          'title': req.itemTitle.isNotEmpty ? req.itemTitle : 'Item',
           'subtitle': 'Borrow request pending',
           'icon': Icons.shopping_cart_outlined,
           'iconColor': Colors.orange,
           'status': 'pending',
-          'createdAt': req['createdAt'],
-          'itemId': req['itemId'],
-          'requestId': req['id'],
+          'createdAt': req.createdAt,
+          'itemId': req.itemId,
+          'requestId': req.id,
         });
       }
 
@@ -505,12 +577,57 @@ class HomePageState extends State<HomePage> {
             status == 'renterpaid';
       }).length;
 
+      // Calculate due soon rental items (as renter)
+      final now = DateTime.now();
+      int rentalDueSoonCount = 0;
+      final activeRentals = allRentalsAsRenter.where((req) {
+        final status = (req['status'] ?? 'requested').toString().toLowerCase();
+        return status == 'ownerapproved' ||
+            status == 'active' ||
+            status == 'returninitiated';
+      }).toList();
+
+      for (final rental in activeRentals) {
+        final returnDueDate = _parseActivityDate(rental['returnDueDate']);
+        if (returnDueDate != null &&
+            returnDueDate.isBefore(now.add(const Duration(days: 3)))) {
+          rentalDueSoonCount++;
+
+          // Get item title from listing
+          String itemTitle = 'Rental Item';
+          final listingId = rental['listingId'] as String?;
+          if (listingId != null) {
+            try {
+              final listing = await service.getRentalListing(listingId);
+              if (listing != null) {
+                itemTitle = (listing['title'] ?? 'Rental Item').toString();
+              }
+            } catch (_) {
+              // Continue if listing fetch fails
+            }
+          }
+
+          _dueSoonItems.add(
+            _DueItem(
+              id: (rental['id'] ?? rental['requestId'] ?? '').toString(),
+              title: itemTitle,
+              dueLocal: returnDueDate.toLocal(),
+            ),
+          );
+        }
+      }
+
+      // Re-sort due soon items after adding rentals
+      _dueSoonItems.sort((a, b) => a.dueLocal.compareTo(b.dueLocal));
+
       if (mounted) {
         setState(() {
           _pendingRentalRequests = pendingRentals.length;
           _activeRentals = activeRentalsAsRenter;
           _pendingRentalRequestsToReview = pendingRentalsToReview;
           _activeRentalsAsOwner = activeRentalsAsOwner;
+          // Update due soon count to include rentals
+          _dueSoon = _dueSoon + rentalDueSoonCount;
           _statsLoading = false;
         });
       }
@@ -638,7 +755,7 @@ class HomePageState extends State<HomePage> {
                 },
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 6.0, sigmaY: 6.0),
-                  child: Container(color: Colors.black.withOpacity(0.20)),
+                  child: Container(color: Colors.black.withValues(alpha: 0.20)),
                 ),
               ),
             ),
@@ -832,6 +949,15 @@ class HomePageState extends State<HomePage> {
   Widget _buildTutorialOverlay() {
     if (!_showTutorial) return const SizedBox.shrink();
 
+    // Double-check that targets are ready before showing tutorial widget
+    final renderBox =
+        _tutorialKeys[0].currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) {
+      // Targets not ready - don't show tutorial widget
+      // This prevents the gray overlay from showing
+      return const SizedBox.shrink();
+    }
+
     return HomeTutorial(
       targetKeys: _tutorialKeys,
       onComplete: () {
@@ -883,7 +1009,7 @@ class HomePageState extends State<HomePage> {
       background: Container(
         margin: const EdgeInsets.only(top: 8, bottom: 16),
         decoration: BoxDecoration(
-          color: Colors.red.withOpacity(0.9),
+          color: Colors.red.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(16),
         ),
         alignment: Alignment.centerRight,
@@ -905,7 +1031,7 @@ class HomePageState extends State<HomePage> {
             border: Border.all(color: const Color(0xFFFFECB3)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -1191,7 +1317,7 @@ class HomePageState extends State<HomePage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF00897B).withOpacity(0.3),
+            color: const Color(0xFF00897B).withValues(alpha: 0.3),
             blurRadius: 20,
             offset: const Offset(0, 8),
             spreadRadius: 0,
@@ -1209,7 +1335,7 @@ class HomePageState extends State<HomePage> {
               height: 120,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
               ),
             ),
           ),
@@ -1221,7 +1347,7 @@ class HomePageState extends State<HomePage> {
               height: 100,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.08),
+                color: Colors.white.withValues(alpha: 0.08),
               ),
             ),
           ),
@@ -1242,7 +1368,7 @@ class HomePageState extends State<HomePage> {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
+                                color: Colors.white.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Icon(
@@ -1270,7 +1396,9 @@ class HomePageState extends State<HomePage> {
                                   Text(
                                     subtitle,
                                     style: TextStyle(
-                                      color: Colors.white.withOpacity(0.95),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.95,
+                                      ),
                                       fontSize: 15,
                                       height: 1.4,
                                       fontWeight: FontWeight.w500,
@@ -1289,7 +1417,7 @@ class HomePageState extends State<HomePage> {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
+                            color: Colors.white.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
@@ -1305,7 +1433,7 @@ class HomePageState extends State<HomePage> {
                                 child: Text(
                                   motivationalText,
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.95),
+                                    color: Colors.white.withValues(alpha: 0.95),
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
                                     height: 1.3,
@@ -1362,7 +1490,7 @@ class HomePageState extends State<HomePage> {
                                 Container(
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
+                                    color: Colors.white.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: const Icon(
@@ -1391,7 +1519,9 @@ class HomePageState extends State<HomePage> {
                                       Text(
                                         subtitle,
                                         style: TextStyle(
-                                          color: Colors.white.withOpacity(0.95),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.95,
+                                          ),
                                           fontSize: 15,
                                           height: 1.4,
                                           fontWeight: FontWeight.w500,
@@ -1410,7 +1540,7 @@ class HomePageState extends State<HomePage> {
                                 vertical: 8,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.15),
+                                color: Colors.white.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Row(
@@ -1426,7 +1556,9 @@ class HomePageState extends State<HomePage> {
                                     child: Text(
                                       motivationalText,
                                       style: TextStyle(
-                                        color: Colors.white.withOpacity(0.95),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.95,
+                                        ),
                                         fontSize: 13,
                                         fontWeight: FontWeight.w500,
                                         height: 1.3,
@@ -1486,7 +1618,7 @@ class HomePageState extends State<HomePage> {
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: 0.1),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -1542,7 +1674,7 @@ class HomePageState extends State<HomePage> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 10,
                 offset: const Offset(0, 3),
               ),
@@ -1580,6 +1712,24 @@ class HomePageState extends State<HomePage> {
                 title: 'Borrow Dashboard',
                 subtitle: 'Browse Items to Borrow',
                 onTap: () {
+                  final userProvider = Provider.of<UserProvider>(
+                    context,
+                    listen: false,
+                  );
+                  final isVerified =
+                      userProvider.currentUser?.isVerified ?? false;
+                  if (!isVerified) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text(
+                          'Your account is pending admin verification. You can browse items but cannot post or transact yet.',
+                        ),
+                        backgroundColor: Colors.orange.shade700,
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                    return;
+                  }
                   Navigator.pushNamed(context, '/borrow');
                 },
               ),
@@ -1592,6 +1742,24 @@ class HomePageState extends State<HomePage> {
                 title: 'Rental Dashboard',
                 subtitle: 'View Rentals & Spaces',
                 onTap: () {
+                  final userProvider = Provider.of<UserProvider>(
+                    context,
+                    listen: false,
+                  );
+                  final isVerified =
+                      userProvider.currentUser?.isVerified ?? false;
+                  if (!isVerified) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text(
+                          'Your account is pending admin verification. You can browse items but cannot post or transact yet.',
+                        ),
+                        backgroundColor: Colors.orange.shade700,
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                    return;
+                  }
                   Navigator.pushNamed(context, '/rent');
                 },
               ),
@@ -1609,6 +1777,24 @@ class HomePageState extends State<HomePage> {
                 title: 'Trade Dashboard',
                 subtitle: 'View Trade Activity',
                 onTap: () {
+                  final userProvider = Provider.of<UserProvider>(
+                    context,
+                    listen: false,
+                  );
+                  final isVerified =
+                      userProvider.currentUser?.isVerified ?? false;
+                  if (!isVerified) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text(
+                          'Your account is pending admin verification. You can browse items but cannot post or transact yet.',
+                        ),
+                        backgroundColor: Colors.orange.shade700,
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                    return;
+                  }
                   Navigator.pushNamed(context, '/trade');
                 },
               ),
@@ -1621,6 +1807,24 @@ class HomePageState extends State<HomePage> {
                 title: 'Donate Dashboard',
                 subtitle: 'View Donations',
                 onTap: () {
+                  final userProvider = Provider.of<UserProvider>(
+                    context,
+                    listen: false,
+                  );
+                  final isVerified =
+                      userProvider.currentUser?.isVerified ?? false;
+                  if (!isVerified) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text(
+                          'Your account is pending admin verification. You can browse items but cannot post or transact yet.',
+                        ),
+                        backgroundColor: Colors.orange.shade700,
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                    return;
+                  }
                   Navigator.pushNamed(context, '/giveaway');
                 },
               ),
@@ -1709,7 +1913,7 @@ class HomePageState extends State<HomePage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1827,7 +2031,7 @@ class HomePageState extends State<HomePage> {
         side: BorderSide(
           color: isSelected
               ? const Color(0xFF00897B)
-              : Colors.grey.withOpacity(0.2),
+              : Colors.grey.withValues(alpha: 0.2),
         ),
       ),
     );
@@ -1931,7 +2135,7 @@ class HomePageState extends State<HomePage> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -1999,7 +2203,7 @@ class HomePageState extends State<HomePage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
+                        color: Colors.black.withValues(alpha: 0.06),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -2065,7 +2269,7 @@ class HomePageState extends State<HomePage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
+                        color: Colors.black.withValues(alpha: 0.06),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -2141,7 +2345,7 @@ class HomePageState extends State<HomePage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -2240,13 +2444,13 @@ class HomePageState extends State<HomePage> {
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: iconColor.withOpacity(0.1),
+                color: iconColor.withValues(alpha: 0.1),
                 blurRadius: 10,
                 offset: const Offset(0, 3),
                 spreadRadius: 0,
               ),
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -2261,13 +2465,13 @@ class HomePageState extends State<HomePage> {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      iconColor.withOpacity(0.2),
-                      iconColor.withOpacity(0.1),
+                      iconColor.withValues(alpha: 0.2),
+                      iconColor.withValues(alpha: 0.1),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: iconColor.withOpacity(0.3),
+                    color: iconColor.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -2308,12 +2512,12 @@ class HomePageState extends State<HomePage> {
                 ),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [iconColor, iconColor.withOpacity(0.8)],
+                    colors: [iconColor, iconColor.withValues(alpha: 0.8)],
                   ),
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: iconColor.withOpacity(0.3),
+                      color: iconColor.withValues(alpha: 0.3),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -2424,7 +2628,7 @@ class _StatCardWithAnimationState extends State<_StatCardWithAnimation>
                   end: Alignment.bottomRight,
                   colors: [
                     Colors.white,
-                    widget.iconColor.withOpacity(0.05),
+                    widget.iconColor.withValues(alpha: 0.05),
                     Colors.white,
                   ],
                   stops: const [0.0, 0.5, 1.0],
@@ -2432,19 +2636,19 @@ class _StatCardWithAnimationState extends State<_StatCardWithAnimation>
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: widget.iconColor.withOpacity(0.12),
+                    color: widget.iconColor.withValues(alpha: 0.12),
                     blurRadius: 20,
                     offset: const Offset(0, 6),
                     spreadRadius: 0,
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 12,
                     offset: const Offset(0, 3),
                     spreadRadius: 0,
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.02),
+                    color: Colors.black.withValues(alpha: 0.02),
                     blurRadius: 6,
                     offset: const Offset(0, 1),
                     spreadRadius: 0,
@@ -2467,19 +2671,19 @@ class _StatCardWithAnimationState extends State<_StatCardWithAnimation>
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                widget.iconColor.withOpacity(0.25),
-                                widget.iconColor.withOpacity(0.15),
-                                widget.iconColor.withOpacity(0.08),
+                                widget.iconColor.withValues(alpha: 0.25),
+                                widget.iconColor.withValues(alpha: 0.15),
+                                widget.iconColor.withValues(alpha: 0.08),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: widget.iconColor.withOpacity(0.3),
+                              color: widget.iconColor.withValues(alpha: 0.3),
                               width: 1,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: widget.iconColor.withOpacity(0.15),
+                                color: widget.iconColor.withValues(alpha: 0.15),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
@@ -2499,8 +2703,8 @@ class _StatCardWithAnimationState extends State<_StatCardWithAnimation>
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                widget.iconColor.withOpacity(0.15),
-                                widget.iconColor.withOpacity(0.08),
+                                widget.iconColor.withValues(alpha: 0.15),
+                                widget.iconColor.withValues(alpha: 0.08),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(8),
@@ -2640,7 +2844,7 @@ class _DashboardCardWithAnimationState
                   end: Alignment.bottomRight,
                   colors: [
                     Colors.white,
-                    widget.iconColor.withOpacity(0.05),
+                    widget.iconColor.withValues(alpha: 0.05),
                     Colors.white,
                   ],
                   stops: const [0.0, 0.5, 1.0],
@@ -2648,19 +2852,19 @@ class _DashboardCardWithAnimationState
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: widget.iconColor.withOpacity(0.12),
+                    color: widget.iconColor.withValues(alpha: 0.12),
                     blurRadius: 20,
                     offset: const Offset(0, 6),
                     spreadRadius: 0,
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 12,
                     offset: const Offset(0, 3),
                     spreadRadius: 0,
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.02),
+                    color: Colors.black.withValues(alpha: 0.02),
                     blurRadius: 6,
                     offset: const Offset(0, 1),
                     spreadRadius: 0,
@@ -2683,19 +2887,19 @@ class _DashboardCardWithAnimationState
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                widget.iconColor.withOpacity(0.25),
-                                widget.iconColor.withOpacity(0.15),
-                                widget.iconColor.withOpacity(0.08),
+                                widget.iconColor.withValues(alpha: 0.25),
+                                widget.iconColor.withValues(alpha: 0.15),
+                                widget.iconColor.withValues(alpha: 0.08),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: widget.iconColor.withOpacity(0.3),
+                              color: widget.iconColor.withValues(alpha: 0.3),
                               width: 1,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: widget.iconColor.withOpacity(0.15),
+                                color: widget.iconColor.withValues(alpha: 0.15),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
@@ -2715,8 +2919,8 @@ class _DashboardCardWithAnimationState
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                widget.iconColor.withOpacity(0.15),
-                                widget.iconColor.withOpacity(0.08),
+                                widget.iconColor.withValues(alpha: 0.15),
+                                widget.iconColor.withValues(alpha: 0.08),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(8),
@@ -2922,7 +3126,7 @@ class _MiniActionState extends State<_MiniAction>
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: widget.color.withOpacity(0.12),
+                          color: widget.color.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(widget.icon, color: widget.color),

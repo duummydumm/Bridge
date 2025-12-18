@@ -133,6 +133,7 @@ class _GiveawayRatingScreenState extends State<GiveawayRatingScreen> {
             Center(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: List.generate(5, (index) {
                   final starIndex = index + 1;
                   return GestureDetector(
@@ -142,12 +143,12 @@ class _GiveawayRatingScreenState extends State<GiveawayRatingScreen> {
                       });
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: Icon(
                         starIndex <= _selectedRating
                             ? Icons.star
                             : Icons.star_border,
-                        size: 48,
+                        size: 40,
                         color: starIndex <= _selectedRating
                             ? Colors.amber
                             : Colors.grey[400],

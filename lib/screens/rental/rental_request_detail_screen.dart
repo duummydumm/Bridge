@@ -504,7 +504,7 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
     double? depositAmount,
   ) {
     if (paymentMethod == 'online') {
-      return 'Waiting for renter to pay base price (₱${priceQuote.toStringAsFixed(2)})${depositAmount != null && depositAmount > 0 ? ' + deposit (₱${depositAmount.toStringAsFixed(2)})' : ''} via online payment (GCash or payment gateway).';
+      return 'Waiting for renter to pay base price (₱${priceQuote.toStringAsFixed(2)})${depositAmount != null && depositAmount > 0 ? ' + deposit (₱${depositAmount.toStringAsFixed(2)})' : ''} via GCash sent by owner.';
     } else {
       return 'Waiting for renter to pay base price (₱${priceQuote.toStringAsFixed(2)})${depositAmount != null && depositAmount > 0 ? ' + deposit (₱${depositAmount.toStringAsFixed(2)})' : ''} in cash during meetup.';
     }
@@ -512,7 +512,7 @@ class _RentalRequestDetailScreenState extends State<RentalRequestDetailScreen> {
 
   String _getPaymentMethodInstructions(String paymentMethod) {
     if (paymentMethod == 'online') {
-      return 'The renter will pay online via GCash or payment gateway. Once payment is confirmed, you can mark it as received.';
+      return 'The renter will pay via GCash sent by owner. Once payment is confirmed, you can mark it as received.';
     } else {
       return 'The renter will pay cash in person during meetup. Once you receive the cash payment, mark it as received.';
     }

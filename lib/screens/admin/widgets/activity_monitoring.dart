@@ -293,7 +293,7 @@ class _ActivityMonitoringTabState extends State<ActivityMonitoringTab> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF00897B).withOpacity(0.3),
+                  color: const Color(0xFF00897B).withValues(alpha: 0.3),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -304,7 +304,7 @@ class _ActivityMonitoringTabState extends State<ActivityMonitoringTab> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
@@ -332,7 +332,7 @@ class _ActivityMonitoringTabState extends State<ActivityMonitoringTab> {
                         'Track all transactions across the platform',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                         ),
                       ),
                     ],
@@ -503,7 +503,7 @@ class _ActivityMonitoringTabState extends State<ActivityMonitoringTab> {
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: _filterStatus,
+                  initialValue: _filterStatus,
                   decoration: const InputDecoration(
                     labelText: 'Status',
                     border: OutlineInputBorder(),
@@ -654,7 +654,7 @@ class _ActivityMonitoringTabState extends State<ActivityMonitoringTab> {
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.orange.withOpacity(0.1),
+                                    color: Colors.orange.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(color: Colors.orange),
                                   ),
@@ -758,9 +758,9 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: chipColor.withOpacity(0.1),
+        color: chipColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: chipColor.withOpacity(0.3)),
+        border: Border.all(color: chipColor.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -816,7 +816,7 @@ class _ActivityCategoryBarState extends State<_ActivityCategoryBar> {
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF00897B).withOpacity(0.3),
+                      color: const Color(0xFF00897B).withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 4),
                     ),
@@ -836,11 +836,11 @@ class _ActivityCategoryBarState extends State<_ActivityCategoryBar> {
               },
               borderRadius: BorderRadius.circular(20),
               splashColor: selected
-                  ? Colors.white.withOpacity(0.2)
-                  : const Color(0xFF00897B).withOpacity(0.1),
+                  ? Colors.white.withValues(alpha: 0.2)
+                  : const Color(0xFF00897B).withValues(alpha: 0.1),
               highlightColor: selected
-                  ? Colors.white.withOpacity(0.1)
-                  : const Color(0xFF00897B).withOpacity(0.05),
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : const Color(0xFF00897B).withValues(alpha: 0.05),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -1526,7 +1526,7 @@ class _ActivityCard extends StatelessWidget {
         border: Border.all(color: Colors.grey[200]!, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1570,9 +1570,9 @@ class _ActivityCard extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: badgeColor.withOpacity(0.1),
+                  color: badgeColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: badgeColor.withOpacity(0.3)),
+                  border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
                 ),
                 child: Text(
                   badgeText.toUpperCase(),

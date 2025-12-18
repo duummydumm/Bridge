@@ -503,7 +503,7 @@ class _LoginScreenState extends State<LoginScreen>
                         height: 300,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.1),
+                          color: Colors.white.withValues(alpha: 0.1),
                         ),
                       ),
                     ),
@@ -515,7 +515,7 @@ class _LoginScreenState extends State<LoginScreen>
                         height: 200,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.1),
+                          color: Colors.white.withValues(alpha: 0.1),
                         ),
                       ),
                     ),
@@ -571,8 +571,8 @@ class _LoginScreenState extends State<LoginScreen>
                                         Text(
                                           'Sign in to continue to your dashboard',
                                           style: TextStyle(
-                                            color: Colors.white.withOpacity(
-                                              0.9,
+                                            color: Colors.white.withValues(
+                                              alpha: 0.9,
                                             ),
                                             fontSize: subtitleFontSize,
                                             fontWeight: FontWeight.w400,
@@ -612,22 +612,22 @@ class _LoginScreenState extends State<LoginScreen>
                                         ),
                                         child: Container(
                                           decoration: BoxDecoration(
-                                            color: Colors.white.withOpacity(
-                                              0.85,
+                                            color: Colors.white.withValues(
+                                              alpha: 0.85,
                                             ), // Semi-transparent white
                                             borderRadius: BorderRadius.circular(
                                               24,
                                             ),
                                             border: Border.all(
-                                              color: Colors.white.withOpacity(
-                                                0.6,
+                                              color: Colors.white.withValues(
+                                                alpha: 0.6,
                                               ),
                                               width: 1.5,
                                             ),
                                             boxShadow: [
                                               BoxShadow(
-                                                color: Colors.black.withOpacity(
-                                                  0.1,
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.1,
                                                 ),
                                                 blurRadius: 20,
                                                 spreadRadius: 5,
@@ -796,8 +796,8 @@ class _LoginScreenState extends State<LoginScreen>
                                                         elevation: 4,
                                                         shadowColor:
                                                             primaryStart
-                                                                .withOpacity(
-                                                                  0.4,
+                                                                .withValues(
+                                                                  alpha: 0.4,
                                                                 ),
                                                         shape: RoundedRectangleBorder(
                                                           borderRadius:
@@ -807,8 +807,8 @@ class _LoginScreenState extends State<LoginScreen>
                                                         ),
                                                         disabledBackgroundColor:
                                                             primaryStart
-                                                                .withOpacity(
-                                                                  0.6,
+                                                                .withValues(
+                                                                  alpha: 0.6,
                                                                 ),
                                                         disabledForegroundColor:
                                                             Colors.white,

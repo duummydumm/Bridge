@@ -78,6 +78,8 @@ class UserProvider extends ChangeNotifier {
         if (barangayIdUrlBack != null) 'barangayIdUrlBack': barangayIdUrlBack,
         'reputationScore': 0.0,
         'profilePhotoUrl': '',
+        'isSuspended':
+            false, // Always set this field so Firestore rules can check it
         'createdAt': DateTime.now(),
         // Flag for admin review if potential duplicates found
         'hasPotentialDuplicates': potentialDuplicates.isNotEmpty,
@@ -241,6 +243,25 @@ class UserProvider extends ChangeNotifier {
       await _firestoreService.setUser(_currentUser!.uid, {
         'profilePhotoUrl': url,
       });
+
+      // Create activity log for profile photo update
+      try {
+        await _firestoreService.createActivityLog(
+          category: 'user',
+          action: 'profile_photo_updated',
+          actorId: _currentUser!.uid,
+          actorName: '${_currentUser!.firstName} ${_currentUser!.lastName}'
+              .trim(),
+          targetId: _currentUser!.uid,
+          targetType: 'user',
+          description: 'User updated their profile photo',
+          metadata: {'userId': _currentUser!.uid, 'photoUrl': url},
+          severity: 'info',
+        );
+      } catch (e) {
+        debugPrint('Error creating activity log for profile photo: $e');
+        // Don't fail photo upload if logging fails
+      }
 
       // reload current user
       await loadUserProfile(_currentUser!.uid);

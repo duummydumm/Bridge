@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -240,7 +239,9 @@ class _ListItemScreenState extends State<ListItemScreen> {
                         );
                       }
                       if (snapshot.hasError || !snapshot.hasData) {
-                        print('❌ Error loading image bytes: ${snapshot.error}');
+                        debugPrint(
+                          '❌ Error loading image bytes: ${snapshot.error}',
+                        );
                         return Container(
                           color: Colors.grey[300],
                           child: const Icon(
@@ -253,7 +254,7 @@ class _ListItemScreenState extends State<ListItemScreen> {
                         Uint8List.fromList(snapshot.data!),
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
-                          print('❌ Image.memory error: $error');
+                          debugPrint('❌ Image.memory error: $error');
                           return Container(
                             color: Colors.grey[300],
                             child: const Icon(
@@ -271,13 +272,13 @@ class _ListItemScreenState extends State<ListItemScreen> {
                     final filePath = image is File
                         ? image.path
                         : (image as XFile).path;
-                    print('📸 Building preview for: $filePath');
+                    debugPrint('📸 Building preview for: $filePath');
                     return Image.file(
                       File(filePath),
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
-                        print('❌ Image preview error: $error');
-                        print('Image path: $filePath');
+                        debugPrint('❌ Image preview error: $error');
+                        debugPrint('Image path: $filePath');
                         return Container(
                           color: Colors.grey[300],
                           child: const Icon(
@@ -288,7 +289,7 @@ class _ListItemScreenState extends State<ListItemScreen> {
                       },
                     );
                   } catch (e) {
-                    print('❌ Error loading image: $e');
+                    debugPrint('❌ Error loading image: $e');
                     return Container(
                       color: Colors.grey[300],
                       child: const Icon(Icons.error_outline, color: Colors.red),

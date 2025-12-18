@@ -159,14 +159,14 @@ class _SplashScreenState extends State<SplashScreen>
                             shape: BoxShape.circle,
                             gradient: SweepGradient(
                               colors: [
-                                Colors.white.withOpacity(
-                                  0.8 * _shimmerAnimation.value,
+                                Colors.white.withValues(
+                                  alpha: 0.8 * _shimmerAnimation.value,
                                 ),
-                                Colors.white.withOpacity(0.2),
-                                Colors.white.withOpacity(
-                                  0.8 * _shimmerAnimation.value,
+                                Colors.white.withValues(alpha: 0.2),
+                                Colors.white.withValues(
+                                  alpha: 0.8 * _shimmerAnimation.value,
                                 ),
-                                Colors.white.withOpacity(0.2),
+                                Colors.white.withValues(alpha: 0.2),
                               ],
                               stops: const [0.0, 0.3, 0.6, 1.0],
                             ),
@@ -190,16 +190,16 @@ class _SplashScreenState extends State<SplashScreen>
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.white.withOpacity(
-                                0.4 * _shimmerAnimation.value,
+                              color: Colors.white.withValues(
+                                alpha: 0.4 * _shimmerAnimation.value,
                               ),
                               blurRadius: 30 * _pulseAnimation.value,
                               spreadRadius: 5,
                             ),
                             BoxShadow(
-                              color: const Color(
-                                0xFF1E88E5,
-                              ).withOpacity(0.3 * _shimmerAnimation.value),
+                              color: const Color(0xFF1E88E5).withValues(
+                                alpha: 0.3 * _shimmerAnimation.value,
+                              ),
                               blurRadius: 40 * _pulseAnimation.value,
                               spreadRadius: 10,
                             ),
@@ -220,7 +220,7 @@ class _SplashScreenState extends State<SplashScreen>
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
+                                    color: Colors.black.withValues(alpha: 0.3),
                                     blurRadius: 25,
                                     offset: const Offset(0, 10),
                                   ),

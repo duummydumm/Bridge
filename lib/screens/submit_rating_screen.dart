@@ -138,6 +138,7 @@ class _SubmitRatingScreenState extends State<SubmitRatingScreen> {
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: List.generate(5, (index) {
                 final starNumber = index + 1;
                 return GestureDetector(
@@ -155,7 +156,7 @@ class _SubmitRatingScreenState extends State<SubmitRatingScreen> {
                       color: starNumber <= _selectedRating
                           ? Colors.amber
                           : Colors.grey,
-                      size: 48,
+                      size: 40,
                     ),
                   ),
                 );

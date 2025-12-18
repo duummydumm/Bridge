@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/admin_provider.dart';
 
 class AdminSidebar extends StatelessWidget {
   final int selected;
@@ -15,7 +18,6 @@ class AdminSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = const [
-      (Icons.dashboard_outlined, 'Dashboard'),
       (Icons.verified_user_outlined, 'User Verification'),
       (Icons.monitor_heart_outlined, 'Activity Monitoring'),
       (Icons.report_gmailerrorred_outlined, 'Reports & Violations'),
@@ -41,7 +43,7 @@ class AdminSidebar extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(2, 0),
           ),
@@ -57,7 +59,7 @@ class AdminSidebar extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -106,6 +108,8 @@ class AdminSidebar extends StatelessWidget {
               itemBuilder: (context, i) {
                 final e = entries[i];
                 final isSelected = selected == i;
+                // Show badge count for User Verification (index 0)
+                final showBadge = i == 0;
                 return InkWell(
                   onTap: () => onSelect(i),
                   child: Container(
@@ -117,8 +121,8 @@ class AdminSidebar extends StatelessWidget {
                       gradient: isSelected
                           ? LinearGradient(
                               colors: [
-                                Colors.white.withOpacity(0.25),
-                                Colors.white.withOpacity(0.15),
+                                Colors.white.withValues(alpha: 0.25),
+                                Colors.white.withValues(alpha: 0.15),
                               ],
                             )
                           : null,
@@ -126,7 +130,7 @@ class AdminSidebar extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                       border: isSelected
                           ? Border.all(
-                              color: Colors.white.withOpacity(0.3),
+                              color: Colors.white.withValues(alpha: 0.3),
                               width: 1,
                             )
                           : null,
@@ -141,7 +145,7 @@ class AdminSidebar extends StatelessWidget {
                           e.$1,
                           color: isSelected
                               ? Colors.white
-                              : Colors.white.withOpacity(0.7),
+                              : Colors.white.withValues(alpha: 0.7),
                           size: 22,
                         ),
                         const SizedBox(width: 12),
@@ -155,12 +159,14 @@ class AdminSidebar extends StatelessWidget {
                                   : FontWeight.w600,
                               color: isSelected
                                   ? Colors.white
-                                  : Colors.white.withOpacity(0.9),
+                                  : Colors.white.withValues(alpha: 0.9),
                               letterSpacing: 0.3,
                             ),
                           ),
                         ),
-                        if (isSelected)
+                        if (showBadge)
+                          _PendingVerificationBadge()
+                        else if (isSelected)
                           Container(
                             width: 6,
                             height: 6,
@@ -179,6 +185,42 @@ class AdminSidebar extends StatelessWidget {
           const SizedBox(height: 12),
         ],
       ),
+    );
+  }
+}
+
+/// Widget that displays a badge count for pending user verifications
+class _PendingVerificationBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AdminProvider>(
+      builder: (context, adminProvider, _) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: adminProvider.unverifiedUsersStream,
+          builder: (context, snapshot) {
+            final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+            if (count == 0) {
+              return const SizedBox.shrink();
+            }
+            return Container(
+              margin: const EdgeInsets.only(left: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                count > 99 ? '99+' : count.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -120,6 +120,49 @@ class NotificationPreferencesProvider extends ChangeNotifier {
           'updatedAt': FieldValue.serverTimestamp(),
         },
       });
+
+      // Create activity log for notification preferences update
+      try {
+        final userDoc = await _firestoreService.getUser(auth.uid);
+        String userName = 'User';
+        if (userDoc != null) {
+          final firstName = userDoc['firstName'] ?? '';
+          final lastName = userDoc['lastName'] ?? '';
+          userName = '$firstName $lastName'.trim();
+          if (userName.isEmpty) {
+            userName = userDoc['email'] ?? 'User';
+          }
+        }
+
+        await _firestoreService.createActivityLog(
+          category: 'user',
+          action: 'notification_preferences_updated',
+          actorId: auth.uid,
+          actorName: userName,
+          targetId: auth.uid,
+          targetType: 'user',
+          description: 'User updated notification preferences',
+          metadata: {
+            'userId': auth.uid,
+            'preferences': {
+              'borrowRequests': _borrowRequests,
+              'rentalRequests': _rentalRequests,
+              'tradeOffers': _tradeOffers,
+              'donations': _donations,
+              'messages': _messages,
+              'reminders': _reminders,
+              'systemUpdates': _systemUpdates,
+              'marketing': _marketing,
+            },
+          },
+          severity: 'info',
+        );
+      } catch (e) {
+        debugPrint(
+          'Error creating activity log for notification preferences: $e',
+        );
+        // Don't fail preference save if logging fails
+      }
     } catch (e) {
       debugPrint('Error saving notification preferences to Firestore: $e');
     }

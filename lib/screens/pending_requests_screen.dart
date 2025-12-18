@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/auth_provider.dart';
 import '../services/firestore_service.dart';
 import '../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../models/borrow_request_model.dart';
 
 class PendingRequestsScreen extends StatefulWidget {
   const PendingRequestsScreen({super.key});
@@ -100,7 +101,7 @@ class _BorrowRequestsTab extends StatefulWidget {
 class _BorrowRequestsTabState extends State<_BorrowRequestsTab> {
   final FirestoreService _firestoreService = FirestoreService();
   bool _isLoading = true;
-  List<Map<String, dynamic>> _requests = [];
+  List<BorrowRequestModel> _requests = [];
 
   @override
   void initState() {
@@ -244,9 +245,8 @@ class _BorrowRequestsTabState extends State<_BorrowRequestsTab> {
     return '${months[date.month - 1]} ${date.day.toString().padLeft(2, '0')}, ${date.year}';
   }
 
-  Widget _buildBorrowRequestCard(Map<String, dynamic> request) {
-    final createdAt =
-        (request['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+  Widget _buildBorrowRequestCard(BorrowRequestModel request) {
+    final createdAt = request.createdAt;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -262,7 +262,7 @@ class _BorrowRequestsTabState extends State<_BorrowRequestsTab> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00897B).withOpacity(0.1),
+                    color: const Color(0xFF00897B).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -277,7 +277,9 @@ class _BorrowRequestsTabState extends State<_BorrowRequestsTab> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        request['itemTitle'] ?? 'Unknown Item',
+                        request.itemTitle.isNotEmpty
+                            ? request.itemTitle
+                            : 'Unknown Item',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -287,7 +289,7 @@ class _BorrowRequestsTabState extends State<_BorrowRequestsTab> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Owner: ${request['lenderName'] ?? 'Unknown'}',
+                        'Owner: ${request.lenderName.isNotEmpty ? request.lenderName : 'Unknown'}',
                         style: TextStyle(fontSize: 14, color: Colors.grey[700]),
                       ),
                     ],
@@ -314,8 +316,7 @@ class _BorrowRequestsTabState extends State<_BorrowRequestsTab> {
               ],
             ),
             const SizedBox(height: 12),
-            if (request['message'] != null &&
-                (request['message'] as String).isNotEmpty) ...[
+            if (request.message != null && request.message!.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -323,7 +324,7 @@ class _BorrowRequestsTabState extends State<_BorrowRequestsTab> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  request['message'],
+                  request.message!,
                   style: TextStyle(fontSize: 14, color: Colors.grey[800]),
                 ),
               ),
@@ -339,7 +340,7 @@ class _BorrowRequestsTabState extends State<_BorrowRequestsTab> {
                 ),
                 const Spacer(),
                 OutlinedButton.icon(
-                  onPressed: () => _cancelRequest(request['id']),
+                  onPressed: () => _cancelRequest(request.id),
                   icon: const Icon(Icons.cancel_outlined, size: 18),
                   label: const Text('Cancel'),
                   style: OutlinedButton.styleFrom(
@@ -538,7 +539,7 @@ class _RentRequestsTabState extends State<_RentRequestsTab> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
+                    color: Colors.green.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -634,7 +635,7 @@ class _RentRequestsTabState extends State<_RentRequestsTab> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF00897B).withOpacity(0.1),
+                color: const Color(0xFF00897B).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -858,7 +859,7 @@ class _TradeRequestsTabState extends State<_TradeRequestsTab> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF26A69A).withOpacity(0.1),
+                    color: const Color(0xFF26A69A).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(

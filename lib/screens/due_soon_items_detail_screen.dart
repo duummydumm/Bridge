@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../services/firestore_service.dart';
 import '../reusable_widgets/bottom_nav_bar_widget.dart';
 import '../services/local_notifications_service.dart';
+import 'rental/active_rental_detail_screen.dart';
 
 class DueSoonItemsDetailScreen extends StatefulWidget {
   const DueSoonItemsDetailScreen({super.key});
@@ -48,14 +49,65 @@ class _DueSoonItemsDetailScreenState extends State<DueSoonItemsDetailScreen> {
         userId,
       );
       final now = DateTime.now();
-      final dueSoon = allBorrowed.where((item) {
+      final dueSoonBorrowed = allBorrowed.where((item) {
         final returnDate = _parseDate(item['returnDate']);
         if (returnDate == null) return false;
         return returnDate.isBefore(now.add(const Duration(days: 3)));
       }).toList();
 
+      // Mark borrowed items with type
+      for (final item in dueSoonBorrowed) {
+        item['type'] = 'borrow';
+      }
+
+      // Load rental items where user is the renter
+      final renterRentalRequests = await _firestoreService
+          .getRentalRequestsByUser(userId, asOwner: false);
+
+      // Filter for active rentals
+      final activeRentals = renterRentalRequests.where((req) {
+        final status = (req['status'] ?? 'requested').toString().toLowerCase();
+        return status == 'ownerapproved' ||
+            status == 'active' ||
+            status == 'returninitiated';
+      }).toList();
+
+      // Filter rentals that are due soon
+      final dueSoonRentals = <Map<String, dynamic>>[];
+      for (final rental in activeRentals) {
+        final returnDate = _parseDate(rental['returnDueDate']);
+        if (returnDate != null &&
+            returnDate.isBefore(now.add(const Duration(days: 3)))) {
+          final enrichedRental = Map<String, dynamic>.from(rental);
+
+          // Get item title from listing
+          final listingId = rental['listingId'] as String?;
+          if (listingId != null) {
+            try {
+              final listing = await _firestoreService.getRentalListing(
+                listingId,
+              );
+              if (listing != null) {
+                enrichedRental['title'] = listing['title'] as String?;
+              }
+            } catch (_) {
+              // Continue if listing fetch fails
+            }
+          }
+          enrichedRental['title'] ??= 'Rental Item';
+          enrichedRental['type'] = 'rental';
+          enrichedRental['returnDate'] =
+              returnDate; // Use returnDate for consistency
+          enrichedRental['id'] = rental['id'] ?? rental['requestId'] ?? '';
+          dueSoonRentals.add(enrichedRental);
+        }
+      }
+
+      // Combine borrowed and rental items
+      final allDueSoon = [...dueSoonBorrowed, ...dueSoonRentals];
+
       // Sort by due date (earliest first)
-      dueSoon.sort((a, b) {
+      allDueSoon.sort((a, b) {
         final dateA = _parseDate(a['returnDate']);
         final dateB = _parseDate(b['returnDate']);
         if (dateA == null && dateB == null) return 0;
@@ -65,7 +117,7 @@ class _DueSoonItemsDetailScreenState extends State<DueSoonItemsDetailScreen> {
       });
 
       setState(() {
-        _dueSoonItems = dueSoon;
+        _dueSoonItems = allDueSoon;
         _isLoading = false;
       });
     } catch (e) {
@@ -240,6 +292,9 @@ class _DueSoonItemsDetailScreenState extends State<DueSoonItemsDetailScreen> {
                   final statusColor = _getStatusColor(returnDate);
                   final isOverdue =
                       returnDate != null && returnDate.isBefore(DateTime.now());
+                  final itemType = (item['type'] ?? 'borrow').toString();
+                  final isRental = itemType == 'rental';
+                  final requestId = item['id'] ?? item['requestId'] ?? '';
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -252,8 +307,23 @@ class _DueSoonItemsDetailScreenState extends State<DueSoonItemsDetailScreen> {
                     ),
                     child: InkWell(
                       onTap: () {
-                        // Navigate to borrow screen to view item details
-                        Navigator.pushNamed(context, '/borrow');
+                        if (isRental && requestId.isNotEmpty) {
+                          // Navigate to rental detail screen
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ActiveRentalDetailScreen(
+                                requestId: requestId,
+                              ),
+                            ),
+                          );
+                        } else {
+                          // Navigate to currently borrowed screen to view item details
+                          Navigator.pushNamed(
+                            context,
+                            '/borrow/currently-borrowed',
+                          );
+                        }
                       },
                       borderRadius: BorderRadius.circular(12),
                       child: Padding(
@@ -267,12 +337,14 @@ class _DueSoonItemsDetailScreenState extends State<DueSoonItemsDetailScreen> {
                                   width: 56,
                                   height: 56,
                                   decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(0.1),
+                                    color: statusColor.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Icon(
                                     isOverdue
                                         ? Icons.warning
+                                        : isRental
+                                        ? Icons.home_outlined
                                         : Icons.access_time,
                                     color: statusColor,
                                     size: 28,
@@ -284,15 +356,47 @@ class _DueSoonItemsDetailScreenState extends State<DueSoonItemsDetailScreen> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        title,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF1A1A1A),
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFF1A1A1A),
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          if (isRental)
+                                            Container(
+                                              margin: const EdgeInsets.only(
+                                                left: 8,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue.withValues(
+                                                  alpha: 0.1,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                'Rental',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.blue[700],
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                       const SizedBox(height: 8),
                                       Row(

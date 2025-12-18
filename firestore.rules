@@ -19,6 +19,19 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
     
+    // Helper function to check if user is not suspended
+    // Note: This requires the isSuspended field to exist on the user document.
+    // If the field doesn't exist, this will fail. Ensure all user documents have isSuspended set.
+    function isNotSuspended() {
+      return isAuthenticated() && 
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuspended != true);
+    }
+    
+    // Helper function to check if user is verified and not suspended
+    function isUserVerifiedAndNotSuspended() {
+      return isUserVerified() && isNotSuspended();
+    }
+    
     // Users collection - users can read their own data, verified users can read others
     match /users/{userId} {
       allow get: if isAuthenticated();
@@ -27,8 +40,8 @@ service cloud.firestore {
       allow list: if isAuthenticated();
       allow create: if isAuthenticated() && request.auth.uid == userId;
       // Users can update their own document, or admins can update any
-      // Also allow updating reputationScore field for other users (calculated from ratings)
-      // This allows the rating system to update reputation scores when ratings are created/updated
+      // Also allow updating reputationScore and reportCount fields for other users (calculated/aggregated fields)
+      // This allows the rating system to update reputation scores and the reporting system to update report counts
       allow update: if isAuthenticated() && (
         request.auth.uid == userId || 
         isAdmin() ||
@@ -37,7 +50,11 @@ service cloud.firestore {
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reputationScore']) &&
          request.resource.data.reputationScore is number &&
          request.resource.data.reputationScore >= 0.0 &&
-         request.resource.data.reputationScore <= 5.0)
+         request.resource.data.reputationScore <= 5.0) ||
+        // Allow updating reportCount for any user (incremented when reports are filed)
+        // Check that only reportCount and updatedAt changed
+        // Note: FieldValue.increment() is a sentinel value, so we can't validate the actual value in rules
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount', 'updatedAt']))
       );
       allow delete: if isAdmin();
     }
@@ -45,33 +62,33 @@ service cloud.firestore {
     // Items collection (for Borrow/Lend)
     match /items/{itemId} {
       allow read: if isAuthenticated();
-      allow create: if isUserVerified();
-      allow update: if isUserVerified();
-      allow delete: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
+      allow update: if isUserVerifiedAndNotSuspended();
+      allow delete: if isUserVerifiedAndNotSuspended();
     }
     
     // Borrow requests collection
     match /borrow_requests/{requestId} {
       allow read: if isAuthenticated();
-      allow create: if isUserVerified();
-      allow update: if isUserVerified();
-      allow delete: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
+      allow update: if isUserVerifiedAndNotSuspended();
+      allow delete: if isUserVerifiedAndNotSuspended();
     }
     
     // Rental listings collection
     match /rental_listings/{listingId} {
       allow read: if isAuthenticated();
-      allow create: if isUserVerified();
-      allow update: if isUserVerified();
-      allow delete: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
+      allow update: if isUserVerifiedAndNotSuspended();
+      allow delete: if isUserVerifiedAndNotSuspended();
     }
     
     // Rental requests collection
     match /rental_requests/{requestId} {
       allow read: if isAuthenticated();
-      allow create: if isUserVerified();
-      allow update: if isUserVerified();
-      allow delete: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
+      allow update: if isUserVerifiedAndNotSuspended();
+      allow delete: if isUserVerifiedAndNotSuspended();
     }
     
     // Rental payments collection
@@ -84,7 +101,7 @@ service cloud.firestore {
       // Allow list queries for authenticated users (filtered by rentalRequestId in query)
       allow list: if isAuthenticated();
       // Verified users can create payment records
-      allow create: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
       // Only admins can update or delete payment records
       allow update: if isAdmin();
       allow delete: if isAdmin();
@@ -95,7 +112,7 @@ service cloud.firestore {
       // Only admins can read audit records
       allow read: if isAdmin();
       // System/admins can create audit records
-      allow create: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
       // Only admins can update or delete audit records
       allow update: if isAdmin();
       allow delete: if isAdmin();
@@ -104,46 +121,47 @@ service cloud.firestore {
     // Trade items collection
     match /trade_items/{itemId} {
       allow read: if isAuthenticated();
-      allow create: if isUserVerified();
-      allow update: if isUserVerified();
-      allow delete: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
+      allow update: if isUserVerifiedAndNotSuspended();
+      allow delete: if isUserVerifiedAndNotSuspended();
     }
     
     // Trade offers collection
     match /trade_offers/{offerId} {
       allow read: if isAuthenticated();
-      allow create: if isUserVerified();
-      allow update: if isUserVerified();
-      allow delete: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
+      allow update: if isUserVerifiedAndNotSuspended();
+      allow delete: if isUserVerifiedAndNotSuspended();
     }
     
     // Giveaway listings collection (legacy - keeping for backward compatibility)
     match /giveaway_listings/{listingId} {
       allow read: if isAuthenticated();
-      allow create: if isUserVerified();
-      allow update: if isUserVerified();
-      allow delete: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
+      allow update: if isUserVerifiedAndNotSuspended();
+      allow delete: if isUserVerifiedAndNotSuspended();
     }
     
     // Giveaways collection (active donation listings)
     match /giveaways/{giveawayId} {
       allow read: if isAuthenticated();
-      allow create: if isUserVerified();
-      allow update: if isUserVerified();
-      allow delete: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
+      allow update: if isUserVerifiedAndNotSuspended();
+      allow delete: if isUserVerifiedAndNotSuspended();
     }
     
     // Giveaway claims collection (claim requests for giveaways)
     match /giveaway_claims/{claimId} {
       // Users can read their own claims or claims for their giveaways
-      allow read: if isAuthenticated() && (
+      allow get: if isAuthenticated() && (
         resource.data.claimantId == request.auth.uid ||
         resource.data.donorId == request.auth.uid
       );
       // Allow list queries for authenticated users (filtered by claimantId or donorId in query)
+      // This allows queries like: where('donorId', isEqualTo: ...) or where('claimantId', isEqualTo: ...)
       allow list: if isAuthenticated();
       // Verified users can create claims
-      allow create: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
       // Users can update their own claims or claims for their giveaways
       allow update: if isAuthenticated() && (
         resource.data.claimantId == request.auth.uid ||
@@ -151,6 +169,26 @@ service cloud.firestore {
       );
       // Users can delete their own claims
       allow delete: if isAuthenticated() && resource.data.claimantId == request.auth.uid;
+    }
+    
+    // Giveaway ratings collection (ratings/reviews for giveaways)
+    match /giveaway_ratings/{ratingId} {
+      // All authenticated users can read ratings (public reviews)
+      allow read: if isAuthenticated();
+      // Allow list queries for authenticated users (filtered by donorId, raterId, or giveawayId in query)
+      allow list: if isAuthenticated();
+      // Authenticated users can create ratings (after claiming/claiming giveaways)
+      allow create: if isAuthenticated() && 
+                       isNotSuspended() &&
+                       request.resource.data.raterId == request.auth.uid;
+      // Users can update their own ratings
+      allow update: if isAuthenticated() && 
+                       isNotSuspended() &&
+                       resource.data.raterId == request.auth.uid;
+      // Users can delete their own ratings, or admins can delete any
+      allow delete: if isAuthenticated() && (
+        resource.data.raterId == request.auth.uid || isAdmin()
+      );
     }
     
     // Calamity events collection
@@ -164,7 +202,7 @@ service cloud.firestore {
     // Calamity donations collection
     match /calamity_donations/{donationId} {
       allow read: if isAuthenticated();
-      allow create: if isUserVerified();
+      allow create: if isUserVerifiedAndNotSuspended();
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
@@ -183,19 +221,23 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && resource.data.toUserId == request.auth.uid;
     }
     
-    // Chats and messages - allow authenticated users
+    // Chats and messages - allow authenticated users (but not suspended)
     match /chats/{chatId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isNotSuspended();
       match /messages/{messageId} {
-        allow read, write: if isAuthenticated();
+        allow read: if isAuthenticated();
+        allow write: if isNotSuspended();
       }
     }
     
-    // Conversations and messages - allow authenticated users
+    // Conversations and messages - allow authenticated users (but not suspended)
     match /conversations/{conversationId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isNotSuspended();
       match /messages/{messageId} {
-        allow read, write: if isAuthenticated();
+        allow read: if isAuthenticated();
+        allow write: if isNotSuspended();
       }
     }
     
@@ -213,7 +255,7 @@ service cloud.firestore {
     // Reports collection - authenticated users can read, admins can write
     match /reports/{reportId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() && isNotSuspended();
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
@@ -225,7 +267,7 @@ service cloud.firestore {
       // Admins can read all feedback
       allow read: if isAdmin();
       // Authenticated users can create feedback
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() && isNotSuspended();
       // Only admins can update or delete feedback
       allow update, delete: if isAdmin();
     }
@@ -238,9 +280,12 @@ service cloud.firestore {
       allow list: if isAuthenticated();
       // Authenticated users can create ratings (after completing transactions)
       allow create: if isAuthenticated() && 
+                       isNotSuspended() &&
                        request.resource.data.raterUserId == request.auth.uid;
       // Users can update their own ratings
-      allow update: if isAuthenticated() && resource.data.raterUserId == request.auth.uid;
+      allow update: if isAuthenticated() && 
+                       isNotSuspended() &&
+                       resource.data.raterUserId == request.auth.uid;
       // Users can delete their own ratings, or admins can delete any
       allow delete: if isAuthenticated() && (
         resource.data.raterUserId == request.auth.uid || isAdmin()
@@ -254,12 +299,43 @@ service cloud.firestore {
       // Allow list queries for authenticated users (filtered by userId, itemId, or rentalRequestId in query)
       allow list: if isAuthenticated();
       // Authenticated users can create reminders (system creates reminders for users)
+      // Note: Reminders can be created for other users (e.g., lender creates reminder for borrower)
       allow create: if isAuthenticated();
-      // Users can update their own reminders
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Users can update reminders if authenticated
+      // For system-managed reminders (rental/borrow overdue, etc.), allow update by any authenticated user
+      // (since reminders are system-managed and both parties may need to update them)
+      // Note: We allow update of overdue reminders without checking suspension to avoid issues
+      allow update: if isAuthenticated() && (
+        // User owns the reminder (check suspension for owned reminders)
+        (isNotSuspended() && resource.data.userId == request.auth.uid) ||
+        // Allow update of rental-related reminders (has rentalRequestId) or rental overdue type
+        resource.data.rentalRequestId != null ||
+        resource.data.reminderType == 'rental_overdue' ||
+        // Allow update of borrow-related overdue reminders
+        resource.data.reminderType == 'overdue' ||
+        isAdmin()
+      );
       // Users can delete their own reminders, or system can delete (for item/rental cancellation)
+      // For system-managed reminders, allow deletion by any authenticated user
+      // (since both parties need to clean up reminders when transactions are cancelled)
+      // Note: We allow deletion of overdue reminders without checking suspension to avoid
+      // issues when user documents might not be accessible
       allow delete: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || isAdmin()
+        // User owns the reminder
+        resource.data.userId == request.auth.uid || 
+        // Admin can delete any reminder
+        isAdmin() ||
+        // Allow deletion of any rental-related reminder (check document ID pattern)
+        reminderId.matches('rental_.*_overdue_.*') ||
+        // Allow deletion of rental overdue reminders
+        resource.data.reminderType == 'rental_overdue' ||
+        // Allow deletion of borrow overdue reminders  
+        resource.data.reminderType == 'overdue' ||
+        // Allow deletion if it has rentalRequestId (rental-related reminder)
+        resource.data.rentalRequestId != null ||
+        // TEMPORARY: Allow deletion of any reminder with itemId (for debugging)
+        // TODO: Remove this after confirming the issue is resolved
+        resource.data.itemId != null
       );
     }
     
@@ -267,20 +343,26 @@ service cloud.firestore {
     match /activity_logs/{logId} {
       // Only admins can read activity logs
       allow read: if isAdmin();
-      // Authenticated users and system can create logs
-      allow create: if isAuthenticated();
+    // Allow any authenticated user (including newly registered ones) to create logs.
+    // This avoids registration-time permission issues while keeping logs append-only.
+    allow create: if isAuthenticated();
       // Only admins can update or delete logs
       allow update, delete: if isAdmin();
     }
     
     // FCM tokens collection (for push notifications)
+    // NOTE: We intentionally do NOT use isNotSuspended() here.
+    // - On first login, the users/{uid} document might not exist yet,
+    //   which makes isNotSuspended() fail and blocks token saves.
+    // - FCM tokens are low‑risk metadata; we still restrict by uid.
     match /fcm_tokens/{userId} {
       // Users can read their own FCM token
       allow get: if isAuthenticated() && request.auth.uid == userId;
       // Allow list queries for authenticated users (filtered by userId in query)
       allow list: if isAuthenticated();
       // Users can create/update their own FCM token (document ID must match their userId)
-      allow create, update: if isAuthenticated() && request.auth.uid == userId;
+      allow create, update: if isAuthenticated() &&
+                               request.auth.uid == userId;
       // Users can delete their own FCM token
       allow delete: if isAuthenticated() && request.auth.uid == userId;
     }
@@ -289,8 +371,9 @@ service cloud.firestore {
     match /trade_disputes/{disputeId} {
       // TEMP: allow any authenticated user to create/read trade disputes.
       // We still store openedByUserId/otherUserId in documents for future tightening.
-      allow create: if isAuthenticated();
-      allow get, list, update: if isAuthenticated();
+      allow create: if isAuthenticated() && isNotSuspended();
+      allow get, list: if isAuthenticated();
+      allow update: if isAuthenticated() && isNotSuspended();
       allow delete: if isAdmin();
     }
     

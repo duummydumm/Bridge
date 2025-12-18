@@ -199,7 +199,7 @@ class _BorrowedItemsDetailScreenState extends State<BorrowedItemsDetailScreen> {
                               width: 56,
                               height: 56,
                               decoration: BoxDecoration(
-                                color: statusColor.withOpacity(0.1),
+                                color: statusColor.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(

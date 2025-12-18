@@ -82,7 +82,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         // Additional delay for web to ensure persistence
         await Future.delayed(const Duration(milliseconds: 100));
       } catch (e) {
-        print('Error saving onboarding status: $e');
+        debugPrint('Error saving onboarding status: $e');
       }
 
       if (mounted) {
@@ -105,7 +105,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       // Additional delay for web to ensure persistence
       await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
-      print('Error saving onboarding status: $e');
+      debugPrint('Error saving onboarding status: $e');
     }
 
     if (mounted) {
@@ -174,7 +174,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, -2),
                   ),
@@ -262,7 +262,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                             elevation: 3,
                             shadowColor: const Color(
                               0xFF1E88E5,
-                            ).withOpacity(0.4),
+                            ).withValues(alpha: 0.4),
                           ),
                         ),
                       ],
@@ -290,7 +290,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         boxShadow: isActive
             ? [
                 BoxShadow(
-                  color: const Color(0xFF1E88E5).withOpacity(0.4),
+                  color: const Color(0xFF1E88E5).withValues(alpha: 0.4),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -371,7 +371,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           Color(0xFFE57373),
           Color(0xFFEF9A9A),
         ],
-        features: ['Free giveaways', 'Help neighbors', 'Reduce waste'],
+        features: [
+          'Free giveaways',
+          'Help neighbors',
+          'Reduce waste',
+          'Calamity cause',
+        ],
         fadeAnimation: _fadeAnimation,
         slideAnimation: _slideAnimation,
       ),
@@ -464,7 +469,7 @@ class _OnboardingPage extends StatelessWidget {
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.15),
+                              color: Colors.black.withValues(alpha: 0.15),
                               blurRadius: 30,
                               offset: const Offset(0, 10),
                             ),
@@ -485,7 +490,7 @@ class _OnboardingPage extends StatelessWidget {
                                   ),
                                   painter: _CirclePainter(
                                     progress: value,
-                                    color: Colors.white.withOpacity(0.1),
+                                    color: Colors.white.withValues(alpha: 0.1),
                                   ),
                                 );
                               },
@@ -528,7 +533,7 @@ class _OnboardingPage extends StatelessWidget {
                           letterSpacing: 0.5,
                           shadows: [
                             Shadow(
-                              color: Colors.black.withOpacity(0.2),
+                              color: Colors.black.withValues(alpha: 0.2),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -556,7 +561,7 @@ class _OnboardingPage extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: isDesktop ? 18 : 16,
-                            color: Colors.white.withOpacity(0.95),
+                            color: Colors.white.withValues(alpha: 0.95),
                             height: 1.6,
                             letterSpacing: 0.3,
                           ),
@@ -605,10 +610,10 @@ class _OnboardingPage extends StatelessWidget {
           width: isDesktop ? 120 : 100,
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
+            color: Colors.white.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: Colors.white.withOpacity(0.3),
+              color: Colors.white.withValues(alpha: 0.3),
               width: 1.5,
             ),
           ),
@@ -718,7 +723,7 @@ class _FeatureShowcasePage extends StatelessWidget {
                           color: Colors.white,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
+                              color: Colors.black.withValues(alpha: 0.2),
                               blurRadius: 30,
                               offset: const Offset(0, 10),
                             ),
@@ -752,7 +757,7 @@ class _FeatureShowcasePage extends StatelessWidget {
                           letterSpacing: 0.5,
                           shadows: [
                             Shadow(
-                              color: Colors.black.withOpacity(0.2),
+                              color: Colors.black.withValues(alpha: 0.2),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -780,7 +785,7 @@ class _FeatureShowcasePage extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: isDesktop ? 18 : 16,
-                            color: Colors.white.withOpacity(0.95),
+                            color: Colors.white.withValues(alpha: 0.95),
                             height: 1.6,
                             letterSpacing: 0.3,
                           ),
@@ -798,37 +803,45 @@ class _FeatureShowcasePage extends StatelessWidget {
                       position:
                           slideAnimation ??
                           const AlwaysStoppedAnimation(Offset.zero),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: features.map((feature) {
-                          return Padding(
-                            padding: EdgeInsets.symmetric(
-                              vertical: isDesktop ? 8 : 6,
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.check_circle_outline,
-                                  color: Colors.white,
-                                  size: 20,
+                      child: Center(
+                        child: IntrinsicWidth(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: features.map((feature) {
+                              return Padding(
+                                padding: EdgeInsets.symmetric(
+                                  vertical: isDesktop ? 8 : 6,
                                 ),
-                                const SizedBox(width: 12),
-                                Flexible(
-                                  child: Text(
-                                    feature,
-                                    style: TextStyle(
-                                      fontSize: isDesktop ? 16 : 15,
-                                      color: Colors.white.withOpacity(0.9),
-                                      fontWeight: FontWeight.w500,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: Icon(
+                                        Icons.check_circle_outline,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
                                     ),
-                                    textAlign: TextAlign.center,
-                                  ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      feature,
+                                      style: TextStyle(
+                                        fontSize: isDesktop ? 16 : 15,
+                                        color: Colors.white.withValues(
+                                          alpha: 0.9,
+                                        ),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
+                              );
+                            }).toList(),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -865,7 +878,7 @@ class _CirclePainter extends CustomPainter {
     canvas.drawCircle(
       center,
       radius + math.cos(progress * 1.5) * 8,
-      paint..color = color.withOpacity(0.7),
+      paint..color = color.withValues(alpha: 0.7),
     );
   }
 

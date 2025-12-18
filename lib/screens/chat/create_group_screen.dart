@@ -211,7 +211,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           if (_selectedUserIds.isNotEmpty)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: const Color(0xFF00897B).withOpacity(0.1),
+              color: const Color(0xFF00897B).withValues(alpha: 0.1),
               child: Row(
                 children: [
                   Icon(Icons.people, color: const Color(0xFF00897B), size: 20),
@@ -276,7 +276,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                         secondary: CircleAvatar(
                           backgroundColor: const Color(
                             0xFF00897B,
-                          ).withOpacity(0.1),
+                          ).withValues(alpha: 0.1),
                           child: Text(
                             userName.isNotEmpty
                                 ? userName[0].toUpperCase()
@@ -300,7 +300,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, -2),
                 ),

@@ -636,10 +636,10 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
+                        color: Colors.red.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: Colors.red.withOpacity(0.3),
+                          color: Colors.red.withValues(alpha: 0.3),
                           width: 1,
                         ),
                       ),
@@ -698,17 +698,17 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: resolutionStatus == 'proposal_pending'
-                            ? Colors.blue.withOpacity(0.1)
+                            ? Colors.blue.withValues(alpha: 0.1)
                             : resolutionStatus == 'accepted'
-                            ? Colors.green.withOpacity(0.1)
-                            : Colors.orange.withOpacity(0.1),
+                            ? Colors.green.withValues(alpha: 0.1)
+                            : Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: resolutionStatus == 'proposal_pending'
-                              ? Colors.blue.withOpacity(0.3)
+                              ? Colors.blue.withValues(alpha: 0.3)
                               : resolutionStatus == 'accepted'
-                              ? Colors.green.withOpacity(0.3)
-                              : Colors.orange.withOpacity(0.3),
+                              ? Colors.green.withValues(alpha: 0.3)
+                              : Colors.orange.withValues(alpha: 0.3),
                           width: 1,
                         ),
                       ),
@@ -853,10 +853,10 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
+                        color: Colors.green.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: Colors.green.withOpacity(0.3),
+                          color: Colors.green.withValues(alpha: 0.3),
                         ),
                       ),
                       child: Row(
@@ -869,6 +869,35 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.green[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ] else if (disputeResolution == null || resolutionStatus == null) ...[
+                    // No proposal yet - show waiting message
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.orange.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.hourglass_empty, color: Colors.orange[700]),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Waiting for lender to propose compensation amount.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange[700],
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -1034,7 +1063,7 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00897B).withOpacity(0.1),
+                          color: const Color(0xFF00897B).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -1100,7 +1129,7 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                           decoration: BoxDecoration(
                             color: _getConditionColor(
                               borrowerCondition,
-                            ).withOpacity(0.1),
+                            ).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: _getConditionColor(borrowerCondition),
@@ -1187,10 +1216,10 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.1),
+                            color: Colors.red.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Colors.red.withOpacity(0.3),
+                              color: Colors.red.withValues(alpha: 0.3),
                               width: 2,
                             ),
                           ),
@@ -1429,17 +1458,17 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: resolutionStatus == 'proposal_pending'
-                                ? Colors.blue.withOpacity(0.1)
+                                ? Colors.blue.withValues(alpha: 0.1)
                                 : resolutionStatus == 'accepted'
-                                ? Colors.green.withOpacity(0.1)
-                                : Colors.orange.withOpacity(0.1),
+                                ? Colors.green.withValues(alpha: 0.1)
+                                : Colors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: resolutionStatus == 'proposal_pending'
-                                  ? Colors.blue.withOpacity(0.3)
+                                  ? Colors.blue.withValues(alpha: 0.3)
                                   : resolutionStatus == 'accepted'
-                                  ? Colors.green.withOpacity(0.3)
-                                  : Colors.orange.withOpacity(0.3),
+                                  ? Colors.green.withValues(alpha: 0.3)
+                                  : Colors.orange.withValues(alpha: 0.3),
                               width: 2,
                             ),
                           ),
@@ -1599,10 +1628,10 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
+                            color: Colors.green.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Colors.green.withOpacity(0.3),
+                              color: Colors.green.withValues(alpha: 0.3),
                             ),
                           ),
                           child: Row(
@@ -1671,10 +1700,10 @@ class _DisputedReturnsScreenState extends State<DisputedReturnsScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
+                          color: Colors.blue.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: Colors.blue.withOpacity(0.3),
+                            color: Colors.blue.withValues(alpha: 0.3),
                           ),
                         ),
                         child: Row(

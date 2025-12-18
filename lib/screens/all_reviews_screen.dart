@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/rating_model.dart';
 import '../services/rating_service.dart';
+import '../providers/user_provider.dart';
 
 class AllReviewsScreen extends StatefulWidget {
   final String userId;
@@ -80,7 +82,7 @@ class _AllReviewsScreenState extends State<AllReviewsScreen> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -91,7 +93,7 @@ class _AllReviewsScreenState extends State<AllReviewsScreen> {
         children: [
           CircleAvatar(
             radius: 24,
-            backgroundColor: const Color(0xFF00897B).withOpacity(0.2),
+            backgroundColor: const Color(0xFF00897B).withValues(alpha: 0.2),
             child: Text(
               review.raterName.isNotEmpty
                   ? review.raterName[0].toUpperCase()
@@ -110,15 +112,17 @@ class _AllReviewsScreenState extends State<AllReviewsScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
+                    Flexible(
                       child: Text(
                         review.raterName,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 8),
                     _buildStarRating(review.rating.toDouble()),
                   ],
                 ),
@@ -167,9 +171,14 @@ class _AllReviewsScreenState extends State<AllReviewsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = Provider.of<UserProvider>(context).currentUser;
+    final isOwnProfile = currentUser?.uid == widget.userId;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Reviews for ${widget.userName}'),
+        title: Text(
+          isOwnProfile ? 'Your Reviews' : 'Reviews for ${widget.userName}',
+        ),
         backgroundColor: const Color(0xFF00897B),
       ),
       body: _isLoading
@@ -205,33 +214,67 @@ class _AllReviewsScreenState extends State<AllReviewsScreen> {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),
                       ],
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildStarRating(_averageRating),
-                        const SizedBox(width: 12),
-                        Text(
-                          '${_averageRating.toStringAsFixed(1)}',
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '(${_reviews.length} ${_reviews.length == 1 ? 'review' : 'reviews'})',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Use Column layout on very small screens
+                        if (constraints.maxWidth < 200) {
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildStarRating(_averageRating),
+                              const SizedBox(height: 8),
+                              Text(
+                                '${_averageRating.toStringAsFixed(1)}',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '(${_reviews.length} ${_reviews.length == 1 ? 'review' : 'reviews'})',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                        // Use Row layout on larger screens
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildStarRating(_averageRating),
+                            const SizedBox(width: 12),
+                            Text(
+                              '${_averageRating.toStringAsFixed(1)}',
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                '(${_reviews.length} ${_reviews.length == 1 ? 'review' : 'reviews'})',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                   const SizedBox(height: 24),

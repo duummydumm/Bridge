@@ -66,7 +66,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF00897B).withOpacity(0.3),
+                      color: const Color(0xFF00897B).withValues(alpha: 0.3),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
@@ -80,7 +80,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: const Icon(
@@ -111,7 +111,9 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                           onPressed: () => _showDateRangePicker(context),
                           tooltip: 'Select date range',
                           style: IconButton.styleFrom(
-                            backgroundColor: Colors.white.withOpacity(0.2),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.2,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -126,7 +128,9 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                           },
                           tooltip: 'Toggle comparison mode',
                           style: IconButton.styleFrom(
-                            backgroundColor: Colors.white.withOpacity(0.2),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.2,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -136,7 +140,9 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                             _hasLoaded = true;
                           },
                           style: IconButton.styleFrom(
-                            backgroundColor: Colors.white.withOpacity(0.2),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.2,
+                            ),
                           ),
                         ),
                       ],
@@ -269,7 +275,9 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFE57373).withOpacity(0.1),
+                              color: const Color(
+                                0xFFE57373,
+                              ).withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Icon(
@@ -305,25 +313,25 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                     Expanded(
                       child: _CardWrap(
                         title: 'User Growth',
+                        showExport: true,
                         child: _UsersGrowthChart(
                           points: data.usersMonthly,
                           onExport: () => _exportChart(context, 'user_growth'),
                           onDrillDown: () => _showDrillDown(context, 'users'),
                         ),
-                        showExport: true,
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: _CardWrap(
                         title: 'Popular Categories (30d)',
+                        showExport: true,
                         child: _CategoriesPieChart(
                           slices: data.categories30d,
                           onExport: () => _exportChart(context, 'categories'),
                           onDrillDown: () =>
                               _showDrillDown(context, 'categories'),
                         ),
-                        showExport: true,
                       ),
                     ),
                   ],
@@ -331,19 +339,19 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 const SizedBox(height: 16),
                 _CardWrap(
                   title: 'Most Reported Issues (30d)',
+                  showExport: true,
                   child: _IssuesBarChart(
                     issues: data.issues30d,
                     onExport: () => _exportChart(context, 'issues'),
                     onDrillDown: () => _showDrillDown(context, 'issues'),
                   ),
-                  showExport: true,
                 ),
                 const SizedBox(height: 16),
                 if (data.usersMonthly.length >= 3)
                   _CardWrap(
                     title: 'Growth Trends & Predictions',
-                    child: _GrowthTrendsWidget(points: data.usersMonthly),
                     showExport: false,
+                    child: _GrowthTrendsWidget(points: data.usersMonthly),
                   ),
               ],
             ],
@@ -592,13 +600,13 @@ class _KpiTile extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              color.withOpacity(0.1),
-              color.withOpacity(0.05),
+              color.withValues(alpha: 0.1),
+              color.withValues(alpha: 0.05),
               Colors.white,
             ],
           ),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.2), width: 1.5),
+          border: Border.all(color: color.withValues(alpha: 0.2), width: 1.5),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -611,7 +619,10 @@ class _KpiTile extends StatelessWidget {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [color.withOpacity(0.2), color.withOpacity(0.1)],
+                    colors: [
+                      color.withValues(alpha: 0.2),
+                      color.withValues(alpha: 0.1),
+                    ],
                   ),
                   shape: BoxShape.circle,
                 ),
@@ -627,7 +638,7 @@ class _KpiTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: color.withOpacity(0.8),
+                    color: color.withValues(alpha: 0.8),
                     letterSpacing: 0.3,
                   ),
                 ),
@@ -741,7 +752,7 @@ class _CardWrap extends StatelessWidget {
           border: Border.all(color: Colors.grey[200]!, width: 1),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -764,8 +775,8 @@ class _CardWrap extends StatelessWidget {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            const Color(0xFF00897B).withOpacity(0.1),
-                            const Color(0xFF00695C).withOpacity(0.05),
+                            const Color(0xFF00897B).withValues(alpha: 0.1),
+                            const Color(0xFF00695C).withValues(alpha: 0.05),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(8),
@@ -935,13 +946,13 @@ class _UsersGrowthChart extends _ExportableChart {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  primaryColor.withOpacity(0.1),
-                  secondaryColor.withOpacity(0.1),
+                  primaryColor.withValues(alpha: 0.1),
+                  secondaryColor.withValues(alpha: 0.1),
                 ],
               ),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: primaryColor.withOpacity(0.2),
+                color: primaryColor.withValues(alpha: 0.2),
                 width: 1,
               ),
             ),
@@ -1036,7 +1047,7 @@ class _CategoriesPieChart extends _ExportableChart {
                   color: Colors.white,
                   shadows: [
                     Shadow(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -1048,7 +1059,7 @@ class _CategoriesPieChart extends _ExportableChart {
                   end: Alignment.bottomRight,
                   colors: [
                     _colors[i % _colors.length],
-                    _colors[i % _colors.length].withOpacity(0.7),
+                    _colors[i % _colors.length].withValues(alpha: 0.7),
                   ],
                 ),
               ),
@@ -1117,8 +1128,9 @@ class _IssuesBarChart extends _ExportableChart {
                 showTitles: true,
                 getTitlesWidget: (v, __) {
                   final idx = v.toInt();
-                  if (idx < 0 || idx >= issues.length)
+                  if (idx < 0 || idx >= issues.length) {
                     return const SizedBox.shrink();
+                  }
                   return Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
@@ -1291,9 +1303,9 @@ class _TrendCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../providers/admin_provider.dart';
 import '../../../services/export_service.dart';
+import '../../../reusable_widgets/export_format_dialog.dart';
 
 class ReportsTab extends StatefulWidget {
   const ReportsTab({super.key});
@@ -53,6 +55,15 @@ class _ReportsTabState extends State<ReportsTab> {
 
   Future<void> _exportReports(BuildContext context) async {
     try {
+      // Show format selection dialog
+      final format = await ExportFormatDialog.show(
+        context,
+        title: 'Export Reports',
+        subtitle: 'Select export format for ${_status} reports',
+      );
+
+      if (format == null) return; // User cancelled
+
       final exportService = ExportService();
       final admin = Provider.of<AdminProvider>(context, listen: false);
 
@@ -60,22 +71,46 @@ class _ReportsTabState extends State<ReportsTab> {
       final snapshot = await admin.reportsStream(status: _status).first;
       final docs = snapshot.docs;
 
-      final csv = await exportService.exportReportsToCSV(
+      final content = await exportService.exportReports(
         reports: docs,
         status: _status,
+        format: format,
       );
 
-      // Copy to clipboard
-      await Clipboard.setData(ClipboardData(text: csv));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Exported ${docs.length} report(s) to CSV and copied to clipboard!',
+      // Handle different formats
+      if (format == ExportFormat.csv || format == ExportFormat.json) {
+        // Text formats: copy to clipboard
+        if (content.isNotEmpty) {
+          await Clipboard.setData(ClipboardData(text: content));
+          if (context.mounted) {
+            final formatName = format.name.toUpperCase();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Exported ${docs.length} report(s) to $formatName and copied to clipboard!',
+                ),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      } else {
+        // Binary formats (Excel/PDF): file download triggered in service
+        if (context.mounted) {
+          final formatName = format.name.toUpperCase();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                kIsWeb
+                    ? 'Exported ${docs.length} report(s) to $formatName! File downloaded to your downloads folder.'
+                    : 'Exported ${docs.length} report(s) to $formatName! Use the share dialog to save the file.',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
             ),
-            backgroundColor: Colors.green,
-          ),
-        );
+          );
+        }
       }
     } catch (e) {
       if (context.mounted) {

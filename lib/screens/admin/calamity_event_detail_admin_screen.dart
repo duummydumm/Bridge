@@ -379,8 +379,8 @@ class _CalamityEventDetailAdminScreenState
                             ),
                             decoration: BoxDecoration(
                               color: _event!.isActive && !isExpired
-                                  ? Colors.green.withOpacity(0.1)
-                                  : Colors.grey.withOpacity(0.1),
+                                  ? Colors.green.withValues(alpha: 0.1)
+                                  : Colors.grey.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
                                 color: _event!.isActive && !isExpired
@@ -409,7 +409,7 @@ class _CalamityEventDetailAdminScreenState
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
+                          color: Colors.blue.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: Colors.blue),
                         ),
@@ -479,7 +479,9 @@ class _CalamityEventDetailAdminScreenState
                                       vertical: 8,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: _primaryColor.withOpacity(0.1),
+                                      color: _primaryColor.withValues(
+                                        alpha: 0.1,
+                                      ),
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                     child: Text(
@@ -883,8 +885,8 @@ class _CalamityEventDetailAdminScreenState
                   ),
                   decoration: BoxDecoration(
                     color: isPending
-                        ? Colors.orange.withOpacity(0.1)
-                        : Colors.green.withOpacity(0.1),
+                        ? Colors.orange.withValues(alpha: 0.1)
+                        : Colors.green.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: isPending ? Colors.orange : Colors.green,

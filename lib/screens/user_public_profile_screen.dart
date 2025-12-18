@@ -4,6 +4,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/user_model.dart';
 import '../models/rating_model.dart';
 import '../models/item_model.dart';
+import '../models/rental_listing_model.dart';
+import '../models/trade_item_model.dart';
+import '../models/giveaway_listing_model.dart';
 import '../services/firestore_service.dart';
 import '../services/report_block_service.dart';
 import '../services/rating_service.dart';
@@ -40,7 +43,10 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
   Map<String, dynamic>? _activityStats;
   Map<String, dynamic>? _responseStats;
   bool _loadingStats = false;
-  List<ItemModel> _activeListings = [];
+  List<ItemModel> _activeBorrowItems = [];
+  List<_RentalListingWithData> _activeRentalListings = [];
+  List<TradeItemModel> _activeTradeItems = [];
+  List<GiveawayListingModel> _activeGiveawayListings = [];
   bool _loadingListings = false;
 
   @override
@@ -127,13 +133,13 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
     });
 
     try {
+      // Load borrow items (from items collection)
       final itemsData = await _firestoreService.getItemsByLender(widget.userId);
-      final activeItems = itemsData
+      final activeBorrowItems = itemsData
           .where(
             (item) =>
                 (item['status'] ?? '').toString().toLowerCase() == 'available',
           )
-          .take(6)
           .map((data) {
             try {
               return ItemModel.fromMap(data, data['id'] ?? '');
@@ -145,18 +151,79 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
           .whereType<ItemModel>()
           .toList();
 
+      // Load rental listings (from rental_listings collection)
+      final rentalsData = await _firestoreService.getRentalListingsByOwner(
+        widget.userId,
+      );
+      final activeRentalListings = rentalsData
+          .where((listing) => listing['isActive'] == true)
+          .map((data) {
+            try {
+              final model = RentalListingModel.fromMap(
+                data,
+                data['id']?.toString() ?? '',
+              );
+              return _RentalListingWithData(model: model, rawData: data);
+            } catch (e) {
+              debugPrint('Error parsing rental listing: $e');
+              return null;
+            }
+          })
+          .whereType<_RentalListingWithData>()
+          .toList();
+
+      // Load trade items (from trade_items collection)
+      final tradeItemsData = await _firestoreService.getTradeItemsByUser(
+        widget.userId,
+      );
+      final activeTradeItems = tradeItemsData
+          .where((item) {
+            final status = (item['status'] ?? '').toString().toLowerCase();
+            return status == 'open';
+          })
+          .map((data) {
+            try {
+              return TradeItemModel.fromMap(data, data['id']?.toString() ?? '');
+            } catch (e) {
+              debugPrint('Error parsing trade item: $e');
+              return null;
+            }
+          })
+          .whereType<TradeItemModel>()
+          .toList();
+
+      // Load giveaway listings (from giveaways collection)
+      final giveawaysData = await _firestoreService.getGiveawaysByUser(
+        widget.userId,
+      );
+      final activeGiveawayListings = giveawaysData
+          .where((giveaway) {
+            final status = (giveaway['status'] ?? '').toString().toLowerCase();
+            return status == 'active';
+          })
+          .map((data) {
+            try {
+              return GiveawayListingModel.fromMap(
+                data,
+                data['id']?.toString() ?? '',
+              );
+            } catch (e) {
+              debugPrint('Error parsing giveaway listing: $e');
+              return null;
+            }
+          })
+          .whereType<GiveawayListingModel>()
+          .toList();
+
       if (mounted) {
-        debugPrint('Loaded ${activeItems.length} active listings');
-        for (var item in activeItems) {
-          debugPrint(
-            'Item: ${item.title}, Images: ${item.images.length}, hasImages: ${item.hasImages}',
-          );
-          if (item.images.isNotEmpty) {
-            debugPrint('First image URL: ${item.images.first}');
-          }
-        }
+        debugPrint(
+          'Loaded ${activeBorrowItems.length} borrow, ${activeRentalListings.length} rental, ${activeTradeItems.length} trade, ${activeGiveawayListings.length} giveaway listings',
+        );
         setState(() {
-          _activeListings = activeItems;
+          _activeBorrowItems = activeBorrowItems;
+          _activeRentalListings = activeRentalListings;
+          _activeTradeItems = activeTradeItems;
+          _activeGiveawayListings = activeGiveawayListings;
           _loadingListings = false;
         });
       }
@@ -314,9 +381,9 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.08),
+                  color: Colors.red.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,7 +411,7 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 6,
                     offset: const Offset(0, 3),
                   ),
@@ -355,7 +422,9 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                 children: [
                   CircleAvatar(
                     radius: 48,
-                    backgroundColor: const Color(0xFF00897B).withOpacity(0.1),
+                    backgroundColor: const Color(
+                      0xFF00897B,
+                    ).withValues(alpha: 0.1),
                     backgroundImage: user.profilePhotoUrl.isNotEmpty
                         ? NetworkImage(user.profilePhotoUrl)
                         : null,
@@ -430,7 +499,11 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
             const SizedBox(height: 16),
 
             // Active Listings Preview
-            if (!_loadingListings && _activeListings.isNotEmpty)
+            if (!_loadingListings &&
+                (_activeBorrowItems.isNotEmpty ||
+                    _activeRentalListings.isNotEmpty ||
+                    _activeTradeItems.isNotEmpty ||
+                    _activeGiveawayListings.isNotEmpty))
               _buildListingsPreview(),
 
             const SizedBox(height: 16),
@@ -443,7 +516,7 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 6,
                       offset: const Offset(0, 3),
                     ),
@@ -469,7 +542,7 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 6,
                     offset: const Offset(0, 3),
                   ),
@@ -815,9 +888,9 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -863,7 +936,7 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -1034,7 +1107,7 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 6,
             offset: const Offset(0, 3),
           ),
@@ -1142,9 +1215,9 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: iconColor.withOpacity(0.1),
+        color: iconColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: iconColor.withOpacity(0.2), width: 1),
+        border: Border.all(color: iconColor.withValues(alpha: 0.2), width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1207,13 +1280,44 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
   }
 
   Widget _buildListingsPreview() {
+    // Combine all listings (limit to 6 total for preview)
+    final allListings = <_ListingItem>[];
+
+    // Add borrow items
+    for (var item in _activeBorrowItems.take(6)) {
+      allListings.add(
+        _ListingItem(type: _ListingType.borrow, borrowItem: item),
+      );
+    }
+
+    // Add rental listings
+    for (var listing in _activeRentalListings.take(6 - allListings.length)) {
+      allListings.add(
+        _ListingItem(type: _ListingType.rental, rentalListingWithData: listing),
+      );
+    }
+
+    // Add trade items
+    for (var item in _activeTradeItems.take(6 - allListings.length)) {
+      allListings.add(_ListingItem(type: _ListingType.trade, tradeItem: item));
+    }
+
+    // Add giveaway listings
+    for (var listing in _activeGiveawayListings.take(6 - allListings.length)) {
+      allListings.add(
+        _ListingItem(type: _ListingType.giveaway, giveawayListing: listing),
+      );
+    }
+
+    if (allListings.isEmpty) return const SizedBox.shrink();
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 6,
             offset: const Offset(0, 3),
           ),
@@ -1255,9 +1359,23 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
             height: 200,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: _activeListings.length,
+              itemCount: allListings.length,
               itemBuilder: (context, index) {
-                return _buildListingCard(_activeListings[index]);
+                final listingItem = allListings[index];
+                switch (listingItem.type) {
+                  case _ListingType.borrow:
+                    return _buildBorrowItemCard(listingItem.borrowItem!);
+                  case _ListingType.rental:
+                    return _buildRentalListingCard(
+                      listingItem.rentalListingWithData!,
+                    );
+                  case _ListingType.trade:
+                    return _buildTradeItemCard(listingItem.tradeItem!);
+                  case _ListingType.giveaway:
+                    return _buildGiveawayListingCard(
+                      listingItem.giveawayListing!,
+                    );
+                }
               },
             ),
           ),
@@ -1266,7 +1384,7 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
     );
   }
 
-  Widget _buildListingCard(ItemModel item) {
+  Widget _buildBorrowItemCard(ItemModel item) {
     return Container(
       width: 160,
       margin: const EdgeInsets.only(right: 12),
@@ -1453,7 +1571,9 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                                 vertical: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF00897B).withOpacity(0.1),
+                                color: const Color(
+                                  0xFF00897B,
+                                ).withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
@@ -1470,7 +1590,7 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
                                 vertical: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.1),
+                                color: Colors.orange.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
@@ -1568,7 +1688,7 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 6,
             offset: const Offset(0, 3),
           ),
@@ -1771,4 +1891,335 @@ class _UserPublicProfileScreenState extends State<UserPublicProfileScreen> {
       ),
     );
   }
+
+  Widget _buildRentalListingCard(_RentalListingWithData listingData) {
+    final listing = listingData.model;
+    final rawData = listingData.rawData;
+
+    // Get title from denormalized field or fallback
+    String title = (rawData['title'] as String?)?.trim() ?? '';
+    if (title.isEmpty) {
+      // Fallback to rentType-based title
+      title =
+          '${listing.rentType.name[0].toUpperCase()}${listing.rentType.name.substring(1)} Rental';
+    }
+
+    // Get category from denormalized field or fallback
+    String category =
+        (rawData['category'] as String?)?.trim() ?? listing.rentType.name;
+
+    // Get image URL from denormalized fields
+    String? imageUrl = (rawData['imageUrl'] as String?)?.trim();
+    if (imageUrl == null || imageUrl.isEmpty) {
+      // Try images array
+      final images = rawData['images'] as List<dynamic>?;
+      if (images != null && images.isNotEmpty) {
+        final first = images.first;
+        if (first is String && first.isNotEmpty) {
+          imageUrl = first;
+        }
+      }
+    }
+
+    // If still no image, try fetching from itemId
+    final hasImage = imageUrl != null && imageUrl.isNotEmpty;
+
+    return Container(
+      width: 160,
+      margin: const EdgeInsets.only(right: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: InkWell(
+        onTap: () {
+          // Could navigate to rental detail screen
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
+              child: Container(
+                height: 120,
+                width: double.infinity,
+                color: Colors.grey[200],
+                child: hasImage
+                    ? CachedNetworkImage(
+                        imageUrl: _normalizeStorageUrl(imageUrl),
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey[200],
+                          child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) {
+                          debugPrint('❌ Rental image load error: $error');
+                          return _buildRentalPlaceholderImage();
+                        },
+                      )
+                    : _buildRentalPlaceholderImage(),
+              ),
+            ),
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.home_outlined,
+                        size: 12,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          category,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTradeItemCard(TradeItemModel item) {
+    return Container(
+      width: 160,
+      margin: const EdgeInsets.only(right: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: InkWell(
+        onTap: () {
+          // Could navigate to trade detail screen
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
+              child: Container(
+                height: 120,
+                width: double.infinity,
+                color: Colors.grey[200],
+                child: item.hasImage
+                    ? CachedNetworkImage(
+                        imageUrl: _normalizeStorageUrl(
+                          item.offeredImageUrls.first,
+                        ),
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey[200],
+                          child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) =>
+                            _buildPlaceholderImage(),
+                      )
+                    : _buildPlaceholderImage(),
+              ),
+            ),
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.offeredItemName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.swap_horiz, size: 12, color: Colors.grey[600]),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          item.offeredCategory,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGiveawayListingCard(GiveawayListingModel listing) {
+    return Container(
+      width: 160,
+      margin: const EdgeInsets.only(right: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: InkWell(
+        onTap: () {
+          // Could navigate to giveaway detail screen
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
+              child: Container(
+                height: 120,
+                width: double.infinity,
+                color: Colors.grey[200],
+                child: listing.hasImages
+                    ? CachedNetworkImage(
+                        imageUrl: _normalizeStorageUrl(listing.images.first),
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey[200],
+                          child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) =>
+                            _buildPlaceholderImage(),
+                      )
+                    : _buildPlaceholderImage(),
+              ),
+            ),
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    listing.title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.card_giftcard_outlined,
+                        size: 12,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          listing.category,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRentalPlaceholderImage() {
+    return Container(
+      color: const Color(0xFF9C27B0).withValues(alpha: 0.1),
+      child: const Center(
+        child: Icon(Icons.home_outlined, color: Color(0xFF9C27B0), size: 40),
+      ),
+    );
+  }
+}
+
+// Helper class to combine different listing types
+enum _ListingType { borrow, rental, trade, giveaway }
+
+class _ListingItem {
+  final _ListingType type;
+  final ItemModel? borrowItem;
+  final _RentalListingWithData? rentalListingWithData;
+  final TradeItemModel? tradeItem;
+  final GiveawayListingModel? giveawayListing;
+
+  _ListingItem({
+    required this.type,
+    this.borrowItem,
+    this.rentalListingWithData,
+    this.tradeItem,
+    this.giveawayListing,
+  });
+}
+
+// Helper class to store rental listing with raw data
+class _RentalListingWithData {
+  final RentalListingModel model;
+  final Map<String, dynamic> rawData;
+
+  _RentalListingWithData({required this.model, required this.rawData});
 }

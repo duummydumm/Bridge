@@ -16,6 +16,7 @@ class _AccountManagementTabState extends State<AccountManagementTab> {
   String _selectedFilter = 'All Accounts';
   String _sortBy = 'Name';
   final Map<String, UserStats> _userStatsCache = {};
+  bool _isListView = false; // false = grid view, true = list view
 
   @override
   void dispose() {
@@ -85,6 +86,20 @@ class _AccountManagementTabState extends State<AccountManagementTab> {
                       ),
                     ],
                   ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _isListView ? Icons.grid_view : Icons.view_list,
+                    color: Colors.white,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _isListView = !_isListView;
+                    });
+                  },
+                  tooltip: _isListView
+                      ? 'Switch to grid view'
+                      : 'Switch to list view',
                 ),
               ],
             ),
@@ -178,6 +193,14 @@ class _AccountManagementTabState extends State<AccountManagementTab> {
                   final data = doc.data();
                   if ((data['isAdmin'] ?? false) == true) return false;
                   if (currentUid != null && doc.id == currentUid) return false;
+                  // Filter out users with no name and no email (incomplete accounts)
+                  final firstName = (data['firstName'] ?? '').toString().trim();
+                  final lastName = (data['lastName'] ?? '').toString().trim();
+                  final email = (data['email'] ?? '').toString().trim();
+                  final hasName = firstName.isNotEmpty || lastName.isNotEmpty;
+                  final hasEmail = email.isNotEmpty;
+                  // Only show users that have at least a name or email
+                  if (!hasName && !hasEmail) return false;
                   return true;
                 }).toList();
 
@@ -208,13 +231,17 @@ class _AccountManagementTabState extends State<AccountManagementTab> {
                       case 'High-risk':
                         final violationCount =
                             (data['violationCount'] ?? 0) as int;
-                        final reputationScore =
-                            (data['reputationScore'] ?? 0.0).toDouble();
+                        final reputationScore = (data['reputationScore'] ?? 0.0)
+                            .toDouble();
                         // High-risk definition: multiple violations OR very low reputation
-                        return violationCount >= 3 || reputationScore <= 3.0;
+                        // Only consider reputation score if user has been rated (score > 0)
+                        // New users with default score of 0.0 should not be flagged as high-risk
+                        final hasLowReputation =
+                            reputationScore > 0.0 && reputationScore <= 3.0;
+                        return violationCount >= 3 || hasLowReputation;
                       case 'Top lenders':
-                        final reputationScore =
-                            (data['reputationScore'] ?? 0.0).toDouble();
+                        final reputationScore = (data['reputationScore'] ?? 0.0)
+                            .toDouble();
                         // Top lenders: strong reputation (4.5+) and at least one rating recorded
                         return reputationScore >= 4.5;
                       default:
@@ -275,48 +302,73 @@ class _AccountManagementTabState extends State<AccountManagementTab> {
                   );
                 }
 
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    final width = constraints.maxWidth;
-                    int cross = 1;
-                    if (width >= 1400)
-                      cross = 4;
-                    else if (width >= 1100)
-                      cross = 3;
-                    else if (width >= 800)
-                      cross = 2;
-                    return GridView.builder(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: cross,
-                        mainAxisSpacing: 16,
-                        crossAxisSpacing: 16,
-                        childAspectRatio: 1.2,
-                      ),
-                      itemCount: docs.length,
-                      itemBuilder: (context, index) {
-                        final data = docs[index].data();
-                        final uid = docs[index].id;
-                        final cached = _userStatsCache[uid];
-                        return _UserCard(
-                          key: ValueKey(
-                            uid,
-                          ), // Use key to preserve widget identity
-                          userData: data,
-                          uid: uid,
-                          cachedStats: cached,
-                          onStatsLoaded: (stats) {
-                            if (!_userStatsCache.containsKey(uid)) {
-                              // Use setState only if widget is still mounted
-                              if (mounted) {
-                                setState(() => _userStatsCache[uid] = stats);
-                              }
+                if (_isListView) {
+                  // List view
+                  return ListView.builder(
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final data = docs[index].data();
+                      final uid = docs[index].id;
+                      final cached = _userStatsCache[uid];
+                      return _UserCard(
+                        key: ValueKey(uid),
+                        userData: data,
+                        uid: uid,
+                        cachedStats: cached,
+                        isListView: true,
+                        onStatsLoaded: (stats) {
+                          if (!_userStatsCache.containsKey(uid)) {
+                            if (mounted) {
+                              setState(() => _userStatsCache[uid] = stats);
                             }
-                          },
-                        );
-                      },
-                    );
-                  },
-                );
+                          }
+                        },
+                      );
+                    },
+                  );
+                } else {
+                  // Grid view
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.maxWidth;
+                      int cross = 1;
+                      if (width >= 1400)
+                        cross = 4;
+                      else if (width >= 1100)
+                        cross = 3;
+                      else if (width >= 800)
+                        cross = 2;
+                      return GridView.builder(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: cross,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          childAspectRatio: 1.2,
+                        ),
+                        itemCount: docs.length,
+                        itemBuilder: (context, index) {
+                          final data = docs[index].data();
+                          final uid = docs[index].id;
+                          final cached = _userStatsCache[uid];
+                          return _UserCard(
+                            key: ValueKey(uid),
+                            userData: data,
+                            uid: uid,
+                            cachedStats: cached,
+                            isListView: false,
+                            onStatsLoaded: (stats) {
+                              if (!_userStatsCache.containsKey(uid)) {
+                                if (mounted) {
+                                  setState(() => _userStatsCache[uid] = stats);
+                                }
+                              }
+                            },
+                          );
+                        },
+                      );
+                    },
+                  );
+                }
               },
             ),
           ),
@@ -343,6 +395,7 @@ class _UserCard extends StatefulWidget {
   final String uid;
   final UserStats? cachedStats;
   final Function(UserStats) onStatsLoaded;
+  final bool isListView;
 
   const _UserCard({
     super.key,
@@ -350,6 +403,7 @@ class _UserCard extends StatefulWidget {
     required this.uid,
     this.cachedStats,
     required this.onStatsLoaded,
+    this.isListView = false,
   });
 
   @override
@@ -494,171 +548,187 @@ class _UserCardState extends State<_UserCard> {
       memberSince = '${d.month}/${d.day}/${d.year}';
     }
 
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.white, const Color(0xFFF5F7FA)],
+    if (widget.isListView) {
+      // List view style
+      return Card(
+        elevation: 4,
+        margin: const EdgeInsets.only(bottom: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.white, const Color(0xFFF5F7FA)],
+            ),
+            borderRadius: BorderRadius.circular(16),
           ),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: InkWell(
-          onTap: () {
-            showDialog(
-              context: context,
-              builder: (context) => AccountUserDetailDialog(
-                uid: widget.uid,
-                userData: widget.userData,
-                stats: _stats,
-              ),
-            );
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundColor: Colors.grey[300],
-                      backgroundImage:
-                          profilePhotoUrl != null && profilePhotoUrl.isNotEmpty
-                          ? NetworkImage(profilePhotoUrl)
-                          : null,
-                      child: profilePhotoUrl == null || profilePhotoUrl.isEmpty
-                          ? const Icon(Icons.person, size: 30)
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            name.isEmpty ? email : name,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+          child: InkWell(
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (context) => AccountUserDetailDialog(
+                  uid: widget.uid,
+                  userData: widget.userData,
+                  stats: _stats,
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 32,
+                    backgroundColor: Colors.grey[300],
+                    backgroundImage:
+                        profilePhotoUrl != null && profilePhotoUrl.isNotEmpty
+                        ? NetworkImage(profilePhotoUrl)
+                        : null,
+                    child: profilePhotoUrl == null || profilePhotoUrl.isEmpty
+                        ? const Icon(Icons.person, size: 32)
+                        : null,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                name.isNotEmpty
+                                    ? name
+                                    : (email.isNotEmpty
+                                          ? email
+                                          : 'User ${widget.uid.substring(0, 8)}...'),
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isSuspended
+                                    ? Colors.red[50]
+                                    : (isVerified
+                                          ? Colors.green[50]
+                                          : Colors.orange[50]),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSuspended
+                                      ? Colors.red[300]!
+                                      : (isVerified
+                                            ? Colors.green[300]!
+                                            : Colors.orange[300]!),
+                                ),
+                              ),
+                              child: Text(
+                                isSuspended
+                                    ? 'Suspended'
+                                    : (isVerified ? 'Active' : 'Pending'),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSuspended
+                                      ? Colors.red[700]
+                                      : (isVerified
+                                            ? Colors.green[700]
+                                            : Colors.orange[700]),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          email,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[600],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            email,
-                            style: TextStyle(
-                              fontSize: 12,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        _isLoadingStats
+                            ? Row(
+                                children: const [
+                                  _MetricSkeleton(),
+                                  SizedBox(width: 24),
+                                  _MetricSkeleton(),
+                                  SizedBox(width: 24),
+                                  _MetricSkeleton(),
+                                ],
+                              )
+                            : Row(
+                                children: [
+                                  _MetricItem(
+                                    icon: Icons.upload,
+                                    value: '${_stats?.itemsShared ?? 0}',
+                                    label: 'Shared',
+                                    color: Colors.blue,
+                                  ),
+                                  const SizedBox(width: 24),
+                                  _MetricItem(
+                                    icon: Icons.download,
+                                    value: '${_stats?.itemsBorrowed ?? 0}',
+                                    label: 'Borrowed',
+                                    color: Colors.purple,
+                                  ),
+                                  const SizedBox(width: 24),
+                                  _MetricItem(
+                                    icon: Icons.star,
+                                    value:
+                                        _stats?.averageRating.toStringAsFixed(
+                                          1,
+                                        ) ??
+                                        '0.0',
+                                    label: 'Rating',
+                                    color: Colors.amber,
+                                  ),
+                                ],
+                              ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_today,
+                              size: 14,
                               color: Colors.grey[600],
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSuspended
-                            ? Colors.red[50]
-                            : (isVerified
-                                  ? Colors.green[50]
-                                  : Colors.orange[50]),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSuspended
-                              ? Colors.red[300]!
-                              : (isVerified
-                                    ? Colors.green[300]!
-                                    : Colors.orange[300]!),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Member since: $memberSince',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      child: Text(
-                        isSuspended
-                            ? 'Suspended'
-                            : (isVerified ? 'Active' : 'Pending'),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: isSuspended
-                              ? Colors.red[700]
-                              : (isVerified
-                                    ? Colors.green[700]
-                                    : Colors.orange[700]),
-                        ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const Divider(height: 1),
-                const SizedBox(height: 16),
-                _isLoadingStats
-                    ? Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: const [
-                          _MetricSkeleton(),
-                          _MetricSkeleton(),
-                          _MetricSkeleton(),
-                        ],
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _MetricItem(
-                            icon: Icons.upload,
-                            value: '${_stats?.itemsShared ?? 0}',
-                            label: 'Shared',
-                            color: Colors.blue,
-                          ),
-                          _MetricItem(
-                            icon: Icons.download,
-                            value: '${_stats?.itemsBorrowed ?? 0}',
-                            label: 'Borrowed',
-                            color: Colors.purple,
-                          ),
-                          _MetricItem(
-                            icon: Icons.star,
-                            value:
-                                _stats?.averageRating.toStringAsFixed(1) ??
-                                '0.0',
-                            label: 'Rating',
-                            color: Colors.amber,
-                          ),
-                        ],
-                      ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.calendar_today,
-                      size: 14,
-                      color: Colors.grey[600],
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Member since: $memberSince',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
                         ),
                         onPressed: () {
                           showDialog(
@@ -673,10 +743,8 @@ class _UserCardState extends State<_UserCard> {
                         icon: const Icon(Icons.visibility, size: 16),
                         label: const Text('View'),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Container(
+                      const SizedBox(height: 8),
+                      Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: isSuspended
@@ -706,7 +774,10 @@ class _UserCardState extends State<_UserCard> {
                           style: FilledButton.styleFrom(
                             backgroundColor: Colors.transparent,
                             shadowColor: Colors.transparent,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
                           ),
                           onPressed: () {
                             final admin = Provider.of<AdminProvider>(
@@ -730,15 +801,268 @@ class _UserCardState extends State<_UserCard> {
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    } else {
+      // Grid view style (existing)
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.white, const Color(0xFFF5F7FA)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: InkWell(
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (context) => AccountUserDetailDialog(
+                  uid: widget.uid,
+                  userData: widget.userData,
+                  stats: _stats,
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: Colors.grey[300],
+                        backgroundImage:
+                            profilePhotoUrl != null &&
+                                profilePhotoUrl.isNotEmpty
+                            ? NetworkImage(profilePhotoUrl)
+                            : null,
+                        child:
+                            profilePhotoUrl == null || profilePhotoUrl.isEmpty
+                            ? const Icon(Icons.person, size: 30)
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name.isNotEmpty
+                                  ? name
+                                  : (email.isNotEmpty
+                                        ? email
+                                        : 'User ${widget.uid.substring(0, 8)}...'),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              email.isNotEmpty ? email : 'No email provided',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSuspended
+                              ? Colors.red[50]
+                              : (isVerified
+                                    ? Colors.green[50]
+                                    : Colors.orange[50]),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSuspended
+                                ? Colors.red[300]!
+                                : (isVerified
+                                      ? Colors.green[300]!
+                                      : Colors.orange[300]!),
+                          ),
+                        ),
+                        child: Text(
+                          isSuspended
+                              ? 'Suspended'
+                              : (isVerified ? 'Active' : 'Pending'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isSuspended
+                                ? Colors.red[700]
+                                : (isVerified
+                                      ? Colors.green[700]
+                                      : Colors.orange[700]),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 16),
+                  _isLoadingStats
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: const [
+                            _MetricSkeleton(),
+                            _MetricSkeleton(),
+                            _MetricSkeleton(),
+                          ],
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _MetricItem(
+                              icon: Icons.upload,
+                              value: '${_stats?.itemsShared ?? 0}',
+                              label: 'Shared',
+                              color: Colors.blue,
+                            ),
+                            _MetricItem(
+                              icon: Icons.download,
+                              value: '${_stats?.itemsBorrowed ?? 0}',
+                              label: 'Borrowed',
+                              color: Colors.purple,
+                            ),
+                            _MetricItem(
+                              icon: Icons.star,
+                              value:
+                                  _stats?.averageRating.toStringAsFixed(1) ??
+                                  '0.0',
+                              label: 'Rating',
+                              color: Colors.amber,
+                            ),
+                          ],
+                        ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today,
+                        size: 14,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Member since: $memberSince',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => AccountUserDetailDialog(
+                                uid: widget.uid,
+                                userData: widget.userData,
+                                stats: _stats,
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.visibility, size: 16),
+                          label: const Text('View'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isSuspended
+                                  ? [
+                                      const Color(0xFF2E7D32),
+                                      const Color(0xFF1B5E20),
+                                    ]
+                                  : [
+                                      const Color(0xFFD32F2F),
+                                      const Color(0xFFB71C1C),
+                                    ],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    (isSuspended
+                                            ? const Color(0xFF2E7D32)
+                                            : const Color(0xFFD32F2F))
+                                        .withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            onPressed: () {
+                              final admin = Provider.of<AdminProvider>(
+                                context,
+                                listen: false,
+                              );
+                              if (isSuspended) {
+                                admin.restoreUser(widget.uid);
+                              } else {
+                                admin.suspendUser(widget.uid);
+                              }
+                            },
+                            icon: Icon(
+                              isSuspended ? Icons.lock_open : Icons.block,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                            label: Text(
+                              isSuspended ? 'Restore' : 'Suspend',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
   }
 }
 
@@ -810,7 +1134,7 @@ class _MetricSkeleton extends StatelessWidget {
   }
 }
 
-class AccountUserDetailDialog extends StatelessWidget {
+class AccountUserDetailDialog extends StatefulWidget {
   final String uid;
   final Map<String, dynamic> userData;
   final UserStats? stats;
@@ -822,24 +1146,90 @@ class AccountUserDetailDialog extends StatelessWidget {
   });
 
   @override
+  State<AccountUserDetailDialog> createState() =>
+      _AccountUserDetailDialogState();
+}
+
+class _AccountUserDetailDialogState extends State<AccountUserDetailDialog> {
+  int _reportsFiledCount = 0;
+  int _violationsCount = 0;
+  bool _isLoadingReportsCount = true;
+  bool _isLoadingViolationsCount = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReportsFiledCount();
+    _loadViolationsCount();
+  }
+
+  Future<void> _loadReportsFiledCount() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('reports')
+          .where('reporterId', isEqualTo: widget.uid)
+          .count()
+          .get();
+      if (mounted) {
+        setState(() {
+          _reportsFiledCount = snapshot.count ?? 0;
+          _isLoadingReportsCount = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _reportsFiledCount = 0;
+          _isLoadingReportsCount = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadViolationsCount() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('activity_logs')
+          .where('action', isEqualTo: 'violation_filed')
+          .where('targetId', isEqualTo: widget.uid)
+          .count()
+          .get();
+      if (mounted) {
+        setState(() {
+          _violationsCount = snapshot.count ?? 0;
+          _isLoadingViolationsCount = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _violationsCount = 0;
+          _isLoadingViolationsCount = false;
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final firstName = userData['firstName'] ?? '';
-    final middleInitial = userData['middleInitial'] ?? '';
-    final lastName = userData['lastName'] ?? '';
+    final firstName = widget.userData['firstName'] ?? '';
+    final middleInitial = widget.userData['middleInitial'] ?? '';
+    final lastName = widget.userData['lastName'] ?? '';
     final fullName = middleInitial.isNotEmpty
         ? '$firstName $middleInitial. $lastName'
         : '$firstName $lastName';
-    final email = userData['email'] ?? '';
-    final barangay = userData['barangay'] ?? '';
-    final city = userData['city'] ?? '';
-    final province = userData['province'] ?? '';
+    final email = widget.userData['email'] ?? '';
+    final barangay = widget.userData['barangay'] ?? '';
+    final city = widget.userData['city'] ?? '';
+    final province = widget.userData['province'] ?? '';
     final address = '$barangay, $city, $province'.trim();
-    final profilePhotoUrl = userData['profilePhotoUrl'] as String?;
-    final isSuspended = userData['isSuspended'] == true;
-    final isVerified = userData['isVerified'] == true;
-    final violationCount = userData['violationCount'] ?? 0;
-    final reputationScore = (userData['reputationScore'] ?? 0.0).toDouble();
-    final createdAtTs = userData['createdAt'];
+    final profilePhotoUrl = widget.userData['profilePhotoUrl'] as String?;
+    final isSuspended = widget.userData['isSuspended'] == true;
+    final isVerified = widget.userData['isVerified'] == true;
+    final reportCount = widget.userData['reportCount'] ?? 0;
+    final reputationScore = (widget.userData['reputationScore'] ?? 0.0)
+        .toDouble();
+    final createdAtTs = widget.userData['createdAt'];
     String memberSince = '';
     if (createdAtTs is Timestamp) {
       final d = createdAtTs.toDate();
@@ -979,14 +1369,14 @@ class AccountUserDetailDialog extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 32),
-                    if (stats != null) ...[
+                    if (widget.stats != null) ...[
                       Row(
                         children: [
                           Expanded(
                             child: _DetailStatCard(
                               icon: Icons.upload,
                               label: 'Items Shared',
-                              value: '${stats!.itemsShared}',
+                              value: '${widget.stats!.itemsShared}',
                               color: Colors.blue,
                             ),
                           ),
@@ -995,7 +1385,7 @@ class AccountUserDetailDialog extends StatelessWidget {
                             child: _DetailStatCard(
                               icon: Icons.download,
                               label: 'Items Borrowed',
-                              value: '${stats!.itemsBorrowed}',
+                              value: '${widget.stats!.itemsBorrowed}',
                               color: Colors.purple,
                             ),
                           ),
@@ -1004,10 +1394,42 @@ class AccountUserDetailDialog extends StatelessWidget {
                             child: _DetailStatCard(
                               icon: Icons.star,
                               label: 'Average Rating',
-                              value: stats!.averageRating.toStringAsFixed(1),
+                              value: widget.stats!.averageRating
+                                  .toStringAsFixed(1),
                               color: Colors.amber,
                             ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _DetailStatCard(
+                              icon: Icons.report_problem,
+                              label: 'Reports Filed',
+                              value: _isLoadingReportsCount
+                                  ? '...'
+                                  : _reportsFiledCount.toString(),
+                              color: _reportsFiledCount > 0
+                                  ? Colors.blue
+                                  : Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _DetailStatCard(
+                              icon: Icons.warning,
+                              label: 'Violations',
+                              value: _isLoadingViolationsCount
+                                  ? '...'
+                                  : _violationsCount.toString(),
+                              color: _violationsCount > 0
+                                  ? Colors.orange
+                                  : Colors.grey,
+                            ),
+                          ),
+                          const Spacer(),
                         ],
                       ),
                       const SizedBox(height: 32),
@@ -1045,9 +1467,25 @@ class AccountUserDetailDialog extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     _InfoRow(
+                      icon: Icons.report_problem_outlined,
+                      label: 'Reports Filed',
+                      value: _isLoadingReportsCount
+                          ? 'Loading...'
+                          : _reportsFiledCount.toString(),
+                    ),
+                    const SizedBox(height: 12),
+                    _InfoRow(
+                      icon: Icons.report_gmailerrorred_outlined,
+                      label: 'Times Reported',
+                      value: reportCount.toString(),
+                    ),
+                    const SizedBox(height: 12),
+                    _InfoRow(
                       icon: Icons.warning_outlined,
                       label: 'Violations',
-                      value: violationCount.toString(),
+                      value: _isLoadingViolationsCount
+                          ? 'Loading...'
+                          : _violationsCount.toString(),
                     ),
                   ],
                 ),
@@ -1078,7 +1516,7 @@ class AccountUserDetailDialog extends StatelessWidget {
                       Navigator.of(context).pop();
                       showFileViolationDialog(
                         context,
-                        uid,
+                        widget.uid,
                         fullName.isEmpty ? email : fullName,
                         admin,
                       );
@@ -1101,14 +1539,38 @@ class AccountUserDetailDialog extends StatelessWidget {
                         listen: false,
                       );
                       if (isSuspended) {
-                        admin.restoreUser(uid);
+                        admin.restoreUser(widget.uid);
                       } else {
-                        admin.suspendUser(uid);
+                        admin.suspendUser(widget.uid);
                       }
                       Navigator.of(context).pop();
                     },
                     icon: Icon(isSuspended ? Icons.lock_open : Icons.block),
                     label: Text(isSuspended ? 'Restore' : 'Suspend'),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFD32F2F),
+                      side: const BorderSide(
+                        color: Color(0xFFD32F2F),
+                        width: 1.5,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                    onPressed: () {
+                      _showDeleteUserDialog(
+                        context,
+                        widget.uid,
+                        fullName.isEmpty ? email : fullName,
+                        email,
+                      );
+                    },
+                    icon: const Icon(Icons.delete_forever),
+                    label: const Text('Delete User'),
                   ),
                   const SizedBox(width: 12),
                   Container(
@@ -1336,6 +1798,161 @@ void showFileViolationDialog(
           ),
         ),
       ],
+    ),
+  );
+}
+
+void _showDeleteUserDialog(
+  BuildContext context,
+  String userId,
+  String userName,
+  String userEmail,
+) {
+  final reasonController = TextEditingController();
+  bool isLoading = false;
+
+  showDialog(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red[700]),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Delete User Account')),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Warning: This action cannot be undone!',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red[900],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Deleting this user will permanently remove:\n'
+                      '• User account and profile\n'
+                      '• All listings (items, rentals, trades, giveaways)\n'
+                      '• All requests and transactions\n'
+                      '• Messages and conversations\n'
+                      '• Notifications and reminders\n'
+                      '• Profile photos and ID images\n'
+                      '• All other associated data',
+                      style: TextStyle(color: Colors.red[800], fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'User: $userName',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                'Email: $userEmail',
+                style: TextStyle(color: Colors.grey[700], fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Note: User cannot be deleted if they have active transactions (borrow requests, rental requests, or trade offers).',
+                style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Deletion Reason (Optional)',
+                  hintText: 'Enter reason for deletion...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: isLoading
+                ? null
+                : () {
+                    reasonController.dispose();
+                    Navigator.of(context).pop();
+                  },
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFD32F2F),
+            ),
+            onPressed: isLoading
+                ? null
+                : () async {
+                    setDialogState(() => isLoading = true);
+                    try {
+                      final admin = Provider.of<AdminProvider>(
+                        context,
+                        listen: false,
+                      );
+                      final reason = reasonController.text.trim().isEmpty
+                          ? null
+                          : reasonController.text.trim();
+                      await admin.deleteUser(userId, reason: reason);
+                      reasonController.dispose();
+                      if (context.mounted) {
+                        Navigator.of(context).pop(); // Close delete dialog
+                        Navigator.of(context).pop(); // Close user detail dialog
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('User deleted successfully'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      setDialogState(() => isLoading = false);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Error deleting user: ${e.toString()}',
+                            ),
+                            backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 5),
+                          ),
+                        );
+                      }
+                    }
+                  },
+            child: isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text('Delete User'),
+          ),
+        ],
+      ),
     ),
   );
 }

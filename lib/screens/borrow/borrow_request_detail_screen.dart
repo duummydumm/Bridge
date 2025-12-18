@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../services/local_notifications_service.dart';
+import '../../models/borrow_request_model.dart';
 import '../chat_detail_screen.dart';
 
 class BorrowRequestDetailScreen extends StatefulWidget {
@@ -20,7 +20,9 @@ class BorrowRequestDetailScreen extends StatefulWidget {
 
 class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
-  Map<String, dynamic>? _requestData;
+  BorrowRequestModel? _requestData;
+  Map<String, dynamic>?
+  _itemEnrichment; // For item details (title, category, image)
   bool _isLoading = true;
   bool _isProcessing = false;
   DateTime? _selectedReturnDate;
@@ -47,32 +49,34 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
       }
 
       // Enrich with item details (title, category, image)
-      final enrichedData = Map<String, dynamic>.from(data);
-      final itemId = data['itemId'] as String?;
-      if (itemId != null) {
+      final itemId = data.itemId;
+      Map<String, dynamic>? itemEnrichment;
+      if (itemId.isNotEmpty) {
         try {
           final item = await _firestoreService.getItem(itemId);
           if (item != null) {
-            enrichedData['itemTitle'] ??= item['title'] as String?;
-            enrichedData['itemCategory'] ??= item['category'] as String?;
-            final itemImages = item['images'] as List<dynamic>?;
-            if (itemImages != null && itemImages.isNotEmpty) {
-              final first = itemImages.first;
-              if (first is String && first.isNotEmpty) {
-                enrichedData['itemImageUrl'] = first;
-              }
-            }
+            itemEnrichment = {
+              'itemTitle': item['title'] as String? ?? data.itemTitle,
+              'itemCategory': item['category'] as String? ?? 'General',
+              'itemImageUrl': (item['images'] as List<dynamic>?)
+                  ?.whereType<String>()
+                  .where((img) => img.isNotEmpty)
+                  .firstOrNull,
+            };
           }
         } catch (_) {
           // Best-effort enrichment; ignore errors
         }
       }
-      enrichedData['itemTitle'] ??= 'Item';
-      enrichedData['itemCategory'] ??= 'General';
+      itemEnrichment ??= {
+        'itemTitle': data.itemTitle.isNotEmpty ? data.itemTitle : 'Item',
+        'itemCategory': 'General',
+      };
 
       if (mounted) {
         setState(() {
-          _requestData = enrichedData;
+          _requestData = data;
+          _itemEnrichment = itemEnrichment;
           _isLoading = false;
         });
       }
@@ -117,7 +121,7 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
         title: const Text('Accept Borrow Request?'),
         content: Text(
           'Are you sure you want to accept the borrow request from '
-          '${_requestData!['borrowerName']}? Return date: ${pickedDate.toString().split(' ')[0]}',
+          '${_requestData!.borrowerName}? Return date: ${pickedDate.toString().split(' ')[0]}',
         ),
         actions: [
           TextButton(
@@ -149,10 +153,11 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
 
     try {
       final requestId = widget.requestId;
-      final itemId = _requestData!['itemId'] as String;
-      final borrowerId = _requestData!['borrowerId'] as String;
-      final itemTitle = _requestData!['itemTitle'] as String? ?? 'Item';
-      final lenderName = _requestData!['lenderName'] as String?;
+      final itemId = _requestData!.itemId;
+      final borrowerId = _requestData!.borrowerId;
+      final itemTitle =
+          _itemEnrichment?['itemTitle'] as String? ?? _requestData!.itemTitle;
+      final lenderName = _requestData!.lenderName;
 
       await _firestoreService.acceptBorrowRequest(
         requestId: requestId,
@@ -170,19 +175,20 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
         lenderName: lenderName,
       );
 
-      // Schedule local notifications for return reminders (for lender)
+      // Schedule local notifications for return reminders (for borrower)
       try {
-        final borrowerName =
-            _requestData!['borrowerName'] as String? ?? 'Borrower';
+        final borrowerName = _requestData!.borrowerName;
         await LocalNotificationsService().scheduleReturnReminders(
           itemId: itemId,
           itemTitle: itemTitle,
           returnDateLocal: pickedDate,
           borrowerName: borrowerName,
+          borrowerId:
+              borrowerId, // Pass borrower ID so reminders go to borrower
         );
       } catch (e) {
         // Best-effort: don't fail acceptance if notification scheduling fails
-        print('Failed to schedule return reminders: $e');
+        debugPrint('Failed to schedule return reminders: $e');
       }
 
       if (mounted) {
@@ -228,7 +234,7 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
         title: const Text('Decline Borrow Request?'),
         content: Text(
           'Are you sure you want to decline the borrow request from '
-          '${_requestData!['borrowerName']}?',
+          '${_requestData!.borrowerName}?',
         ),
         actions: [
           TextButton(
@@ -255,9 +261,10 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
 
     try {
       final requestId = widget.requestId;
-      final borrowerId = _requestData!['borrowerId'] as String;
-      final itemTitle = _requestData!['itemTitle'] as String? ?? 'Item';
-      final lenderName = _requestData!['lenderName'] as String?;
+      final borrowerId = _requestData!.borrowerId;
+      final itemTitle =
+          _itemEnrichment?['itemTitle'] as String? ?? _requestData!.itemTitle;
+      final lenderName = _requestData!.lenderName;
 
       await _firestoreService.declineBorrowRequest(requestId: requestId);
 
@@ -294,6 +301,245 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
     }
   }
 
+  Widget _buildOverdueActionsCard(BorrowRequestModel request) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.user?.uid;
+    final lenderId = request.lenderId;
+
+    // Only show for lenders
+    if (currentUserId != lenderId) {
+      return const SizedBox.shrink();
+    }
+
+    // Check if item is overdue
+    final agreedReturnDate = request.agreedReturnDate;
+    if (agreedReturnDate == null) {
+      return const SizedBox.shrink();
+    }
+
+    final isOverdue = agreedReturnDate.isBefore(DateTime.now());
+
+    // Check if already reported
+    final missingItemReported = request.missingItemReported ?? false;
+
+    if (!isOverdue) {
+      return const SizedBox.shrink();
+    }
+
+    final daysOverdue = DateTime.now().difference(agreedReturnDate).inDays;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red[200]!, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.red.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.warning, color: Colors.red[700], size: 24),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Item is $daysOverdue ${daysOverdue == 1 ? 'day' : 'days'} overdue',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red[700],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (!missingItemReported) ...[
+            ElevatedButton.icon(
+              onPressed: _reportMissingItem,
+              icon: const Icon(Icons.report_problem, size: 20),
+              label: const Text(
+                'Report Not Returned',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 2,
+              ),
+            ),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Not returned report has been submitted. Admins have been notified.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange[900],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _reportMissingItem() async {
+    if (_requestData == null) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.user?.uid;
+
+    if (currentUserId == null) return;
+
+    final lenderId = _requestData!.lenderId;
+    if (lenderId != currentUserId) {
+      // Only lender can report missing items
+      return;
+    }
+
+    final itemTitle =
+        _itemEnrichment?['itemTitle'] as String? ?? _requestData!.itemTitle;
+    final agreedReturnDate = _requestData!.agreedReturnDate;
+    final daysOverdue = agreedReturnDate != null
+        ? DateTime.now().difference(agreedReturnDate).inDays
+        : 0;
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red, size: 28),
+            SizedBox(width: 8),
+            Text('Report Not Returned'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to report "$itemTitle" as missing?',
+              style: const TextStyle(fontSize: 16),
+            ),
+            if (daysOverdue > 0) ...[
+              const SizedBox(height: 12),
+              Text(
+                'This item is $daysOverdue ${daysOverdue == 1 ? 'day' : 'days'} overdue.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.red[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            const Text(
+              'This will:\n'
+              '• Notify admins immediately\n'
+              '• Notify the borrower\n'
+              '• Create a high-priority report',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Report Not Returned'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Show loading
+    if (mounted) {
+      setState(() {
+        _isProcessing = true;
+      });
+    }
+
+    try {
+      await _firestoreService.reportMissingBorrowItem(
+        requestId: widget.requestId,
+        lenderId: currentUserId,
+        description:
+            'Item "$itemTitle" has not been returned. '
+            'Days overdue: $daysOverdue',
+      );
+
+      if (mounted) {
+        // Reload request to update missingItemReported status
+        await _loadRequest();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Not returned report submitted successfully. Admins have been notified.',
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error reporting item not returned: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
   Future<void> _messageBorrower() async {
     if (_requestData == null) return;
 
@@ -314,10 +560,11 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
     final currentUser = userProvider.currentUser;
     if (currentUser == null) return;
 
-    final borrowerId = _requestData!['borrowerId'] as String;
-    final borrowerName = _requestData!['borrowerName'] as String? ?? 'User';
-    final itemId = _requestData!['itemId'] as String;
-    final itemTitle = _requestData!['itemTitle'] as String? ?? 'Item';
+    final borrowerId = _requestData!.borrowerId;
+    final borrowerName = _requestData!.borrowerName;
+    final itemId = _requestData!.itemId;
+    final itemTitle =
+        _itemEnrichment?['itemTitle'] as String? ?? _requestData!.itemTitle;
 
     // Show loading
     if (!mounted) return;
@@ -385,16 +632,17 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
   }
 
   Widget _buildRequestDetails() {
-    final status = _requestData!['status'] as String? ?? 'pending';
-    final borrowerName =
-        _requestData!['borrowerName'] as String? ?? 'Unknown borrower';
-    final itemTitle = _requestData!['itemTitle'] as String? ?? 'Item';
-    final itemCategory = _requestData!['itemCategory'] as String? ?? 'General';
-    final itemImageUrl = _requestData!['itemImageUrl'] as String?;
-    final message = _requestData!['message'] as String? ?? '';
-    final createdAt = _requestData!['createdAt'] as Timestamp?;
+    final request = _requestData!;
+    final borrowerName = request.borrowerName;
+    final itemTitle =
+        _itemEnrichment?['itemTitle'] as String? ?? request.itemTitle;
+    final itemCategory =
+        _itemEnrichment?['itemCategory'] as String? ?? 'General';
+    final itemImageUrl = _itemEnrichment?['itemImageUrl'] as String?;
+    final message = request.message ?? '';
+    final createdAt = request.createdAt;
 
-    final isPending = status == 'pending';
+    final isPending = request.isPending;
 
     return Container(
       color: const Color(0xFFF5F5F5),
@@ -422,15 +670,15 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: status == 'pending'
+                            color: isPending
                                 ? Colors.orange
-                                : status == 'accepted'
+                                : request.isAccepted
                                 ? Colors.green
                                 : Colors.red,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            status.toUpperCase(),
+                            request.statusDisplay.toUpperCase(),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -439,24 +687,23 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
                           ),
                         ),
                         const Spacer(),
-                        if (createdAt != null)
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.access_time,
-                                size: 16,
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.access_time,
+                              size: 16,
+                              color: Colors.grey,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              createdAt.toString().split(' ').first,
+                              style: const TextStyle(
+                                fontSize: 12,
                                 color: Colors.grey,
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                createdAt.toDate().toString().split(' ').first,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -477,7 +724,7 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
                                   height: 64,
                                   color: const Color(
                                     0xFF00897B,
-                                  ).withOpacity(0.08),
+                                  ).withValues(alpha: 0.08),
                                   child: const Icon(
                                     Icons.inventory_2_outlined,
                                     color: Color(0xFF00897B),
@@ -506,7 +753,7 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
                                 decoration: BoxDecoration(
                                   color: const Color(
                                     0xFF00897B,
-                                  ).withOpacity(0.06),
+                                  ).withValues(alpha: 0.06),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Row(
@@ -602,7 +849,7 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
             ],
 
             // Dates card (requested + selected return date)
-            if (createdAt != null || _selectedReturnDate != null) ...[
+            if (_selectedReturnDate != null) ...[
               Card(
                 elevation: 1,
                 shape: RoundedRectangleBorder(
@@ -631,28 +878,27 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      if (createdAt != null)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Requested on',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
-                              ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Requested on',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
                             ),
-                            Text(
-                              createdAt.toDate().toString().split(' ').first,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          ),
+                          Text(
+                            createdAt.toString().split(' ').first,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                             ),
-                          ],
-                        ),
-                      if (createdAt != null && _selectedReturnDate != null)
+                          ),
+                        ],
+                      ),
+                      if (_selectedReturnDate != null)
                         const SizedBox(height: 8),
                       if (_selectedReturnDate != null)
                         Row(
@@ -751,25 +997,23 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: status == 'accepted'
-                      ? Colors.green[50]
-                      : Colors.red[50],
+                  color: request.isAccepted ? Colors.green[50] : Colors.red[50],
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
                     Icon(
-                      status == 'accepted' ? Icons.check_circle : Icons.cancel,
-                      color: status == 'accepted' ? Colors.green : Colors.red,
+                      request.isAccepted ? Icons.check_circle : Icons.cancel,
+                      color: request.isAccepted ? Colors.green : Colors.red,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        status == 'accepted'
+                        request.isAccepted
                             ? 'This request has been accepted.'
                             : 'This request has been declined.',
                         style: TextStyle(
-                          color: status == 'accepted'
+                          color: request.isAccepted
                               ? Colors.green[900]
                               : Colors.red[900],
                           fontWeight: FontWeight.w600,
@@ -779,6 +1023,11 @@ class _BorrowRequestDetailScreenState extends State<BorrowRequestDetailScreen> {
                   ],
                 ),
               ),
+              // Show "Report Not Returned" button for lenders when item is overdue
+              if (request.isAccepted) ...[
+                const SizedBox(height: 16),
+                _buildOverdueActionsCard(request),
+              ],
             ],
           ],
         ),

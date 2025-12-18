@@ -16,8 +16,9 @@ class _FeedbackTabState extends State<FeedbackTab> {
   Stream<QuerySnapshot> _getFeedbackStream() {
     // If both filters are active, we need to fetch all and filter in memory
     // to avoid requiring a composite index
-    final bothFiltersActive = _statusFilter != 'all' && _categoryFilter != 'all';
-    
+    final bothFiltersActive =
+        _statusFilter != 'all' && _categoryFilter != 'all';
+
     if (bothFiltersActive) {
       // Fetch all feedback ordered by createdAt, filtering will be done in memory
       return FirebaseFirestore.instance
@@ -25,7 +26,7 @@ class _FeedbackTabState extends State<FeedbackTab> {
           .orderBy('createdAt', descending: true)
           .snapshots();
     }
-    
+
     // If only one filter is active, use it with orderBy (works with simple index)
     Query query = FirebaseFirestore.instance
         .collection('feedback')
@@ -55,7 +56,7 @@ class _FeedbackTabState extends State<FeedbackTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Feedback marked as ${newStatus}'),
+            content: Text('Feedback marked as $newStatus'),
             backgroundColor: Colors.green,
           ),
         );
@@ -290,9 +291,9 @@ class _FeedbackTabState extends State<FeedbackTab> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(
         label.toUpperCase(),
@@ -373,7 +374,7 @@ class _FeedbackTabState extends State<FeedbackTab> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
@@ -400,7 +401,7 @@ class _FeedbackTabState extends State<FeedbackTab> {
                     // Status Filter
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _statusFilter,
+                        initialValue: _statusFilter,
                         decoration: InputDecoration(
                           labelText: 'Status',
                           border: OutlineInputBorder(
@@ -437,7 +438,7 @@ class _FeedbackTabState extends State<FeedbackTab> {
                     // Category Filter
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _categoryFilter,
+                        initialValue: _categoryFilter,
                         decoration: InputDecoration(
                           labelText: 'Category',
                           border: OutlineInputBorder(
@@ -506,7 +507,11 @@ class _FeedbackTabState extends State<FeedbackTab> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                          const Icon(
+                            Icons.error_outline,
+                            size: 48,
+                            color: Colors.red,
+                          ),
                           const SizedBox(height: 16),
                           Text(
                             'Error loading feedback',
@@ -550,7 +555,10 @@ class _FeedbackTabState extends State<FeedbackTab> {
                           else
                             Text(
                               error,
-                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
                               textAlign: TextAlign.center,
                             ),
                           const SizedBox(height: 16),
@@ -594,14 +602,17 @@ class _FeedbackTabState extends State<FeedbackTab> {
 
                 // Filter in memory if both filters are active
                 var docs = snapshot.data!.docs;
-                final bothFiltersActive = _statusFilter != 'all' && _categoryFilter != 'all';
-                
+                final bothFiltersActive =
+                    _statusFilter != 'all' && _categoryFilter != 'all';
+
                 if (bothFiltersActive) {
                   docs = docs.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
-                    final statusMatch = _statusFilter == 'all' || 
+                    final statusMatch =
+                        _statusFilter == 'all' ||
                         (data['status'] ?? 'pending') == _statusFilter;
-                    final categoryMatch = _categoryFilter == 'all' || 
+                    final categoryMatch =
+                        _categoryFilter == 'all' ||
                         (data['category'] ?? 'general') == _categoryFilter;
                     return statusMatch && categoryMatch;
                   }).toList();
@@ -628,7 +639,10 @@ class _FeedbackTabState extends State<FeedbackTab> {
                         const SizedBox(height: 8),
                         Text(
                           'Try adjusting your filters',
-                          style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[500],
+                          ),
                           textAlign: TextAlign.center,
                         ),
                       ],

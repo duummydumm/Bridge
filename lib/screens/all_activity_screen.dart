@@ -52,14 +52,14 @@ class _AllActivityScreenState extends State<AllActivityScreen> {
         allActivities.add({
           'type': 'borrow',
           'subtype': 'pending',
-          'title': (req['itemTitle'] ?? 'Item').toString(),
+          'title': req.itemTitle.isNotEmpty ? req.itemTitle : 'Item',
           'subtitle': 'Borrow request pending',
           'icon': Icons.shopping_cart_outlined,
           'iconColor': Colors.orange,
           'status': 'pending',
-          'createdAt': req['createdAt'],
-          'itemId': req['itemId'],
-          'requestId': req['id'],
+          'createdAt': req.createdAt,
+          'itemId': req.itemId,
+          'requestId': req.id,
         });
       }
 
@@ -289,13 +289,13 @@ class _AllActivityScreenState extends State<AllActivityScreen> {
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: iconColor.withOpacity(0.1),
+                color: iconColor.withValues(alpha: 0.1),
                 blurRadius: 10,
                 offset: const Offset(0, 3),
                 spreadRadius: 0,
               ),
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -310,13 +310,13 @@ class _AllActivityScreenState extends State<AllActivityScreen> {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      iconColor.withOpacity(0.2),
-                      iconColor.withOpacity(0.1),
+                      iconColor.withValues(alpha: 0.2),
+                      iconColor.withValues(alpha: 0.1),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: iconColor.withOpacity(0.3),
+                    color: iconColor.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -357,12 +357,12 @@ class _AllActivityScreenState extends State<AllActivityScreen> {
                 ),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [iconColor, iconColor.withOpacity(0.8)],
+                    colors: [iconColor, iconColor.withValues(alpha: 0.8)],
                   ),
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: iconColor.withOpacity(0.3),
+                      color: iconColor.withValues(alpha: 0.3),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),

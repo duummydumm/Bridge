@@ -189,7 +189,7 @@ class _PendingClaimsScreenState extends State<PendingClaimsScreen> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -309,7 +309,7 @@ class _PendingClaimsScreenState extends State<PendingClaimsScreen> {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
+                            color: Colors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
@@ -349,7 +349,7 @@ class _PendingClaimsScreenState extends State<PendingClaimsScreen> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
+                            color: Colors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: const Text(
@@ -370,10 +370,10 @@ class _PendingClaimsScreenState extends State<PendingClaimsScreen> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.05),
+                          color: Colors.blue.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: Colors.blue.withOpacity(0.2),
+                            color: Colors.blue.withValues(alpha: 0.2),
                           ),
                         ),
                         child: Row(

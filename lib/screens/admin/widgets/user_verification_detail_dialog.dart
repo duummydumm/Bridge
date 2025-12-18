@@ -22,29 +22,45 @@ class UserVerificationDetailDialog extends StatefulWidget {
 
 class _UserVerificationDetailDialogState
     extends State<UserVerificationDetailDialog> {
-  final TransformationController _transformationController =
+  final TransformationController _frontImageController =
+      TransformationController();
+  final TransformationController _backImageController =
       TransformationController();
   bool _isLoading = false;
   bool _nameVerified = false;
   bool _addressVerified = false;
   bool _idTypeVerified = false;
+  int _selectedImageTab = 0; // 0 for front, 1 for back
 
   @override
   void dispose() {
-    _transformationController.dispose();
+    _frontImageController.dispose();
+    _backImageController.dispose();
     super.dispose();
   }
 
-  void _resetZoom() {
-    _transformationController.value = Matrix4.identity();
+  void _resetZoom({required bool isFront}) {
+    if (isFront) {
+      _frontImageController.value = Matrix4.identity();
+    } else {
+      _backImageController.value = Matrix4.identity();
+    }
   }
 
-  void _zoomIn() {
-    _transformationController.value = Matrix4.identity()..scale(1.5);
+  void _zoomIn({required bool isFront}) {
+    if (isFront) {
+      _frontImageController.value = Matrix4.identity()..scale(1.5);
+    } else {
+      _backImageController.value = Matrix4.identity()..scale(1.5);
+    }
   }
 
-  void _zoomOut() {
-    _transformationController.value = Matrix4.identity()..scale(0.75);
+  void _zoomOut({required bool isFront}) {
+    if (isFront) {
+      _frontImageController.value = Matrix4.identity()..scale(0.75);
+    } else {
+      _backImageController.value = Matrix4.identity()..scale(0.75);
+    }
   }
 
   @override
@@ -61,7 +77,8 @@ class _UserVerificationDetailDialogState
     final province = widget.userData['province'] ?? '';
     final address = '$barangay, $city, $province'.trim();
     final idType = widget.userData['barangayIdType'] ?? '';
-    final idUrl = widget.userData['barangayIdUrl'] as String?;
+    final idUrlFront = widget.userData['barangayIdUrl'] as String?;
+    final idUrlBack = widget.userData['barangayIdUrlBack'] as String?;
     final profilePhotoUrl = widget.userData['profilePhotoUrl'] as String?;
 
     final createdAtTs = widget.userData['createdAt'];
@@ -133,7 +150,8 @@ class _UserVerificationDetailDialogState
                         idType: idType,
                         joinedDate: joinedDate,
                         profilePhotoUrl: profilePhotoUrl,
-                        idUrl: idUrl,
+                        idUrlFront: idUrlFront,
+                        idUrlBack: idUrlBack,
                       )
                     : _buildMobileLayout(
                         fullName: fullName,
@@ -142,7 +160,8 @@ class _UserVerificationDetailDialogState
                         idType: idType,
                         joinedDate: joinedDate,
                         profilePhotoUrl: profilePhotoUrl,
-                        idUrl: idUrl,
+                        idUrlFront: idUrlFront,
+                        idUrlBack: idUrlBack,
                       ),
               ),
             ),
@@ -159,7 +178,8 @@ class _UserVerificationDetailDialogState
     required String idType,
     required String joinedDate,
     required String? profilePhotoUrl,
-    required String? idUrl,
+    required String? idUrlFront,
+    required String? idUrlBack,
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -189,8 +209,14 @@ class _UserVerificationDetailDialogState
           ),
         ),
         const SizedBox(width: 24),
-        // Right Side: ID Image
-        Expanded(flex: 1, child: _buildIdImageSection(idUrl: idUrl)),
+        // Right Side: ID Images
+        Expanded(
+          flex: 1,
+          child: _buildIdImageSection(
+            idUrlFront: idUrlFront,
+            idUrlBack: idUrlBack,
+          ),
+        ),
       ],
     );
   }
@@ -202,7 +228,8 @@ class _UserVerificationDetailDialogState
     required String idType,
     required String joinedDate,
     required String? profilePhotoUrl,
-    required String? idUrl,
+    required String? idUrlFront,
+    required String? idUrlBack,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,7 +250,7 @@ class _UserVerificationDetailDialogState
           joinedDate: joinedDate,
         ),
         const SizedBox(height: 24),
-        _buildIdImageSection(idUrl: idUrl),
+        _buildIdImageSection(idUrlFront: idUrlFront, idUrlBack: idUrlBack),
       ],
     );
   }
@@ -429,7 +456,14 @@ class _UserVerificationDetailDialogState
     );
   }
 
-  Widget _buildIdImageSection({required String? idUrl}) {
+  Widget _buildIdImageSection({
+    required String? idUrlFront,
+    required String? idUrlBack,
+  }) {
+    final hasFront = idUrlFront != null && idUrlFront.isNotEmpty;
+    final hasBack = idUrlBack != null && idUrlBack.isNotEmpty;
+    final hasAnyImage = hasFront || hasBack;
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -448,40 +482,15 @@ class _UserVerificationDetailDialogState
                 const SizedBox(width: 10),
                 const Expanded(
                   child: Text(
-                    'Barangay ID Image',
+                    'Barangay ID Images',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ),
-                // Zoom Controls
-                if (idUrl != null && idUrl.isNotEmpty)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.zoom_out),
-                        tooltip: 'Zoom Out',
-                        onPressed: _zoomOut,
-                        color: const Color(0xFF00897B),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.zoom_in),
-                        tooltip: 'Zoom In',
-                        onPressed: _zoomIn,
-                        color: const Color(0xFF00897B),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.fit_screen),
-                        tooltip: 'Reset Zoom',
-                        onPressed: _resetZoom,
-                        color: const Color(0xFF00897B),
-                      ),
-                    ],
-                  ),
               ],
             ),
             const SizedBox(height: 12),
             Text(
-              'Compare the ID image with the user information',
+              'Compare the ID images with the user information',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],
@@ -489,6 +498,82 @@ class _UserVerificationDetailDialogState
               ),
             ),
             const SizedBox(height: 16),
+            // Tab selector if both images exist
+            if (hasFront && hasBack)
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => setState(() => _selectedImageTab = 0),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(8),
+                          bottomLeft: Radius.circular(8),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _selectedImageTab == 0
+                                ? const Color(0xFF00897B)
+                                : Colors.transparent,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(8),
+                              bottomLeft: Radius.circular(8),
+                            ),
+                          ),
+                          child: Text(
+                            'Front',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: _selectedImageTab == 0
+                                  ? Colors.white
+                                  : Colors.grey[700],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => setState(() => _selectedImageTab = 1),
+                        borderRadius: const BorderRadius.only(
+                          topRight: Radius.circular(8),
+                          bottomRight: Radius.circular(8),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _selectedImageTab == 1
+                                ? const Color(0xFF00897B)
+                                : Colors.transparent,
+                            borderRadius: const BorderRadius.only(
+                              topRight: Radius.circular(8),
+                              bottomRight: Radius.circular(8),
+                            ),
+                          ),
+                          child: Text(
+                            'Back',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: _selectedImageTab == 1
+                                  ? Colors.white
+                                  : Colors.grey[700],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (hasFront && hasBack) const SizedBox(height: 16),
+            // Image display area
             Container(
               height: 500,
               decoration: BoxDecoration(
@@ -497,34 +582,10 @@ class _UserVerificationDetailDialogState
                 border: Border.all(color: Colors.grey[300]!),
               ),
               clipBehavior: Clip.antiAlias,
-              child: idUrl != null && idUrl.isNotEmpty
-                  ? InteractiveViewer(
-                      transformationController: _transformationController,
-                      minScale: 0.5,
-                      maxScale: 4.0,
-                      child: CachedNetworkImage(
-                        imageUrl: idUrl,
-                        fit: BoxFit.contain,
-                        placeholder: (context, url) =>
-                            const Center(child: CircularProgressIndicator()),
-                        errorWidget: (context, url, error) => Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.error_outline,
-                                color: Colors.red,
-                                size: 48,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Failed to load ID image',
-                                style: TextStyle(color: Colors.grey[600]),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+              child: hasAnyImage
+                  ? _buildImageDisplay(
+                      imageUrl: _selectedImageTab == 0 ? idUrlFront : idUrlBack,
+                      isFront: _selectedImageTab == 0,
                     )
                   : Center(
                       child: Column(
@@ -550,6 +611,102 @@ class _UserVerificationDetailDialogState
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildImageDisplay({
+    required String? imageUrl,
+    required bool isFront,
+  }) {
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.image_not_supported, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 12),
+            Text(
+              'No ${isFront ? "front" : "back"} image uploaded',
+              style: TextStyle(color: Colors.grey[600], fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        InteractiveViewer(
+          transformationController: isFront
+              ? _frontImageController
+              : _backImageController,
+          minScale: 0.5,
+          maxScale: 4.0,
+          child: CachedNetworkImage(
+            imageUrl: imageUrl,
+            fit: BoxFit.contain,
+            placeholder: (context, url) =>
+                const Center(child: CircularProgressIndicator()),
+            errorWidget: (context, url, error) => Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Failed to load ID image',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // Zoom controls overlay
+        Positioned(
+          top: 8,
+          right: 8,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.zoom_out),
+                  tooltip: 'Zoom Out',
+                  onPressed: () => _zoomOut(isFront: isFront),
+                  color: const Color(0xFF00897B),
+                  iconSize: 20,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.zoom_in),
+                  tooltip: 'Zoom In',
+                  onPressed: () => _zoomIn(isFront: isFront),
+                  color: const Color(0xFF00897B),
+                  iconSize: 20,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.fit_screen),
+                  tooltip: 'Reset Zoom',
+                  onPressed: () => _resetZoom(isFront: isFront),
+                  color: const Color(0xFF00897B),
+                  iconSize: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

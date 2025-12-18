@@ -64,31 +64,31 @@ By using Bridge App, you agree to the collection and use of information in accor
               content: '''
 We collect several types of information to provide and improve our services:
 
-**2.1 Personal Information**
+2.1 Personal Information
 • Name, email address, and contact information
 • Profile photo and biographical information
 • Address and location data (street, barangay, city, province)
 • Government-issued identification documents (for verification purposes)
 • Phone number (if provided)
 
-**2.2 Account Information**
+2.2 Account Information
 • User credentials and authentication data
 • Account preferences and settings
 • Verification status and related documentation
 
-**2.3 Transaction Information**
+2.3 Transaction Information
 • Items you list, borrow, rent, trade, or donate
 • Transaction history and records
 • Payment information (processed through secure third-party services)
 • Communication records with other users
 
-**2.4 Usage Data**
+2.4 Usage Data
 • Device information (model, operating system, unique identifiers)
 • App usage patterns and interactions
 • Log files and analytics data
 • Location data (if location services are enabled)
 
-**2.5 Content You Provide**
+2.5 Content You Provide
 • Photos and images of items
 • Messages and communications with other users
 • Reviews and ratings
@@ -102,26 +102,26 @@ We collect several types of information to provide and improve our services:
               content: '''
 We use the collected information for various purposes:
 
-**3.1 Service Provision**
+3.1 Service Provision
 • To create and manage your account
 • To facilitate transactions between users
 • To verify user identity and prevent fraud
 • To process and complete transactions
 • To enable communication between users
 
-**3.2 Safety and Security**
+3.2 Safety and Security
 • To monitor and prevent fraudulent or illegal activities
 • To enforce our Terms of Service
 • To protect the rights and safety of our users
 • To investigate and resolve disputes
 
-**3.3 Communication**
+3.3 Communication
 • To send you important updates about your account and transactions
 • To respond to your inquiries and provide customer support
 • To send notifications about relevant activities
 • To inform you about changes to our services
 
-**3.4 Improvement and Analytics**
+3.4 Improvement and Analytics
 • To analyze usage patterns and improve our services
 • To develop new features and functionality
 • To conduct research and analytics
@@ -135,20 +135,20 @@ We use the collected information for various purposes:
               content: '''
 We do not sell your personal information. We may share your information in the following circumstances:
 
-**4.1 With Other Users**
+4.1 With Other Users
 • Your profile information (name, photo, ratings) is visible to other users
 • Transaction-related information is shared with parties involved in the transaction
 • Your public listings and posts are visible to all users
 
-**4.2 Service Providers**
+4.2 Service Providers
 • We may share information with third-party service providers who perform services on our behalf (payment processing, cloud storage, analytics)
 • These providers are contractually obligated to protect your information
 
-**4.3 Legal Requirements**
+4.3 Legal Requirements
 • We may disclose information if required by law, court order, or government regulation
 • We may share information to protect our rights, property, or safety, or that of our users
 
-**4.4 Business Transfers**
+4.4 Business Transfers
 • In the event of a merger, acquisition, or sale of assets, your information may be transferred to the new entity
 ''',
             ),
@@ -175,23 +175,23 @@ However, no method of transmission over the internet or electronic storage is 10
               content: '''
 You have certain rights regarding your personal information:
 
-**6.1 Access and Correction**
+6.1 Access and Correction
 • You can access and update your profile information through the app settings
 • You can request corrections to inaccurate information
 
-**6.2 Account Deletion**
+6.2 Account Deletion
 • You can request deletion of your account and personal information
 • Some information may be retained as required by law or for legitimate business purposes
 
-**6.3 Communication Preferences**
+6.3 Communication Preferences
 • You can manage notification settings in the app
 • You can opt out of certain non-essential communications
 
-**6.4 Location Data**
+6.4 Location Data
 • You can control location sharing through your device settings
 • Location data is used only for service functionality (e.g., showing nearby items)
 
-**6.5 Data Portability**
+6.5 Data Portability
 • You can request a copy of your personal data in a structured format
 ''',
             ),
@@ -245,8 +245,8 @@ Your continued use of the app after changes become effective constitutes accepta
               content: '''
 If you have questions, concerns, or requests regarding this Privacy Policy or our data practices, please contact us:
 
-**Email:** privacy@bridgeapp.com
-**Support:** support@bridgeapp.com
+Email: privacy@bridgeapp.com
+Support: support@bridgeapp.com
 
 We will respond to your inquiry within a reasonable timeframe.
 ''',

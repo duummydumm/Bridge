@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/chat_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/conversation_model.dart';
+import '../services/firestore_service.dart';
 import 'chat_detail_screen.dart';
 import '../reusable_widgets/bottom_nav_bar_widget.dart';
 import '../reusable_widgets/offline_banner_widget.dart';
@@ -18,6 +20,9 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen> {
   final TextEditingController _searchController = TextEditingController();
   final int _selectedIndex = 2; // Chat is at index 2 in bottom nav
+  final FirestoreService _firestoreService = FirestoreService();
+  final Map<String, String?> _profilePhotoCache =
+      {}; // Cache for profile photos
 
   @override
   void initState() {
@@ -204,6 +209,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final isYou = conversation.lastMessageSenderId == userId;
     final isMuted = conversation.isMutedByUser(userId);
 
+    // Get other participant ID for individual chats
+    final otherParticipantId = !isGroup
+        ? conversation.getOtherParticipant(userId)
+        : null;
+
     return InkWell(
       onTap: () {
         // Navigate to chat detail screen
@@ -231,25 +241,39 @@ class _ChatListScreenState extends State<ChatListScreen> {
             // Avatar
             Stack(
               children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: const Color(0xFF00897B).withOpacity(0.1),
-                  child: isGroup
-                      ? const Icon(
-                          Icons.group,
-                          color: Color(0xFF00897B),
-                          size: 28,
-                        )
-                      : Text(
-                          displayName.isNotEmpty
-                              ? displayName[0].toUpperCase()
-                              : 'U',
-                          style: const TextStyle(
+                ClipOval(
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    color: const Color(0xFF00897B).withValues(alpha: 0.1),
+                    child:
+                        isGroup &&
+                            conversation.groupImageUrl != null &&
+                            conversation.groupImageUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl:
+                                '${conversation.groupImageUrl!}?v=${conversation.updatedAt?.millisecondsSinceEpoch ?? conversation.lastMessageTime.millisecondsSinceEpoch}',
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            errorWidget: (context, url, error) => const Icon(
+                              Icons.group,
+                              color: Color(0xFF00897B),
+                              size: 28,
+                            ),
+                          )
+                        : isGroup
+                        ? const Icon(
+                            Icons.group,
                             color: Color(0xFF00897B),
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                            size: 28,
+                          )
+                        : _buildIndividualChatAvatar(
+                            otherParticipantId,
+                            displayName,
                           ),
-                        ),
+                  ),
                 ),
                 if (hasUnread)
                   Positioned(
@@ -413,6 +437,132 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildIndividualChatAvatar(
+    String? otherParticipantId,
+    String displayName,
+  ) {
+    if (otherParticipantId == null || otherParticipantId.isEmpty) {
+      return Center(
+        child: Text(
+          displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+          style: const TextStyle(
+            color: Color(0xFF00897B),
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+    }
+
+    // Check cache first
+    if (_profilePhotoCache.containsKey(otherParticipantId)) {
+      final cachedUrl = _profilePhotoCache[otherParticipantId];
+      if (cachedUrl != null && cachedUrl.isNotEmpty) {
+        return CachedNetworkImage(
+          imageUrl: cachedUrl,
+          fit: BoxFit.cover,
+          placeholder: (context, url) => Center(
+            child: Text(
+              displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+              style: const TextStyle(
+                color: Color(0xFF00897B),
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          errorWidget: (context, url, error) => Center(
+            child: Text(
+              displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+              style: const TextStyle(
+                color: Color(0xFF00897B),
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+      } else {
+        // Cached as null (no photo)
+        return Center(
+          child: Text(
+            displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+            style: const TextStyle(
+              color: Color(0xFF00897B),
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      }
+    }
+
+    // Use FutureBuilder to fetch profile photo
+    return FutureBuilder<Map<String, dynamic>?>(
+      key: ValueKey('profile_photo_$otherParticipantId'),
+      future: _firestoreService.getUser(otherParticipantId),
+      builder: (context, snapshot) {
+        String? profilePhotoUrl;
+
+        if (snapshot.hasData && snapshot.data != null) {
+          profilePhotoUrl = snapshot.data!['profilePhotoUrl'] as String?;
+          // Cache the result
+          if (!_profilePhotoCache.containsKey(otherParticipantId)) {
+            _profilePhotoCache[otherParticipantId] =
+                (profilePhotoUrl != null && profilePhotoUrl.isNotEmpty)
+                ? profilePhotoUrl
+                : null;
+          }
+        } else if (snapshot.hasError) {
+          // Cache null on error to prevent repeated fetches
+          if (!_profilePhotoCache.containsKey(otherParticipantId)) {
+            _profilePhotoCache[otherParticipantId] = null;
+          }
+        }
+
+        // Show profile photo if available
+        if (profilePhotoUrl != null && profilePhotoUrl.isNotEmpty) {
+          return CachedNetworkImage(
+            imageUrl: profilePhotoUrl,
+            fit: BoxFit.cover,
+            placeholder: (context, url) => Center(
+              child: Text(
+                displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+                style: const TextStyle(
+                  color: Color(0xFF00897B),
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            errorWidget: (context, url, error) => Center(
+              child: Text(
+                displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+                style: const TextStyle(
+                  color: Color(0xFF00897B),
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          );
+        }
+
+        // Show initial while loading or if no photo
+        return Center(
+          child: Text(
+            displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+            style: const TextStyle(
+              color: Color(0xFF00897B),
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -1,8 +1,19 @@
 [
   {
-    "origin": ["http://localhost:*", "http://127.0.0.1:*"],
+    "origin": [
+      "http://localhost:*",
+      "http://127.0.0.1:*",
+      "https://bridge-72b26.web.app",
+      "https://bridge-72b26.firebaseapp.com"
+    ],
     "method": ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"],
-    "responseHeader": ["Content-Type", "Authorization", "x-goog-meta-*", "x-goog-acl", "x-goog-date"],
+    "responseHeader": [
+      "Content-Type",
+      "Authorization",
+      "x-goog-meta-*",
+      "x-goog-acl",
+      "x-goog-date"
+    ],
     "maxAgeSeconds": 3600
   }
 ]

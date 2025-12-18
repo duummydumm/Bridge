@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../../models/borrow_request_model.dart';
 
 class BorrowPendingRequestScreen extends StatefulWidget {
   const BorrowPendingRequestScreen({super.key});
@@ -17,7 +17,7 @@ class _BorrowPendingRequestScreenState
     extends State<BorrowPendingRequestScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   bool _isLoading = true;
-  List<Map<String, dynamic>> _requests = [];
+  List<BorrowRequestModel> _requests = [];
 
   @override
   void initState() {
@@ -31,6 +31,7 @@ class _BorrowPendingRequestScreenState
     });
 
     try {
+      if (!mounted) return;
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final userId = authProvider.user?.uid;
 
@@ -63,6 +64,7 @@ class _BorrowPendingRequestScreenState
   }
 
   Future<void> _cancelRequest(String requestId) async {
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -183,9 +185,8 @@ class _BorrowPendingRequestScreenState
     );
   }
 
-  Widget _buildBorrowRequestCard(Map<String, dynamic> request) {
-    final createdAt =
-        (request['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+  Widget _buildBorrowRequestCard(BorrowRequestModel request) {
+    final createdAt = request.createdAt;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -201,7 +202,7 @@ class _BorrowPendingRequestScreenState
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00897B).withOpacity(0.1),
+                    color: const Color(0xFF00897B).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -216,7 +217,9 @@ class _BorrowPendingRequestScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        request['itemTitle'] ?? 'Unknown Item',
+                        request.itemTitle.isNotEmpty
+                            ? request.itemTitle
+                            : 'Unknown Item',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -226,7 +229,7 @@ class _BorrowPendingRequestScreenState
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Owner: ${request['lenderName'] ?? 'Unknown'}',
+                        'Owner: ${request.lenderName.isNotEmpty ? request.lenderName : 'Unknown'}',
                         style: TextStyle(fontSize: 14, color: Colors.grey[700]),
                       ),
                     ],
@@ -253,8 +256,7 @@ class _BorrowPendingRequestScreenState
               ],
             ),
             const SizedBox(height: 12),
-            if (request['message'] != null &&
-                (request['message'] as String).isNotEmpty) ...[
+            if (request.message != null && request.message!.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -262,7 +264,7 @@ class _BorrowPendingRequestScreenState
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  request['message'],
+                  request.message!,
                   style: TextStyle(fontSize: 14, color: Colors.grey[800]),
                 ),
               ),
@@ -278,7 +280,7 @@ class _BorrowPendingRequestScreenState
                 ),
                 const Spacer(),
                 OutlinedButton.icon(
-                  onPressed: () => _cancelRequest(request['id']),
+                  onPressed: () => _cancelRequest(request.id),
                   icon: const Icon(Icons.cancel_outlined, size: 18),
                   label: const Text('Cancel'),
                   style: OutlinedButton.styleFrom(

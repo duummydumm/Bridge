@@ -327,66 +327,108 @@ class LocalNotificationsService {
     required String itemTitle,
     required DateTime returnDateLocal,
     required String borrowerName,
+    required String
+    borrowerId, // ID of the borrower who should receive reminders
   }) async {
-    if (kIsWeb) {
-      return; // No-op on web
+    // Ensure timezone is initialized (needed for timezone operations on mobile)
+    if (!_initialized && !kIsWeb) {
+      await initialize();
     }
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      debugPrint('No user logged in, cannot schedule reminders');
-      return;
-    }
+    // For date calculations, use regular DateTime (works on both web and mobile)
+    final DateTime due = returnDateLocal;
+    final DateTime before24h = due.subtract(const Duration(hours: 24));
+    final DateTime before1h = due.subtract(const Duration(hours: 1));
+    final DateTime now = DateTime.now();
 
-    final tz.TZDateTime due = tz.TZDateTime.from(returnDateLocal, tz.local);
-    final tz.TZDateTime before24h = due.subtract(const Duration(hours: 24));
-    final tz.TZDateTime before1h = due.subtract(const Duration(hours: 1));
-    final now = tz.TZDateTime.now(tz.local);
+    // Check if return date is tomorrow (next calendar day)
+    // If so, schedule a reminder for today
+    final todayStart = DateTime(now.year, now.month, now.day, 0, 0);
+    final tomorrowStart = todayStart.add(const Duration(days: 1));
+    final dayAfterTomorrowStart = tomorrowStart.add(const Duration(days: 1));
 
-    // Schedule local notifications (works offline)
-    // 24h before
-    if (before24h.isAfter(now)) {
-      await _scheduleLocalNotification(
-        id: _buildId(itemId, 0), // kind: 0=24h
-        title: 'Return reminder (24h): $itemTitle',
-        body: 'Please return "$itemTitle" to $borrowerName by tomorrow.',
-        scheduledDate: before24h,
-        channelId: 'due_reminders',
-        channelName: 'Due Reminders',
-        channelDescription: 'Reminders for upcoming and due returns',
-        importance: Importance.high,
-        priority: Priority.high,
-      );
-    }
+    // Check if return date falls within tomorrow (next calendar day)
+    final isTomorrow =
+        due.isAfter(tomorrowStart.subtract(const Duration(seconds: 1))) &&
+        due.isBefore(dayAfterTomorrowStart);
 
-    // 1h before
-    if (before1h.isAfter(now)) {
-      await _scheduleLocalNotification(
-        id: _buildId(itemId, 1), // kind: 1=1h
-        title: 'Return reminder (1h): $itemTitle',
-        body: 'One hour left before "$itemTitle" is due.',
-        scheduledDate: before1h,
-        channelId: 'due_reminders',
-        channelName: 'Due Reminders',
-        channelDescription: 'Reminders for upcoming and due returns',
-        importance: Importance.high,
-        priority: Priority.high,
-      );
-    }
+    debugPrint(
+      'scheduleReturnReminders: returnDate=$returnDateLocal, '
+      'due=$due, now=$now, isTomorrow=$isTomorrow',
+    );
 
-    // At due time
-    if (due.isAfter(now)) {
-      await _scheduleLocalNotification(
-        id: _buildId(itemId, 2), // kind: 2=due
-        title: 'Due now: $itemTitle',
-        body: '"$itemTitle" is now due for return.',
-        scheduledDate: due,
-        channelId: 'due_reminders',
-        channelName: 'Due Reminders',
-        channelDescription: 'Reminders for upcoming and due returns',
-        importance: Importance.high,
-        priority: Priority.high,
-      );
+    // Schedule local notifications (works offline) - skip on web
+    if (!kIsWeb) {
+      // If return date is tomorrow, always schedule a reminder for today
+      // Schedule it for 2 minutes from now to ensure backend processes it
+      if (isTomorrow) {
+        final todayReminder = now.add(const Duration(minutes: 2));
+        debugPrint(
+          'scheduleReturnReminders: Scheduling tomorrow reminder for $todayReminder',
+        );
+
+        // Convert to TZDateTime for local notification (mobile only)
+        final todayReminderTz = tz.TZDateTime.from(todayReminder, tz.local);
+        await _scheduleLocalNotification(
+          id: _buildId(itemId, 4), // kind: 4=tomorrow reminder (use unique ID)
+          title: 'Return reminder: $itemTitle',
+          body: 'Please return "$itemTitle" to $borrowerName by tomorrow.',
+          scheduledDate: todayReminderTz,
+          channelId: 'due_reminders',
+          channelName: 'Due Reminders',
+          channelDescription: 'Reminders for upcoming and due returns',
+          importance: Importance.high,
+          priority: Priority.high,
+        );
+      }
+
+      // 24h before (only if return date is NOT tomorrow, to avoid duplicates)
+      if (before24h.isAfter(now) && !isTomorrow) {
+        final before24hTz = tz.TZDateTime.from(before24h, tz.local);
+        await _scheduleLocalNotification(
+          id: _buildId(itemId, 0), // kind: 0=24h
+          title: 'Return reminder (24h): $itemTitle',
+          body: 'Please return "$itemTitle" to $borrowerName by tomorrow.',
+          scheduledDate: before24hTz,
+          channelId: 'due_reminders',
+          channelName: 'Due Reminders',
+          channelDescription: 'Reminders for upcoming and due returns',
+          importance: Importance.high,
+          priority: Priority.high,
+        );
+      }
+
+      // 1h before
+      if (before1h.isAfter(now)) {
+        final before1hTz = tz.TZDateTime.from(before1h, tz.local);
+        await _scheduleLocalNotification(
+          id: _buildId(itemId, 1), // kind: 1=1h
+          title: 'Return reminder (1h): $itemTitle',
+          body: 'One hour left before "$itemTitle" is due.',
+          scheduledDate: before1hTz,
+          channelId: 'due_reminders',
+          channelName: 'Due Reminders',
+          channelDescription: 'Reminders for upcoming and due returns',
+          importance: Importance.high,
+          priority: Priority.high,
+        );
+      }
+
+      // At due time
+      if (due.isAfter(now)) {
+        final dueTz = tz.TZDateTime.from(due, tz.local);
+        await _scheduleLocalNotification(
+          id: _buildId(itemId, 2), // kind: 2=due
+          title: 'Due now: $itemTitle',
+          body: '"$itemTitle" is now due for return.',
+          scheduledDate: dueTz,
+          channelId: 'due_reminders',
+          channelName: 'Due Reminders',
+          channelDescription: 'Reminders for upcoming and due returns',
+          importance: Importance.high,
+          priority: Priority.high,
+        );
+      }
     }
 
     // Also save reminders to Firestore for FCM push notifications (if online)
@@ -395,12 +437,35 @@ class LocalNotificationsService {
       final fcmService = FCMService();
       await fcmService.initialize();
 
-      // 24h before
-      if (before24h.isAfter(now)) {
-        final reminderId = fcmService.buildReminderId(itemId, '24h');
+      // If return date is tomorrow, schedule FCM reminder for today
+      if (isTomorrow) {
+        final todayReminder = now.add(const Duration(minutes: 2));
+        // Use unique reminder ID for tomorrow reminder - use borrowerId, not current user
+        final reminderId = '${itemId}_tomorrow_${borrowerId}';
         await fcmService.saveReminderToFirestore(
           reminderId: reminderId,
-          userId: user.uid,
+          userId: borrowerId, // Send to borrower, not lender
+          itemId: itemId,
+          itemTitle: itemTitle,
+          scheduledTime: todayReminder.toUtc(),
+          title: 'Return reminder: $itemTitle',
+          body: 'Please return "$itemTitle" to $borrowerName by tomorrow.',
+          reminderType: '24h',
+          borrowerName: borrowerName,
+          isBorrower: true,
+        );
+        debugPrint(
+          'scheduleReturnReminders: Saved FCM reminder for borrower $borrowerId, scheduled for $todayReminder',
+        );
+      }
+
+      // 24h before (only if return date is NOT tomorrow, to avoid duplicates)
+      if (before24h.isAfter(now) && !isTomorrow) {
+        // Include userId in reminder ID to avoid conflicts and permission issues
+        final reminderId = '${itemId}_24h_${borrowerId}';
+        await fcmService.saveReminderToFirestore(
+          reminderId: reminderId,
+          userId: borrowerId, // Send to borrower, not lender
           itemId: itemId,
           itemTitle: itemTitle,
           scheduledTime: before24h.toUtc(),
@@ -414,10 +479,11 @@ class LocalNotificationsService {
 
       // 1h before
       if (before1h.isAfter(now)) {
-        final reminderId = fcmService.buildReminderId(itemId, '1h');
+        // Include userId in reminder ID to avoid conflicts and permission issues
+        final reminderId = '${itemId}_1h_${borrowerId}';
         await fcmService.saveReminderToFirestore(
           reminderId: reminderId,
-          userId: user.uid,
+          userId: borrowerId, // Send to borrower, not lender
           itemId: itemId,
           itemTitle: itemTitle,
           scheduledTime: before1h.toUtc(),
@@ -431,10 +497,11 @@ class LocalNotificationsService {
 
       // At due time
       if (due.isAfter(now)) {
-        final reminderId = fcmService.buildReminderId(itemId, 'due');
+        // Include userId in reminder ID to avoid conflicts and permission issues
+        final reminderId = '${itemId}_due_${borrowerId}';
         await fcmService.saveReminderToFirestore(
           reminderId: reminderId,
-          userId: user.uid,
+          userId: borrowerId, // Send to borrower, not lender
           itemId: itemId,
           itemTitle: itemTitle,
           scheduledTime: due.toUtc(),
@@ -461,113 +528,294 @@ class LocalNotificationsService {
     required String ownerId,
     required String renterName,
     required String ownerName,
+    String rentType = 'item', // Default to 'item' for backward compatibility
   }) async {
-    if (kIsWeb) return;
+    // Ensure timezone is initialized (needed for timezone operations on mobile)
+    if (!_initialized && !kIsWeb) {
+      await initialize();
+    }
 
-    final tz.TZDateTime due = tz.TZDateTime.from(endDateLocal, tz.local);
-    final tz.TZDateTime before24h = due.subtract(const Duration(hours: 24));
-    final tz.TZDateTime before1h = due.subtract(const Duration(hours: 1));
-    final now = tz.TZDateTime.now(tz.local);
+    // For date calculations, use regular DateTime (works on both web and mobile)
+    final DateTime due = endDateLocal;
+    final DateTime before24h = due.subtract(const Duration(hours: 24));
+    final DateTime before1h = due.subtract(const Duration(hours: 1));
+    final DateTime now = DateTime.now();
+
+    // Check if end date is tomorrow (next calendar day)
+    // If so, schedule a reminder for today (for demo purposes)
+    final todayStart = DateTime(now.year, now.month, now.day, 0, 0);
+    final tomorrowStart = todayStart.add(const Duration(days: 1));
+    final dayAfterTomorrowStart = tomorrowStart.add(const Duration(days: 1));
+
+    // Check if end date falls within tomorrow (next calendar day)
+    final isTomorrow =
+        due.isAfter(tomorrowStart.subtract(const Duration(seconds: 1))) &&
+        due.isBefore(dayAfterTomorrowStart);
+
+    debugPrint(
+      'scheduleRentalEndReminders: endDate=$endDateLocal, '
+      'due=$due, now=$now, isTomorrow=$isTomorrow',
+    );
 
     // Schedule reminders for RENTER
-    // 24h before
-    if (before24h.isAfter(now)) {
-      await _scheduleRentalReminderForUser(
-        rentalRequestId: rentalRequestId,
-        itemId: itemId,
-        itemTitle: itemTitle,
-        scheduledTime: before24h,
-        userId: renterId,
-        userName: renterName,
-        isRenter: true,
-        reminderType: 'rental_24h',
-        title: 'Rental ending soon (24h): $itemTitle',
-        body:
-            'Your rental of "$itemTitle" ends tomorrow. Please prepare to return it.',
+    // If end date is tomorrow, schedule reminder for today (2 minutes from now for demo)
+    if (isTomorrow) {
+      final todayReminder = now.add(const Duration(minutes: 2));
+      debugPrint(
+        'scheduleRentalEndReminders: Scheduling tomorrow reminder for renter at $todayReminder',
       );
+
+      // Use unique reminder ID for tomorrow reminder to avoid conflicts
+      final tomorrowReminderId =
+          'rental_${rentalRequestId}_tomorrow_${renterId}';
+
+      // Schedule local notification (skip on web)
+      if (!kIsWeb) {
+        final localNotificationId = _buildId(tomorrowReminderId, 0);
+        final todayReminderTz = tz.TZDateTime.from(todayReminder, tz.local);
+        await _scheduleLocalNotification(
+          id: localNotificationId,
+          title: 'Rental ending soon: $itemTitle',
+          body:
+              'Your rental of "$itemTitle" ends tomorrow. Please prepare to return it.',
+          scheduledDate: todayReminderTz,
+          channelId: 'rental_reminders',
+          channelName: 'Rental Reminders',
+          channelDescription: 'Reminders for rental periods',
+          importance: Importance.high,
+          priority: Priority.high,
+        );
+      }
+
+      // Save to Firestore for FCM
+      try {
+        final fcmService = FCMService();
+        await fcmService.initialize();
+        await fcmService.saveReminderToFirestore(
+          reminderId: tomorrowReminderId,
+          userId: renterId,
+          itemId: itemId,
+          itemTitle: itemTitle,
+          scheduledTime: todayReminder.toUtc(),
+          title: 'Rental ending soon: $itemTitle',
+          body:
+              'Your rental of "$itemTitle" ends tomorrow. Please prepare to return it.',
+          reminderType: 'rental_24h',
+          isBorrower: true,
+          rentalRequestId: rentalRequestId,
+          ownerName: ownerName,
+          renterName: renterName,
+          rentType: rentType,
+        );
+        debugPrint(
+          'scheduleRentalEndReminders: Saved FCM reminder for renter $renterId, scheduled for $todayReminder',
+        );
+      } catch (e) {
+        debugPrint(
+          'Could not save rental tomorrow reminder to Firestore (offline?): $e',
+        );
+      }
+    }
+
+    // 24h before (only if end date is NOT tomorrow, to avoid duplicates)
+    if (before24h.isAfter(now) && !isTomorrow) {
+      final before24hTz = !kIsWeb
+          ? tz.TZDateTime.from(before24h, tz.local)
+          : null;
+      if (before24hTz != null) {
+        await _scheduleRentalReminderForUser(
+          rentalRequestId: rentalRequestId,
+          itemId: itemId,
+          itemTitle: itemTitle,
+          scheduledTime: before24hTz,
+          userId: renterId,
+          userName: renterName,
+          isRenter: true,
+          reminderType: 'rental_24h',
+          title: 'Rental ending soon (24h): $itemTitle',
+          body:
+              'Your rental of "$itemTitle" ends tomorrow. Please prepare to return it.',
+          renterName: renterName,
+          ownerName: ownerName,
+          rentType: rentType,
+        );
+      }
     }
 
     // 1h before
     if (before1h.isAfter(now)) {
-      await _scheduleRentalReminderForUser(
-        rentalRequestId: rentalRequestId,
-        itemId: itemId,
-        itemTitle: itemTitle,
-        scheduledTime: before1h,
-        userId: renterId,
-        userName: renterName,
-        isRenter: true,
-        reminderType: 'rental_1h',
-        title: 'Rental ending soon (1h): $itemTitle',
-        body:
-            'Your rental of "$itemTitle" ends in 1 hour. Please return it soon.',
-      );
+      final before1hTz = !kIsWeb
+          ? tz.TZDateTime.from(before1h, tz.local)
+          : null;
+      if (before1hTz != null) {
+        await _scheduleRentalReminderForUser(
+          rentalRequestId: rentalRequestId,
+          itemId: itemId,
+          itemTitle: itemTitle,
+          scheduledTime: before1hTz,
+          userId: renterId,
+          userName: renterName,
+          isRenter: true,
+          reminderType: 'rental_1h',
+          title: 'Rental ending soon (1h): $itemTitle',
+          body:
+              'Your rental of "$itemTitle" ends in 1 hour. Please return it soon.',
+          renterName: renterName,
+          ownerName: ownerName,
+          rentType: rentType,
+        );
+      }
     }
 
     // At end date
     if (due.isAfter(now)) {
-      await _scheduleRentalReminderForUser(
-        rentalRequestId: rentalRequestId,
-        itemId: itemId,
-        itemTitle: itemTitle,
-        scheduledTime: due,
-        userId: renterId,
-        userName: renterName,
-        isRenter: true,
-        reminderType: 'rental_due',
-        title: 'Rental period ended: $itemTitle',
-        body: 'Your rental of "$itemTitle" has ended. Please return it now.',
-      );
+      final dueTz = !kIsWeb ? tz.TZDateTime.from(due, tz.local) : null;
+      if (dueTz != null) {
+        await _scheduleRentalReminderForUser(
+          rentalRequestId: rentalRequestId,
+          itemId: itemId,
+          itemTitle: itemTitle,
+          scheduledTime: dueTz,
+          userId: renterId,
+          userName: renterName,
+          isRenter: true,
+          reminderType: 'rental_due',
+          title: 'Rental period ended: $itemTitle',
+          body: 'Your rental of "$itemTitle" has ended. Please return it now.',
+          renterName: renterName,
+          ownerName: ownerName,
+          rentType: rentType,
+        );
+      }
     }
 
     // Schedule reminders for OWNER
-    // 24h before
-    if (before24h.isAfter(now)) {
-      await _scheduleRentalReminderForUser(
-        rentalRequestId: rentalRequestId,
-        itemId: itemId,
-        itemTitle: itemTitle,
-        scheduledTime: before24h,
-        userId: ownerId,
-        userName: ownerName,
-        isRenter: false,
-        reminderType: 'rental_24h',
-        title: 'Rental ending soon (24h): $itemTitle',
-        body: 'Rental of "$itemTitle" by $renterName ends tomorrow.',
+    // If end date is tomorrow, schedule reminder for today (2 minutes from now for demo)
+    if (isTomorrow) {
+      final todayReminder = now.add(const Duration(minutes: 2));
+      debugPrint(
+        'scheduleRentalEndReminders: Scheduling tomorrow reminder for owner at $todayReminder',
       );
+
+      // Use unique reminder ID for tomorrow reminder to avoid conflicts
+      final tomorrowReminderId =
+          'rental_${rentalRequestId}_tomorrow_${ownerId}';
+
+      // Schedule local notification (skip on web)
+      if (!kIsWeb) {
+        final localNotificationId = _buildId(tomorrowReminderId, 0);
+        final todayReminderTz = tz.TZDateTime.from(todayReminder, tz.local);
+        await _scheduleLocalNotification(
+          id: localNotificationId,
+          title: 'Rental ending soon: $itemTitle',
+          body: 'Rental of "$itemTitle" by $renterName ends tomorrow.',
+          scheduledDate: todayReminderTz,
+          channelId: 'rental_reminders',
+          channelName: 'Rental Reminders',
+          channelDescription: 'Reminders for rental periods',
+          importance: Importance.high,
+          priority: Priority.high,
+        );
+      }
+
+      // Save to Firestore for FCM
+      try {
+        final fcmService = FCMService();
+        await fcmService.initialize();
+        await fcmService.saveReminderToFirestore(
+          reminderId: tomorrowReminderId,
+          userId: ownerId,
+          itemId: itemId,
+          itemTitle: itemTitle,
+          scheduledTime: todayReminder.toUtc(),
+          title: 'Rental ending soon: $itemTitle',
+          body: 'Rental of "$itemTitle" by $renterName ends tomorrow.',
+          reminderType: 'rental_24h',
+          isBorrower: false,
+          rentalRequestId: rentalRequestId,
+          ownerName: ownerName,
+          renterName: renterName,
+          rentType: rentType,
+        );
+        debugPrint(
+          'scheduleRentalEndReminders: Saved FCM reminder for owner $ownerId, scheduled for $todayReminder',
+        );
+      } catch (e) {
+        debugPrint(
+          'Could not save rental tomorrow reminder to Firestore (offline?): $e',
+        );
+      }
+    }
+
+    // 24h before (only if end date is NOT tomorrow, to avoid duplicates)
+    if (before24h.isAfter(now) && !isTomorrow) {
+      final before24hTz = !kIsWeb
+          ? tz.TZDateTime.from(before24h, tz.local)
+          : null;
+      if (before24hTz != null) {
+        await _scheduleRentalReminderForUser(
+          rentalRequestId: rentalRequestId,
+          itemId: itemId,
+          itemTitle: itemTitle,
+          scheduledTime: before24hTz,
+          userId: ownerId,
+          userName: ownerName,
+          isRenter: false,
+          reminderType: 'rental_24h',
+          title: 'Rental ending soon (24h): $itemTitle',
+          body: 'Rental of "$itemTitle" by $renterName ends tomorrow.',
+          renterName: renterName,
+          ownerName: ownerName,
+          rentType: rentType,
+        );
+      }
     }
 
     // 1h before
     if (before1h.isAfter(now)) {
-      await _scheduleRentalReminderForUser(
-        rentalRequestId: rentalRequestId,
-        itemId: itemId,
-        itemTitle: itemTitle,
-        scheduledTime: before1h,
-        userId: ownerId,
-        userName: ownerName,
-        isRenter: false,
-        reminderType: 'rental_1h',
-        title: 'Rental ending soon (1h): $itemTitle',
-        body: 'Rental of "$itemTitle" by $renterName ends in 1 hour.',
-      );
+      final before1hTz = !kIsWeb
+          ? tz.TZDateTime.from(before1h, tz.local)
+          : null;
+      if (before1hTz != null) {
+        await _scheduleRentalReminderForUser(
+          rentalRequestId: rentalRequestId,
+          itemId: itemId,
+          itemTitle: itemTitle,
+          scheduledTime: before1hTz,
+          userId: ownerId,
+          userName: ownerName,
+          isRenter: false,
+          reminderType: 'rental_1h',
+          title: 'Rental ending soon (1h): $itemTitle',
+          body: 'Rental of "$itemTitle" by $renterName ends in 1 hour.',
+          renterName: renterName,
+          ownerName: ownerName,
+          rentType: rentType,
+        );
+      }
     }
 
     // At end date
     if (due.isAfter(now)) {
-      await _scheduleRentalReminderForUser(
-        rentalRequestId: rentalRequestId,
-        itemId: itemId,
-        itemTitle: itemTitle,
-        scheduledTime: due,
-        userId: ownerId,
-        userName: ownerName,
-        isRenter: false,
-        reminderType: 'rental_due',
-        title: 'Rental period ended: $itemTitle',
-        body:
-            'Rental of "$itemTitle" by $renterName has ended. Expect return soon.',
-      );
+      final dueTz = !kIsWeb ? tz.TZDateTime.from(due, tz.local) : null;
+      if (dueTz != null) {
+        await _scheduleRentalReminderForUser(
+          rentalRequestId: rentalRequestId,
+          itemId: itemId,
+          itemTitle: itemTitle,
+          scheduledTime: dueTz,
+          userId: ownerId,
+          userName: ownerName,
+          isRenter: false,
+          reminderType: 'rental_due',
+          title: 'Rental period ended: $itemTitle',
+          body:
+              'Rental of "$itemTitle" by $renterName has ended. Expect return soon.',
+          renterName: renterName,
+          ownerName: ownerName,
+          rentType: rentType,
+        );
+      }
     }
   }
 
@@ -583,28 +831,33 @@ class LocalNotificationsService {
     required String reminderType,
     required String title,
     required String body,
+    String? renterName,
+    String? ownerName,
+    String rentType = 'item', // Default to 'item' for backward compatibility
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     // Build unique reminder ID: rental_{requestId}_{reminderType}_{userId}
     final reminderId = 'rental_${rentalRequestId}_${reminderType}_$userId';
-    final localNotificationId = _buildId(reminderId, 0);
 
-    // Schedule local notification
-    await _scheduleLocalNotification(
-      id: localNotificationId,
-      title: title,
-      body: body,
-      scheduledDate: scheduledTime,
-      channelId: 'rental_reminders',
-      channelName: 'Rental Reminders',
-      channelDescription: 'Reminders for rental periods',
-      importance: Importance.high,
-      priority: Priority.high,
-    );
+    // Schedule local notification (skip on web)
+    if (!kIsWeb) {
+      final localNotificationId = _buildId(reminderId, 0);
+      await _scheduleLocalNotification(
+        id: localNotificationId,
+        title: title,
+        body: body,
+        scheduledDate: scheduledTime,
+        channelId: 'rental_reminders',
+        channelName: 'Rental Reminders',
+        channelDescription: 'Reminders for rental periods',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+    }
 
-    // Save to Firestore for FCM (if online)
+    // Save to Firestore for FCM (works on both web and mobile)
     try {
       final fcmService = FCMService();
       await fcmService.initialize();
@@ -618,6 +871,10 @@ class LocalNotificationsService {
         body: body,
         reminderType: reminderType,
         isBorrower: isRenter,
+        rentalRequestId: rentalRequestId,
+        ownerName: isRenter ? ownerName : null,
+        renterName: isRenter ? null : renterName,
+        rentType: rentType,
       );
     } catch (e) {
       debugPrint('Could not save rental reminder to Firestore (offline?): $e');
@@ -663,6 +920,7 @@ class LocalNotificationsService {
     required bool
     isRenter, // true if notification is for renter, false for owner
     String? targetUserId, // ID of the user who should receive the notification
+    String rentType = 'item', // Default to 'item' for backward compatibility
   }) async {
     if (kIsWeb) return;
 
@@ -687,6 +945,8 @@ class LocalNotificationsService {
     final daysOverdue = now.difference(endDate).inDays;
 
     // Schedule daily recurring notification at 9 AM
+    // If rental is already overdue, schedule immediately (or very soon) so notification fires right away
+    // Otherwise, schedule for 9 AM today (or tomorrow if past 9 AM)
     final nextNotification = tz.TZDateTime(
       tz.local,
       now.year,
@@ -695,10 +955,15 @@ class LocalNotificationsService {
       9, // 9 AM
     );
 
-    // If it's already past 9 AM today, schedule for tomorrow
-    final scheduledTime = nextNotification.isBefore(now)
-        ? nextNotification.add(const Duration(days: 1))
-        : nextNotification;
+    // If rental is already overdue, schedule for immediate notification (current time)
+    // This ensures overdue rentals get notified right away, not waiting until 9 AM
+    final scheduledTime = daysOverdue > 0 && nextNotification.isBefore(now)
+        ? now.add(
+            const Duration(minutes: 1),
+          ) // Schedule 1 minute from now for immediate notification
+        : (nextNotification.isBefore(now)
+              ? nextNotification.add(const Duration(days: 1))
+              : nextNotification);
 
     String title;
     String body;
@@ -759,6 +1024,10 @@ class LocalNotificationsService {
         body: body,
         reminderType: 'rental_overdue',
         isBorrower: isRenter,
+        rentalRequestId: rentalRequestId,
+        ownerName: isRenter ? ownerName : null,
+        renterName: isRenter ? null : renterName,
+        rentType: rentType,
       );
     } catch (e) {
       debugPrint(
@@ -833,6 +1102,8 @@ class LocalNotificationsService {
         final String itemId = data['itemId'] as String? ?? '';
         final String itemTitle = (data['itemTitle'] ?? 'Rental Item') as String;
         final String status = (data['status'] ?? '') as String;
+        final String rentType = (data['rentType'] ?? 'item')
+            .toString(); // Get rentType
 
         // Only check active rentals
         if (status != 'active') continue;
@@ -871,6 +1142,7 @@ class LocalNotificationsService {
             ownerName: ownerName,
             isRenter: true,
             targetUserId: userId,
+            rentType: rentType,
           );
         } else {
           // Rental is not overdue, cancel any existing overdue reminders
@@ -888,6 +1160,8 @@ class LocalNotificationsService {
         final String itemId = data['itemId'] as String? ?? '';
         final String itemTitle = (data['itemTitle'] ?? 'Rental Item') as String;
         final String status = (data['status'] ?? '') as String;
+        final String rentType = (data['rentType'] ?? 'item')
+            .toString(); // Get rentType
 
         // Only check active rentals
         if (status != 'active') continue;
@@ -926,6 +1200,7 @@ class LocalNotificationsService {
             ownerName: userName,
             isRenter: false,
             targetUserId: userId,
+            rentType: rentType,
           );
         } else {
           // Rental is not overdue, cancel any existing overdue reminders
@@ -1040,6 +1315,8 @@ class LocalNotificationsService {
     final daysOverdue = now.difference(returnDate).inDays;
 
     // Schedule daily recurring notification at 9 AM
+    // If item is already overdue, schedule immediately (or very soon) so notification fires right away
+    // Otherwise, schedule for 9 AM today (or tomorrow if past 9 AM)
     final nextNotification = tz.TZDateTime(
       tz.local,
       now.year,
@@ -1048,10 +1325,15 @@ class LocalNotificationsService {
       9, // 9 AM
     );
 
-    // If it's already past 9 AM today, schedule for tomorrow
-    final scheduledTime = nextNotification.isBefore(now)
-        ? nextNotification.add(const Duration(days: 1))
-        : nextNotification;
+    // If item is already overdue, schedule for immediate notification (current time)
+    // This ensures overdue items get notified right away, not waiting until 9 AM
+    final scheduledTime = daysOverdue > 0 && nextNotification.isBefore(now)
+        ? now.add(
+            const Duration(minutes: 1),
+          ) // Schedule 1 minute from now for immediate notification
+        : (nextNotification.isBefore(now)
+              ? nextNotification.add(const Duration(days: 1))
+              : nextNotification);
 
     String title;
     String body;

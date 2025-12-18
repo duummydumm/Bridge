@@ -48,21 +48,106 @@ class _UpcomingRemindersCalendarScreenState
         return;
       }
 
+      // Load borrowed items (items user borrowed)
       final borrowedItems = await _firestoreService.getBorrowedItemsByBorrower(
         userId,
       );
 
+      // Load rental items where user is the owner (renting out)
+      final ownerRentalRequests = await _firestoreService.getRentalRequestsByUser(
+        userId,
+        asOwner: true,
+      );
+
+      // Load rental items where user is the renter (renting from others)
+      final renterRentalRequests = await _firestoreService.getRentalRequestsByUser(
+        userId,
+        asOwner: false,
+      );
+
+      // Combine both owner and renter rentals
+      final allRentalRequests = [
+        ...ownerRentalRequests,
+        ...renterRentalRequests,
+      ];
+
+      // Filter for active rentals
+      final activeRentals = allRentalRequests.where((req) {
+        final status = (req['status'] ?? 'requested').toString().toLowerCase();
+        return status == 'ownerapproved' ||
+            status == 'active' ||
+            status == 'returninitiated';
+      }).toList();
+
+      // Enrich rental data with item title
+      final enrichedRentals = <Map<String, dynamic>>[];
+      for (final rental in activeRentals) {
+        final enrichedRental = Map<String, dynamic>.from(rental);
+
+        // Get item title from listing
+        final listingId = rental['listingId'] as String?;
+        if (listingId != null) {
+          try {
+            final listing = await _firestoreService.getRentalListing(listingId);
+            if (listing != null) {
+              enrichedRental['title'] = listing['title'] as String?;
+              // Fallback to item title if listing title not available
+              if (enrichedRental['title'] == null ||
+                  (enrichedRental['title'] as String).isEmpty) {
+                final itemId = rental['itemId'] as String?;
+                if (itemId != null) {
+                  final item = await _firestoreService.getItem(itemId);
+                  enrichedRental['title'] = item?['title'] as String?;
+                }
+              }
+            }
+          } catch (_) {
+            // Continue if listing fetch fails
+          }
+        }
+        enrichedRental['title'] ??= 'Rental Item';
+        enrichedRental['type'] = 'rental'; // Mark as rental item
+        enrichedRentals.add(enrichedRental);
+      }
+
+      // Mark borrowed items
+      for (final item in borrowedItems) {
+        item['type'] = 'borrow';
+      }
+
       // Group items by their return date (date only, no time)
       final itemsByDate = <DateTime, List<Map<String, dynamic>>>{};
+
+      // Process borrowed items
       for (final item in borrowedItems) {
         final returnDate = _parseDate(item['returnDate']);
         if (returnDate != null) {
+          // Convert to local time and normalize to start of day
+          final returnDateLocal = returnDate.toLocal();
           final dateOnly = DateTime(
-            returnDate.year,
-            returnDate.month,
-            returnDate.day,
+            returnDateLocal.year,
+            returnDateLocal.month,
+            returnDateLocal.day,
           );
           itemsByDate.putIfAbsent(dateOnly, () => []).add(item);
+        }
+      }
+
+      // Process rental items
+      for (final rental in enrichedRentals) {
+        final returnDate = _parseDate(rental['returnDueDate']);
+        if (returnDate != null) {
+          // Convert to local time and normalize to start of day
+          final returnDateLocal = returnDate.toLocal();
+          final dateOnly = DateTime(
+            returnDateLocal.year,
+            returnDateLocal.month,
+            returnDateLocal.day,
+          );
+          // Use returnDueDate for the calendar display, but store it as returnDate for consistency
+          final rentalForCalendar = Map<String, dynamic>.from(rental);
+          rentalForCalendar['returnDate'] = returnDate;
+          itemsByDate.putIfAbsent(dateOnly, () => []).add(rentalForCalendar);
         }
       }
 
@@ -108,10 +193,11 @@ class _UpcomingRemindersCalendarScreenState
   }
 
   Color _getDateColor(DateTime date) {
+    // Normalize to start of day for accurate day comparison
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dateOnly = DateTime(date.year, date.month, date.day);
-    final difference = dateOnly.difference(today).inDays;
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final dateStart = DateTime(date.year, date.month, date.day);
+    final difference = dateStart.difference(todayStart).inDays;
 
     if (difference < 0) {
       return Colors.red; // Overdue
@@ -212,7 +298,7 @@ class _UpcomingRemindersCalendarScreenState
                       color: Colors.white,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, -2),
                         ),
@@ -243,6 +329,7 @@ class _UpcomingRemindersCalendarScreenState
     );
     final firstWeekday = firstDayOfMonth.weekday;
     final daysInMonth = lastDayOfMonth.day;
+    // Normalize to start of day for accurate day comparison
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
@@ -324,8 +411,10 @@ class _UpcomingRemindersCalendarScreenState
                           margin: const EdgeInsets.all(2),
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? dateColor?.withOpacity(0.2) ??
-                                      const Color(0xFF00897B).withOpacity(0.1)
+                                ? dateColor?.withValues(alpha: 0.2) ??
+                                      const Color(
+                                        0xFF00897B,
+                                      ).withValues(alpha: 0.1)
                                 : Colors.transparent,
                             border: isToday
                                 ? Border.all(
@@ -386,14 +475,15 @@ class _UpcomingRemindersCalendarScreenState
     if (_selectedDate == null) return const SizedBox.shrink();
 
     final items = _getItemsForDate(_selectedDate!);
+    // Normalize to start of day for accurate day comparison
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final selectedDateOnly = DateTime(
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final selectedDateStart = DateTime(
       _selectedDate!.year,
       _selectedDate!.month,
       _selectedDate!.day,
     );
-    final difference = selectedDateOnly.difference(today).inDays;
+    final difference = selectedDateStart.difference(todayStart).inDays;
 
     String dateLabel;
     if (difference < 0) {
@@ -476,6 +566,8 @@ class _UpcomingRemindersCalendarScreenState
                     final item = items[index];
                     final title = (item['title'] ?? 'Untitled Item').toString();
                     final returnDate = _parseDate(item['returnDate']);
+                    final itemType = (item['type'] ?? 'borrow').toString();
+                    final isRental = itemType == 'rental';
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
@@ -490,11 +582,13 @@ class _UpcomingRemindersCalendarScreenState
                           decoration: BoxDecoration(
                             color: _getDateColor(
                               _selectedDate!,
-                            ).withOpacity(0.1),
+                            ).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Icon(
-                            Icons.inventory_2_outlined,
+                            isRental
+                                ? Icons.home_outlined
+                                : Icons.inventory_2_outlined,
                             color: _getDateColor(_selectedDate!),
                             size: 20,
                           ),
@@ -508,15 +602,59 @@ class _UpcomingRemindersCalendarScreenState
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: returnDate != null
-                            ? Text(
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (isRental)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'Rental',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue[700],
+                                  ),
+                                ),
+                              )
+                            else
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'Borrow',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.green[700],
+                                  ),
+                                ),
+                              ),
+                            if (returnDate != null)
+                              Text(
                                 'Due at ${returnDate.hour.toString().padLeft(2, '0')}:${returnDate.minute.toString().padLeft(2, '0')}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey[600],
                                 ),
-                              )
-                            : null,
+                              ),
+                          ],
+                        ),
                         trailing: IconButton(
                           icon: const Icon(Icons.notifications_outlined),
                           onPressed: () async {

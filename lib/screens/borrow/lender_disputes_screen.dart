@@ -96,8 +96,14 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
     final requestId = dispute['id'] as String?;
     if (requestId == null) return;
 
+    // Capture providers before async operations
+    if (!mounted) return;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final lenderId = authProvider.user?.uid;
+
     final amountController = TextEditingController(
-      text: (dispute['damageReport'] as Map<String, dynamic>?)?['estimatedCost']
+      text:
+          (dispute['damageReport'] as Map<String, dynamic>?)?['estimatedCost']
               ?.toString() ??
           '',
     );
@@ -172,9 +178,6 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
     if (confirmed != true) return;
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final lenderId = authProvider.user?.uid;
-
       if (lenderId == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -243,12 +246,21 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
     final requestId = dispute['id'] as String?;
     if (requestId == null) return;
 
-    final disputeResolution = dispute['disputeResolution'] as Map<String, dynamic>?;
-    if (disputeResolution == null || disputeResolution['status'] != 'accepted') {
+    // Capture providers before async operations
+    if (!mounted) return;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final lenderId = authProvider.user?.uid;
+
+    final disputeResolution =
+        dispute['disputeResolution'] as Map<String, dynamic>?;
+    if (disputeResolution == null ||
+        disputeResolution['status'] != 'accepted') {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Compensation must be accepted before recording payment'),
+            content: Text(
+              'Compensation must be accepted before recording payment',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -341,9 +353,6 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
     if (confirmed != true) return;
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final lenderId = authProvider.user?.uid;
-
       if (lenderId == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -506,7 +515,6 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -577,9 +585,9 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
         'Unknown Item';
     final borrowerName = dispute['borrowerName'] as String? ?? 'Unknown';
     final returnConfirmedAt = _parseDate(dispute['returnConfirmedAt']);
-    final images = (dispute['images'] as List<dynamic>?)?.cast<String>() ?? [];
     final damageReport = dispute['damageReport'] as Map<String, dynamic>?;
-    final disputeResolution = dispute['disputeResolution'] as Map<String, dynamic>?;
+    final disputeResolution =
+        dispute['disputeResolution'] as Map<String, dynamic>?;
     final resolutionStatus = disputeResolution?['status'] as String?;
     final proposedAmount = disputeResolution?['proposedAmount'] as num?;
 
@@ -639,11 +647,7 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
                 children: [
                   const CircleAvatar(
                     backgroundColor: Color(0xFF00897B),
-                    child: Icon(
-                      Icons.person,
-                      color: Colors.white,
-                      size: 20,
-                    ),
+                    child: Icon(Icons.person, color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -652,10 +656,7 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
                       children: [
                         const Text(
                           'Borrower',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                         Text(
                           borrowerName,
@@ -676,10 +677,10 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
+                  color: Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: Colors.red.withOpacity(0.3),
+                    color: Colors.red.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -688,11 +689,7 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(
-                          Icons.warning,
-                          color: Colors.red[700],
-                          size: 20,
-                        ),
+                        Icon(Icons.warning, color: Colors.red[700], size: 20),
                         const SizedBox(width: 8),
                         const Text(
                           'Damage Reported',
@@ -708,10 +705,7 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
                     if (damageReport['description'] != null)
                       Text(
                         damageReport['description'] as String,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[800],
-                        ),
+                        style: TextStyle(fontSize: 13, color: Colors.grey[800]),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -737,17 +731,17 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: resolutionStatus == 'proposal_pending'
-                      ? Colors.blue.withOpacity(0.1)
+                      ? Colors.blue.withValues(alpha: 0.1)
                       : resolutionStatus == 'accepted'
-                          ? Colors.green.withOpacity(0.1)
-                          : Colors.orange.withOpacity(0.1),
+                      ? Colors.green.withValues(alpha: 0.1)
+                      : Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: resolutionStatus == 'proposal_pending'
-                        ? Colors.blue.withOpacity(0.3)
+                        ? Colors.blue.withValues(alpha: 0.3)
                         : resolutionStatus == 'accepted'
-                            ? Colors.green.withOpacity(0.3)
-                            : Colors.orange.withOpacity(0.3),
+                        ? Colors.green.withValues(alpha: 0.3)
+                        : Colors.orange.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -760,13 +754,13 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
                           resolutionStatus == 'proposal_pending'
                               ? Icons.pending_outlined
                               : resolutionStatus == 'accepted'
-                                  ? Icons.check_circle
-                                  : Icons.cancel,
+                              ? Icons.check_circle
+                              : Icons.cancel,
                           color: resolutionStatus == 'proposal_pending'
                               ? Colors.blue[700]
                               : resolutionStatus == 'accepted'
-                                  ? Colors.green[700]
-                                  : Colors.orange[700],
+                              ? Colors.green[700]
+                              : Colors.orange[700],
                           size: 20,
                         ),
                         const SizedBox(width: 8),
@@ -774,16 +768,16 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
                           resolutionStatus == 'proposal_pending'
                               ? 'Proposal Pending'
                               : resolutionStatus == 'accepted'
-                                  ? 'Proposal Accepted'
-                                  : 'Proposal Rejected',
+                              ? 'Proposal Accepted'
+                              : 'Proposal Rejected',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
                             color: resolutionStatus == 'proposal_pending'
                                 ? Colors.blue[700]
                                 : resolutionStatus == 'accepted'
-                                    ? Colors.green[700]
-                                    : Colors.orange[700],
+                                ? Colors.green[700]
+                                : Colors.orange[700],
                           ),
                         ),
                       ],
@@ -805,18 +799,11 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
             if (returnConfirmedAt != null) ...[
               Row(
                 children: [
-                  Icon(
-                    Icons.access_time,
-                    size: 14,
-                    color: Colors.grey[600],
-                  ),
+                  Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Text(
                     'Disputed on: ${_formatDate(returnConfirmedAt)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
               ),
@@ -921,10 +908,10 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: Colors.green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: Colors.green.withOpacity(0.3),
+                    color: Colors.green.withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
@@ -949,11 +936,9 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: Colors.blue.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.blue.withOpacity(0.3),
-                  ),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
@@ -994,4 +979,3 @@ class _LenderDisputesScreenState extends State<LenderDisputesScreen> {
     );
   }
 }
-

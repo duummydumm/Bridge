@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../reusable_widgets/bottom_nav_bar_widget.dart';
+import '../../models/borrow_request_model.dart';
 import '../chat_detail_screen.dart';
 
 class ApprovedBorrowScreen extends StatefulWidget {
@@ -18,7 +18,7 @@ class ApprovedBorrowScreen extends StatefulWidget {
 class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   bool _isLoading = true;
-  List<Map<String, dynamic>> _requests = [];
+  List<BorrowRequestModel> _requests = [];
 
   @override
   void initState() {
@@ -63,7 +63,7 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
     }
   }
 
-  Future<void> _messageLender(Map<String, dynamic> request) async {
+  Future<void> _messageLender(BorrowRequestModel request) async {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final userProvider = Provider.of<UserProvider>(context, listen: false);
@@ -94,10 +94,10 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
         return;
       }
 
-      final lenderId = request['lenderId'] as String;
-      final lenderName = request['lenderName'] as String? ?? 'Lender';
-      final itemId = request['itemId'] as String;
-      final itemTitle = request['itemTitle'] as String? ?? 'Item';
+      final lenderId = request.lenderId;
+      final lenderName = request.lenderName;
+      final itemId = request.itemId;
+      final itemTitle = request.itemTitle;
 
       // Show loading
       if (!mounted) return;
@@ -155,7 +155,7 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
     }
   }
 
-  void _viewDetails(Map<String, dynamic> request) {
+  void _viewDetails(BorrowRequestModel request) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -262,13 +262,10 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
     );
   }
 
-  Widget _buildBorrowRequestCard(Map<String, dynamic> request) {
-    final createdAt =
-        (request['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
-    final updatedAt =
-        (request['updatedAt'] as Timestamp?)?.toDate() ?? createdAt;
-    final agreedReturnDate = (request['agreedReturnDate'] as Timestamp?)
-        ?.toDate();
+  Widget _buildBorrowRequestCard(BorrowRequestModel request) {
+    final createdAt = request.createdAt;
+    final updatedAt = request.updatedAt ?? createdAt;
+    final agreedReturnDate = request.agreedReturnDate;
     final isOverdue =
         agreedReturnDate != null && agreedReturnDate.isBefore(DateTime.now());
 
@@ -289,7 +286,7 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
+                      color: Colors.green.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(
@@ -304,7 +301,9 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          request['itemTitle'] ?? 'Unknown Item',
+                          request.itemTitle.isNotEmpty
+                              ? request.itemTitle
+                              : 'Unknown Item',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -314,7 +313,7 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Lender: ${request['lenderName'] ?? 'Unknown'}',
+                          'Lender: ${request.lenderName.isNotEmpty ? request.lenderName : 'Unknown'}',
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey[700],
@@ -344,8 +343,7 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              if (request['message'] != null &&
-                  (request['message'] as String).isNotEmpty) ...[
+              if (request.message != null && request.message!.isNotEmpty) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -353,7 +351,7 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    request['message'],
+                    request.message!,
                     style: TextStyle(fontSize: 14, color: Colors.grey[800]),
                   ),
                 ),
@@ -364,13 +362,13 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: isOverdue
-                        ? Colors.red.withOpacity(0.1)
-                        : const Color(0xFF00897B).withOpacity(0.1),
+                        ? Colors.red.withValues(alpha: 0.1)
+                        : const Color(0xFF00897B).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: isOverdue
-                          ? Colors.red.withOpacity(0.3)
-                          : const Color(0xFF00897B).withOpacity(0.3),
+                          ? Colors.red.withValues(alpha: 0.3)
+                          : const Color(0xFF00897B).withValues(alpha: 0.3),
                       width: 1,
                     ),
                   ),
@@ -455,13 +453,10 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
     );
   }
 
-  Widget _buildRequestDetailsModal(Map<String, dynamic> request) {
-    final createdAt =
-        (request['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
-    final updatedAt =
-        (request['updatedAt'] as Timestamp?)?.toDate() ?? createdAt;
-    final agreedReturnDate = (request['agreedReturnDate'] as Timestamp?)
-        ?.toDate();
+  Widget _buildRequestDetailsModal(BorrowRequestModel request) {
+    final createdAt = request.createdAt;
+    final updatedAt = request.updatedAt ?? createdAt;
+    final agreedReturnDate = request.agreedReturnDate;
     final isOverdue =
         agreedReturnDate != null && agreedReturnDate.isBefore(DateTime.now());
 
@@ -517,7 +512,9 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                       const SizedBox(height: 24),
                       // Item Title
                       Text(
-                        request['itemTitle'] ?? 'Unknown Item',
+                        request.itemTitle.isNotEmpty
+                            ? request.itemTitle
+                            : 'Unknown Item',
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -550,7 +547,9 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                                     ),
                                   ),
                                   Text(
-                                    request['lenderName'] ?? 'Unknown',
+                                    request.lenderName.isNotEmpty
+                                        ? request.lenderName
+                                        : 'Unknown',
                                     style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
@@ -569,13 +568,17 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: isOverdue
-                                ? Colors.red.withOpacity(0.1)
-                                : const Color(0xFF00897B).withOpacity(0.1),
+                                ? Colors.red.withValues(alpha: 0.1)
+                                : const Color(
+                                    0xFF00897B,
+                                  ).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: isOverdue
-                                  ? Colors.red.withOpacity(0.3)
-                                  : const Color(0xFF00897B).withOpacity(0.3),
+                                  ? Colors.red.withValues(alpha: 0.3)
+                                  : const Color(
+                                      0xFF00897B,
+                                    ).withValues(alpha: 0.3),
                               width: 1,
                             ),
                           ),
@@ -632,8 +635,8 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                         const SizedBox(height: 16),
                       ],
                       // Message
-                      if (request['message'] != null &&
-                          (request['message'] as String).isNotEmpty) ...[
+                      if (request.message != null &&
+                          request.message!.isNotEmpty) ...[
                         const Text(
                           'Your Message',
                           style: TextStyle(
@@ -649,7 +652,7 @@ class _ApprovedBorrowScreenState extends State<ApprovedBorrowScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            request['message'],
+                            request.message!,
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.grey[800],

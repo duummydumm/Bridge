@@ -158,6 +158,24 @@
       ]
     },
     {
+      "collectionGroup": "giveaway_claims",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "claimantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "giveaways",
       "queryScope": "COLLECTION",
       "fields": [
@@ -171,6 +189,34 @@
         },
         {
           "fieldPath": "claimedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "giveaways",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "giveaways",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "donorId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
           "order": "DESCENDING"
         }
       ]
@@ -282,6 +328,24 @@
       ]
     },
     {
+      "collectionGroup": "calamity_donations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "donorEmail",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "reports",
       "queryScope": "COLLECTION",
       "fields": [
@@ -311,6 +375,59 @@
         { "fieldPath": "toUserId", "order": "ASCENDING" },
         { "fieldPath": "type", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toUserId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toUserId", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "requestId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "feedback",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "feedback",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "borrow_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "borrowerId", "order": "ASCENDING" },
+        { "fieldPath": "itemId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isRead", "order": "ASCENDING" },
+        { "fieldPath": "senderId", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
       ]
     }
   ],

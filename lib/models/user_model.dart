@@ -22,6 +22,8 @@ class UserModel {
   final double reputationScore;
   final bool isAdmin; // Admin flag
   final bool isSuspended; // Suspension flag
+  final DateTime? suspendedAt; // When the account was suspended
+  final String suspensionReason; // Reason for suspension
   final int violationCount; // Number of violations
   final DateTime createdAt;
 
@@ -44,6 +46,8 @@ class UserModel {
     required this.reputationScore,
     required this.isAdmin,
     required this.isSuspended,
+    this.suspendedAt,
+    this.suspensionReason = '',
     required this.violationCount,
     required this.createdAt,
   });
@@ -97,6 +101,8 @@ class UserModel {
       reputationScore: (data['reputationScore'] ?? 0).toDouble(),
       isAdmin: data['isAdmin'] ?? false,
       isSuspended: data['isSuspended'] ?? false,
+      suspendedAt: (data['suspendedAt'] as Timestamp?)?.toDate(),
+      suspensionReason: data['suspensionReason'] ?? '',
       violationCount: (data['violationCount'] ?? 0) is int
           ? (data['violationCount'] ?? 0)
           : int.tryParse((data['violationCount'] ?? '0').toString()) ?? 0,
@@ -123,6 +129,8 @@ class UserModel {
       'reputationScore': reputationScore,
       'isAdmin': isAdmin,
       'isSuspended': isSuspended,
+      if (suspendedAt != null) 'suspendedAt': Timestamp.fromDate(suspendedAt!),
+      'suspensionReason': suspensionReason,
       'violationCount': violationCount,
       'createdAt': Timestamp.fromDate(createdAt),
     };

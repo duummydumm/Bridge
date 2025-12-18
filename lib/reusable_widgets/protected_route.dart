@@ -57,6 +57,17 @@ class ProtectedRoute extends StatelessWidget {
     }
 
     final bool isAdmin = userProvider.currentUser?.isAdmin == true;
+    final bool isSuspended = userProvider.currentUser?.isSuspended == true;
+
+    // Check if user is suspended (admins cannot be suspended, but check anyway)
+    if (isSuspended) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          Navigator.of(context).pushReplacementNamed('/suspended-account');
+        }
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     // Admins can bypass verification if allowed
     if (isAdmin && allowAdmins) {

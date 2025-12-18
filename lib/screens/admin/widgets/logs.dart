@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../services/firestore_service.dart';
 import '../../../services/export_service.dart';
 import '../../../models/activity_log_model.dart';
+import '../../../reusable_widgets/export_format_dialog.dart';
 import 'package:intl/intl.dart';
 
 class ActivityLogsTab extends StatefulWidget {
@@ -91,7 +93,9 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
                         icon: const Icon(Icons.calendar_today, size: 16),
                         label: Text(
                           _customStartDate != null
-                              ? DateFormat('MMM dd, yyyy').format(_customStartDate!)
+                              ? DateFormat(
+                                  'MMM dd, yyyy',
+                                ).format(_customStartDate!)
                               : 'Start Date',
                         ),
                       ),
@@ -113,7 +117,9 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
                         icon: const Icon(Icons.calendar_today, size: 16),
                         label: Text(
                           _customEndDate != null
-                              ? DateFormat('MMM dd, yyyy').format(_customEndDate!)
+                              ? DateFormat(
+                                  'MMM dd, yyyy',
+                                ).format(_customEndDate!)
                               : 'End Date',
                         ),
                       ),
@@ -209,20 +215,90 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
 
   Future<void> _exportLogs(BuildContext context) async {
     try {
-      final exportService = ExportService();
-      final csv = await exportService.exportActivityLogsToCSV(
-        logs: _searchResults,
+      // Fetch filtered logs if not searching
+      List<Map<String, dynamic>>? logsToExport = _searchResults;
+
+      if (logsToExport == null) {
+        // If no search results, fetch logs based on current filters
+        try {
+          final snapshot = await _firestoreService
+              .getActivityLogsStream(
+                category: _selectedCategory == 'all' ? null : _selectedCategory,
+                severity: _selectedSeverity == 'all' ? null : _selectedSeverity,
+                startDate: _startDate,
+                endDate: _endDate,
+                limit: 1000, // Export up to 1000 logs
+              )
+              .first; // Get the first snapshot from the stream
+
+          logsToExport = snapshot.docs.map((doc) {
+            final data = doc.data();
+            data['id'] = doc.id;
+            return data;
+          }).toList();
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error fetching logs for export: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      // Show format selection dialog
+
+      final format = await ExportFormatDialog.show(
+        context,
+        title: 'Export Activity Logs',
+        subtitle: 'Select export format for ${logsToExport.length} log entries',
       );
 
-      // Copy to clipboard
-      await Clipboard.setData(ClipboardData(text: csv));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Logs exported to CSV and copied to clipboard!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+      if (format == null) return; // User cancelled
+
+      final exportService = ExportService();
+      final content = await exportService.exportActivityLogs(
+        logs: logsToExport,
+        format: format,
+      );
+
+      // Handle different formats
+      if (format == ExportFormat.csv || format == ExportFormat.json) {
+        // Text formats: copy to clipboard
+        if (content.isNotEmpty) {
+          await Clipboard.setData(ClipboardData(text: content));
+          if (context.mounted) {
+            final formatName = format.name.toUpperCase();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Logs exported to $formatName and copied to clipboard!',
+                ),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      } else {
+        // Binary formats (Excel/PDF): file download triggered in service
+        if (context.mounted) {
+          final formatName = format.name.toUpperCase();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                kIsWeb
+                    ? 'Logs exported to $formatName! File downloaded to your downloads folder.'
+                    : 'Logs exported to $formatName! Use the share dialog to save the file.',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (context.mounted) {
@@ -255,7 +331,7 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF00897B).withOpacity(0.3),
+                  color: const Color(0xFF00897B).withValues(alpha: 0.3),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -266,7 +342,7 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
@@ -316,7 +392,7 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
               border: Border.all(color: Colors.grey[300]!),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
@@ -389,7 +465,10 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
                 onTap: () => _showDateRangePicker(context),
                 borderRadius: BorderRadius.circular(20),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     gradient: _selectedTimeRange == 'custom'
                         ? const LinearGradient(
@@ -406,7 +485,9 @@ class _ActivityLogsTabState extends State<ActivityLogsTab> {
                     boxShadow: _selectedTimeRange == 'custom'
                         ? [
                             BoxShadow(
-                              color: const Color(0xFF00897B).withOpacity(0.3),
+                              color: const Color(
+                                0xFF00897B,
+                              ).withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -782,7 +863,7 @@ class _FilterChip extends StatelessWidget {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: const Color(0xFF00897B).withOpacity(0.3),
+                    color: const Color(0xFF00897B).withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -885,7 +966,7 @@ class _LogCardState extends State<_LogCard> {
         border: Border.all(color: Colors.grey[200]!, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -908,7 +989,7 @@ class _LogCardState extends State<_LogCard> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: _categoryColor.withOpacity(0.1),
+                        color: _categoryColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
@@ -933,10 +1014,12 @@ class _LogCardState extends State<_LogCard> {
                                   vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: _categoryColor.withOpacity(0.1),
+                                  color: _categoryColor.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color: _categoryColor.withOpacity(0.3),
+                                    color: _categoryColor.withValues(
+                                      alpha: 0.3,
+                                    ),
                                   ),
                                 ),
                                 child: Text(

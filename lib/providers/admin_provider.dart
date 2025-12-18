@@ -54,6 +54,10 @@ class AdminProvider extends ChangeNotifier {
     await _adminService.restoreUser(uid);
   }
 
+  Future<void> deleteUser(String uid, {String? reason}) async {
+    await _adminService.deleteUser(uid, reason: reason);
+  }
+
   Future<void> fileViolation(String userId, {String? note}) async {
     await _adminService.fileViolation(userId: userId, note: note);
   }
